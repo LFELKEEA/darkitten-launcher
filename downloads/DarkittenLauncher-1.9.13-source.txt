@@ -1,5 +1,5 @@
 ﻿Darkitten Launcher 1.9.13 完整源代码
-生成时间：2026-10-24 00:26:51
+生成时间：2026-10-24 00:28:13
 文本文件：103
 ================================================================================
 目录
@@ -38880,12 +38880,14 @@ def deploy_github(version: str, repo: str) -> str:
 
     pages_payload = {"source": {"branch": "gh-pages", "path": "/"}}
     pages = gh_api(gh, f"repos/{full}/pages", check=False)
-    if pages:
-        gh_api(gh, f"repos/{full}/pages", "PUT", pages_payload)
-    else:
-        gh_api(gh, f"repos/{full}/pages", "POST", pages_payload)
-    info = gh_api(gh, f"repos/{full}/pages")
-    return str(info.get("html_url") or f"https://{full.split('/')[0].lower()}.github.io/{full.split('/')[1]}/")
+    if not pages:
+        # 仓库首次推送 gh-pages 时 GitHub 可能已经自动启用 Pages，409 视为成功。
+        gh_api(gh, f"repos/{full}/pages", "POST", pages_payload, check=False)
+    gh_api(gh, f"repos/{full}/pages", "PUT", pages_payload, check=False)
+
+    info = gh_api(gh, f"repos/{full}/pages", check=False)
+    owner, name = full.split("/", 1)
+    return str(info.get("html_url") or f"https://{owner.lower()}.github.io/{name}/")
 
 
 def build(source: Path, version: str, deploy: bool, repo: str) -> int:
@@ -40807,10 +40809,10 @@ body.modal-open { overflow: hidden; }
   "source_txt_url": "downloads/DarkittenLauncher-1.9.13-source.txt",
   "sha256": "74b184fbcda73e3329e898ccb910bd582e714b5218ca742f49ae2d06d6c674fd",
   "size": 977369,
-  "source_sha256": "5514d388f9fccf6f1a2fc0e5a1226176c877c696b20b336f7b49098e39efeba3",
-  "source_size": 1689174,
-  "source_txt_sha256": "a6691a557863abcd290e4fca5774d60566dc7c5a37d771d4dd7cab2dceee2b15",
-  "source_txt_size": 1497597
+  "source_sha256": "f7e03eef4cabf08e02dee67df2c1c14a9f66ddb3efad5531426e99bc5e1d1d5b",
+  "source_size": 1689320,
+  "source_txt_sha256": "bb8f35f1ea16f14cd2cac11efa38efc751adb9af5416a244547c8fdf72121f1d",
+  "source_txt_size": 1497973
 }
 
 
