@@ -1,0 +1,301 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#100a10">
+  <title>Darkitten Launcher · 恶魔小猫的秘密基地</title>
+  <meta name="description" content="Darkitten Launcher（DKL）下载站：一款会叼回游戏版本、藏好模组、顺手打包的 Minecraft 启动器。支持 Fabric、Forge、NeoForge、Modrinth 与 CurseForge。">
+  <link rel="icon" href="assets/dkl.ico">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <svg class="svg-sprite" aria-hidden="true">
+    <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 3v11m0 0 4-4m-4 4-4-4M5 21h14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M5 12h14m-5-5 5 5-5 5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12 4 4L19 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 3 5 6v5c0 4.5 2.9 8.2 7 10 4.1-1.8 7-5.5 7-10V6l-7-3Z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><path d="m9 12 2 2 4-4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-cube" viewBox="0 0 24 24"><path d="m12 3 8 4.5v9L12 21l-8-4.5v-9L12 3Z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><path d="m4 7.5 8 4.5 8-4.5M12 12v9" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/></symbol>
+    <symbol id="i-server" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="6" rx="1.6" fill="none" stroke="currentColor" stroke-width="1.7"/><rect x="4" y="14" width="16" height="6" rx="1.6" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M8 7h.01M8 17h.01" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></symbol>
+    <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M20 7v5h-5M4 17v-5h5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M6.1 9a7 7 0 0 1 11.6-1.7L20 10M4 14l2.3 2.7A7 7 0 0 0 17.9 15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-users" viewBox="0 0 24 24"><path d="M16 19v-1.5a4 4 0 0 0-4-4H7a4 4 0 0 0-4 4V19M13 7a3.5 3.5 0 1 1-7 0 3.5 3.5 0 0 1 7 0ZM17 11a3 3 0 1 0 0-6M21 19v-1.4a4 4 0 0 0-3-3.7" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-spark" viewBox="0 0 24 24"><path d="M12 3c.7 4.6 2.4 6.3 7 7-4.6.7-6.3 2.4-7 7-.7-4.6-2.4-6.3-7-7 4.6-.7 6.3-2.4 7-7Z" fill="currentColor"/><path d="M19 15c.3 2 1 2.7 3 3-2 .3-2.7 1-3 3-.3-2-1-2.7-3-3 2-.3 2.7-1 3-3Z" fill="currentColor" opacity=".6"/></symbol>
+    <symbol id="i-hash" viewBox="0 0 24 24"><path d="M9 3 7 21M17 3l-2 18M4 9h17M3 15h17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></symbol>
+    <symbol id="i-copy" viewBox="0 0 24 24"><rect x="8" y="8" width="11" height="11" rx="2" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></symbol>
+    <symbol id="i-windows" viewBox="0 0 24 24"><path d="M3 5.5 10.5 4v7H3V5.5ZM12 3.8 21 2.5V11h-9V3.8ZM3 13h7.5v7L3 18.5V13ZM12 13h9v8.5L12 20.2V13Z" fill="currentColor"/></symbol>
+  </svg>
+
+  <div class="bg-grid" aria-hidden="true"></div>
+  <div class="glow glow-a" aria-hidden="true"></div>
+  <div class="glow glow-b" aria-hidden="true"></div>
+  <div class="noise" aria-hidden="true"></div>
+
+  <header class="site-header" id="top">
+    <a class="brand" href="#top" aria-label="Darkitten Launcher 首页">
+      <span class="brand-logo"><img src="assets/chibi_face.png" alt="DKL 猫猫图标"></span>
+      <span class="brand-text"><strong>DARKITTEN</strong><small>LAUNCHER</small></span>
+    </a>
+    <nav class="nav">
+      <a href="#features">能力</a>
+      <a href="#release">更新</a>
+      <a href="#safety">数据安全</a>
+      <a href="#download">下载</a>
+      <button class="nav-link" type="button" data-feedback-open>反馈</button>
+    </nav>
+    <div class="header-actions">
+      <span class="version-chip"><i></i><span>v<span data-version>1.9.13</span></span></span>
+      <button class="btn btn-ghost btn-small" type="button" data-feedback-open>反馈</button>
+      <a class="btn btn-small" href="#download"><svg class="icon"><use href="#i-download"></use></svg>下载</a>
+    </div>
+  </header>
+
+  <main>
+    <section class="hero">
+      <div class="hero-copy reveal">
+        <div class="eyebrow"><span class="pulse"></span>DKL <b data-version>1.9.13</b><span class="eyebrow-sep">/</span>LATEST BUILD</div>
+        <h1>恶魔小猫的<br><em>秘密基地</em></h1>
+        <p class="lede">一只会叼回游戏版本、藏好模组、顺手打包的 Minecraft 启动器。<strong>Darkitten Launcher</strong> 把版本、Mod、联机和服务端都收进同一个猫窝。</p>
+        <div class="hero-actions">
+          <a class="btn btn-primary" href="downloads/DarkittenLauncher-1.9.13-source.zip" data-source-download>
+            <svg class="icon"><use href="#i-download"></use></svg>
+            <span>下载最新版本</span>
+            <small data-size>约 1.1 MB</small>
+          </a>
+          <a class="btn btn-ghost" href="#release">查看更新内容<svg class="icon"><use href="#i-arrow"></use></svg></a>
+        </div>
+        <div class="hero-meta">
+          <span><svg class="icon"><use href="#i-windows"></use></svg>Windows 10 / 11</span>
+          <span><svg class="icon"><use href="#i-cube"></use></svg>Fabric · Forge · NeoForge</span>
+          <span><svg class="icon"><use href="#i-shield"></use></svg>更新保留数据</span>
+        </div>
+      </div>
+
+      <div class="hero-art reveal" id="heroArt">
+        <div class="orbit orbit-a" aria-hidden="true"></div>
+        <div class="orbit orbit-b" aria-hidden="true"></div>
+        <div class="orbit orbit-c" aria-hidden="true"></div>
+        <div class="art-card">
+          <img src="assets/chibi_oc.png" alt="DKL 的恶魔小猫 OC 形象">
+          <span class="scanline" aria-hidden="true"></span>
+        </div>
+        <div class="float-chip chip-version"><span>LATEST</span><strong>v<span data-version>1.9.13</span></strong></div>
+        <div class="float-chip chip-safe"><svg class="icon"><use href="#i-shield"></use></svg><span>更新不动存档</span></div>
+        <div class="float-chip chip-source"><span class="dot dot-a"></span><span class="dot dot-b"></span>Modrinth + CurseForge</div>
+        <div class="art-caption">LFELKEEA's OC <span>/</span> 恶魔小猫</div>
+      </div>
+    </section>
+
+    <section class="stat-strip reveal" aria-label="启动器能力概览">
+      <div class="stat"><strong>02</strong><span>Mod 下载源</span></div>
+      <div class="stat"><strong>03</strong><span>加载器生态</span></div>
+      <div class="stat"><strong>07</strong><span>核心页面</span></div>
+      <div class="stat"><strong>01</strong><span>只属于你的猫窝</span></div>
+      <div class="stat-note"><span class="pulse"></span>当前稳定版 v<span data-version>1.9.13</span> 已上线</div>
+    </section>
+
+    <section class="section" id="features">
+      <div class="section-head reveal">
+        <span class="kicker">WHY DKL</span>
+        <h2>猫爪能碰到的地方，<br>都替你安排好了。</h2>
+        <p>从安装游戏到联机开服，从 Mod 前置到版本迁移，不把时间浪费在来回找文件上。</p>
+      </div>
+      <div class="feature-grid">
+        <article class="feature-card reveal">
+          <div class="feature-icon"><svg class="icon"><use href="#i-download"></use></svg></div>
+          <span class="feature-no">01</span>
+          <h3>双源模组仓库</h3>
+          <p>Modrinth 与 CurseForge 同屏切换，按游戏版本和加载器筛选。必填前置一键跳转，镜像失效自动回退。</p>
+          <div class="feature-tags"><span>CurseForge</span><span>Modrinth</span><span>前置跳转</span></div>
+        </article>
+        <article class="feature-card reveal">
+          <div class="feature-icon"><svg class="icon"><use href="#i-cube"></use></svg></div>
+          <span class="feature-no">02</span>
+          <h3>版本隔离，各住各窝</h3>
+          <p>每个游戏版本拥有独立的 mods、存档和配置目录。迁移版本或加载器时，猫猫会把要带走的东西整理好。</p>
+          <div class="feature-tags"><span>Fabric</span><span>Forge</span><span>NeoForge</span></div>
+        </article>
+        <article class="feature-card reveal">
+          <div class="feature-icon"><svg class="icon"><use href="#i-users"></use></svg></div>
+          <span class="feature-no">03</span>
+          <h3>好友与联机房间</h3>
+          <p>虚拟账户、好友邀请和樱花穿透房间放在一起。好友可以直接进入房间，不必再手抄一长串地址。</p>
+          <div class="feature-tags"><span>房间号</span><span>好友</span><span>穿透</span></div>
+        </article>
+        <article class="feature-card reveal">
+          <div class="feature-icon"><svg class="icon"><use href="#i-server"></use></svg></div>
+          <span class="feature-no">04</span>
+          <h3>服务端与自动更新</h3>
+          <p>Paper、Spigot、Fabric、Forge、NeoForge 服务端统一管理。启动器更新时只替换代码，不碰你的世界。</p>
+          <div class="feature-tags"><span>服务端</span><span>更新保留数据</span><span>SHA-256</span></div>
+        </article>
+      </div>
+    </section>
+
+    <section class="section release-section" id="release">
+      <div class="section-head reveal">
+        <span class="kicker">LATEST RELEASE</span>
+        <h2>猫猫快递，<br>这一箱是更新。</h2>
+        <p>版本清单与下载文件由本页面的 update.json 驱动，启动器读取同一份清单。</p>
+      </div>
+
+      <div class="release-card reveal">
+        <div class="release-main">
+          <div class="release-top">
+            <span class="tag">STABLE</span>
+            <span class="release-date">发布于 <b data-date>2026-10-23</b></span>
+          </div>
+          <h3><span class="release-v">v<span data-version>1.9.13</span></span><span class="release-name">猫猫快递</span></h3>
+          <ul class="release-notes" id="release-notes">
+            <li>新增启动器更新检测：启动时自动检查，也可以在设置里手动检查。</li>
+            <li>新增 DKL 下载站，集中放置最新版本、更新包和校验信息。</li>
+            <li>更新只替换启动器代码，游戏版本、Mod、账户、好友和设置原样保留。</li>
+            <li>CurseForge 模组源继续可用，支持前置跳转与镜像回退。</li>
+          </ul>
+          <div class="release-actions">
+            <a class="btn btn-primary" href="downloads/DarkittenLauncher-1.9.13-source.zip" data-source-download>
+              <svg class="icon"><use href="#i-download"></use></svg>
+              下载完整版本 <small data-size>约 1.1 MB</small>
+            </a>
+            <a class="btn btn-ghost" data-update-download href="downloads/DKL-1.9.13-update.zip">仅下载更新包 <span data-update-size></span></a>
+          </div>
+        </div>
+        <aside class="release-aside">
+          <div class="integrity">
+            <div class="integrity-head"><svg class="icon"><use href="#i-hash"></use></svg><span>SHA-256 · 更新包</span></div>
+            <code data-sha>等待读取更新清单…</code>
+            <button class="copy-btn" type="button" data-copy-sha><svg class="icon"><use href="#i-copy"></use></svg>复制</button>
+          </div>
+          <div class="mini-row"><span>更新包</span><a data-update-download href="downloads/DKL-1.9.13-update.zip">DKL-1.9.13-update.zip</a></div>
+          <div class="mini-row"><span>更新清单</span><a href="update.json">update.json</a></div>
+          <div class="mini-row"><span>完整包</span><a data-source-download href="downloads/DarkittenLauncher-1.9.13-source.zip">source.zip</a></div>
+          <div class="mini-row"><span>源码 TXT</span><a data-source-txt href="downloads/DarkittenLauncher-1.9.13-source.txt">source.txt</a></div>
+          <p class="aside-note">启动器会先校验 SHA-256，再解压并替换代码。校验失败的文件会被删除。</p>
+        </aside>
+      </div>
+    </section>
+
+    <section class="section safety-section" id="safety">
+      <div class="safety-grid">
+        <div class="code-panel reveal">
+          <div class="code-head"><span class="dots"><i></i><i></i><i></i></span><span>updates/apply.log</span></div>
+          <pre><code><span class="c"># 更新时只会替换</span>
+<span class="g">app.py</span>
+<span class="g">stellar/</span>
+<span class="g">assets/</span>
+<span class="g">requirements.txt</span>
+
+<span class="c"># 永远不会碰</span>
+<span class="p">config.json</span>      <span class="m">账户 + 设置</span>
+<span class="p">social.json</span>      <span class="m">好友 + 房间</span>
+<span class="p">minecraft/</span>       <span class="m">版本 + 存档 + Mod</span>
+<span class="p">skins/</span>           <span class="m">皮肤</span>
+<span class="p">servers/</span>         <span class="m">服务端</span>
+<span class="p">logs/</span>            <span class="m">运行日志</span></code></pre>
+          <div class="code-foot"><span class="pulse"></span>旧代码会备份到 updates/backup-*</div>
+        </div>
+        <div class="safety-copy reveal">
+          <span class="kicker">DATA SAFETY</span>
+          <h2>更新不是重装。</h2>
+          <p>启动器退出后，独立的更新脚本会等待进程释放文件，只替换代码，并保留一份旧代码备份。账户令牌、好友列表、每个版本的 Mod 和存档都不会被覆盖。</p>
+          <ul class="check-list">
+            <li><svg class="icon"><use href="#i-check"></use></svg>SHA-256 校验通过后才开始解压</li>
+            <li><svg class="icon"><use href="#i-check"></use></svg>防路径穿越的安全解压</li>
+            <li><svg class="icon"><use href="#i-check"></use></svg>替换失败自动回滚旧代码</li>
+            <li><svg class="icon"><use href="#i-check"></use></svg>更新完成后自动重新打开启动器</li>
+          </ul>
+          <div class="safety-badge"><svg class="icon"><use href="#i-shield"></use></svg><span>你的世界，猫猫不碰。</span></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section download-section" id="download">
+      <div class="download-card reveal">
+        <div class="download-copy">
+          <span class="kicker">DOWNLOAD</span>
+          <h2>把猫猫带回家。</h2>
+          <p>下载完整源码包，解压后双击 <code>启动.bat</code>。首次运行需要 Python 3.10+ 与 PySide6，Windows 10 / 11 可直接使用。</p>
+        </div>
+        <div class="download-actions">
+          <a class="btn btn-primary big" href="downloads/DarkittenLauncher-1.9.13-source.zip" data-source-download>
+            <svg class="icon"><use href="#i-download"></use></svg>
+            下载 DKL <span data-version>1.9.13</span>
+          </a>
+          <a class="btn btn-ghost" data-update-download href="downloads/DKL-1.9.13-update.zip">仅下载更新包</a>
+          <a class="btn btn-ghost" data-source-txt href="downloads/DarkittenLauncher-1.9.13-source.txt">源码 TXT</a>
+        </div>
+        <div class="download-meta">
+          <span>完整包 <strong data-size>约 1.1 MB</strong></span>
+          <span>更新包 <strong data-update-size>读取中…</strong></span>
+          <span>源码 TXT <strong data-source-txt-size>读取中…</strong></span>
+          <span>Windows / 源码</span>
+          <span>开发者 LFELKEEA</span>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div class="footer-brand">
+      <img src="assets/chibi_face.png" alt="">
+      <div><strong>Darkitten Launcher</strong><span>恶魔小猫的秘密基地</span></div>
+    </div>
+    <p>开发者 LFELKEEA · <a href="mailto:lfel278623@outlook.com">lfel278623@outlook.com</a><br>非 Mojang 或 Microsoft 官方产品。Minecraft 是 Mojang Studios 的商标。</p>
+    <div class="footer-links">
+      <a href="update.json">更新清单</a>
+      <a data-source-txt href="downloads/DarkittenLauncher-1.9.13-source.txt">源码 TXT</a>
+      <button class="footer-link" type="button" data-feedback-open>反馈 Bug</button>
+      <a href="#safety">数据安全</a>
+      <a href="#top">回到顶部</a>
+    </div>
+  </footer>
+
+  <div class="modal" id="feedbackModal" hidden>
+    <div class="modal-backdrop" data-feedback-close></div>
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="feedbackTitle">
+      <button class="modal-close" type="button" data-feedback-close aria-label="关闭反馈窗口">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+      </button>
+      <span class="kicker">BUG REPORT</span>
+      <h2 id="feedbackTitle">猫猫收到一只虫子。</h2>
+      <p class="modal-lede">描述发生了什么、你期待什么，以及能否稳定复现。带版本号的信息最有用。</p>
+      <form id="feedbackForm" class="feedback-form" novalidate>
+        <div class="form-grid">
+          <label>问题类型
+            <select name="type">
+              <option value="bug">Bug / 崩溃</option>
+              <option value="ui">界面 / 显示</option>
+              <option value="download">下载 / 安装</option>
+              <option value="update">更新 / 启动</option>
+              <option value="suggestion">功能建议</option>
+              <option value="other">其他</option>
+            </select>
+          </label>
+          <label>启动器版本
+            <input name="version" value="1.9.13" readonly>
+          </label>
+        </div>
+        <label>一句话标题
+          <input name="title" type="text" maxlength="80" required placeholder="例如：安装 1.21.1 NeoForge 后启动报错">
+        </label>
+        <label>详细描述
+          <textarea name="description" rows="6" maxlength="4000" required placeholder="操作步骤、看到的报错、复现频率。请勿填写账号密码或令牌。"></textarea>
+        </label>
+        <label>联系方式（可选）
+          <input name="contact" type="text" maxlength="120" placeholder="邮箱、QQ 或论坛 ID">
+        </label>
+        <label class="hp-field" aria-hidden="true">不要填写这一项
+          <input name="website" type="text" tabindex="-1" autocomplete="off">
+        </label>
+        <div class="form-foot">
+          <span class="form-hint">不会自动收集账号、令牌或存档内容。公开站点会转为发送到开发者邮箱。</span>
+          <button class="btn btn-primary" type="submit" id="feedbackSubmit">提交反馈</button>
+        </div>
+        <p class="form-status" id="feedbackStatus" role="status" aria-live="polite"></p>
+      </form>
+    </div>
+  </div>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+  <script src="app.js"></script>
+</body>
+</html>
