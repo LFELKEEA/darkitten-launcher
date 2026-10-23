@@ -1,5 +1,5 @@
 ﻿Darkitten Launcher 1.9.13 完整源代码
-生成时间：2026-10-24 00:30:21
+生成时间：2026-10-24 00:33:03
 文本文件：103
 ================================================================================
 目录
@@ -38588,6 +38588,7 @@ import os
 import re
 import shutil
 import subprocess
+import time
 import zipfile
 from datetime import date, datetime
 from pathlib import Path
@@ -38792,7 +38793,16 @@ def gh_api(
     if result.returncode != 0:
         return {}
     text = result.stdout.strip()
-    return json.loads(text) if text else {}
+    if not text:
+        if check:
+            raise SystemExit(f"GitHub API 返回空响应：{endpoint}")
+        return {}
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError as exc:
+        if check:
+            raise SystemExit(f"GitHub API 返回无效 JSON：{endpoint}\n{text[:400]}") from exc
+        return {}
 
 
 def ensure_repo(gh: str, repo: str) -> str:
@@ -38820,7 +38830,72 @@ def ensure_repo(gh: str, repo: str) -> str:
     return target
 
 
-def deploy_github(version: str, repo: str) -> str:
+def repo_is_empty(gh: str, full: str) -> bool:
+    return not bool(gh_api(gh, f"repos/{full}/git/refs", check=False))
+
+
+def upload_tree(
+    gh: str,
+    full: str,
+    branch: str,
+    files: list[tuple[str, Path]],
+    message: str,
+) -> None:
+    if repo_is_empty(gh, full):
+        # Git Data API 在完全空的仓库上会返回 409，先用 Contents API 建立首个提交。
+        gh_api(
+            gh, f"repos/{full}/contents/.nojekyll", "PUT",
+            {
+                "message": "chore: initialize repository",
+                "content": base64.b64encode(b"\n").decode("ascii"),
+            },
+        )
+
+    ref = gh_api(gh, f"repos/{full}/git/ref/heads/{branch}", check=False)
+    parent = str(ref.get("object", {}).get("sha") or "") or None
+
+    entries: list[dict] = []
+    for relative, path in files:
+        content = base64.b64encode(path.read_bytes()).decode("ascii")
+        blob: dict = {}
+        for attempt in range(3):
+            try:
+                blob = gh_api(
+                    gh, f"repos/{full}/git/blobs", "POST",
+                    {"content": content, "encoding": "base64"},
+                )
+                break
+            except SystemExit:
+                if attempt == 2:
+                    raise
+                time.sleep(2)
+        entries.append(
+            {"path": relative, "mode": "100644", "type": "blob", "sha": blob["sha"]}
+        )
+
+    # 不传 base_tree，整棵树按本次文件列表重建，旧版本文件不会残留。
+    tree = gh_api(gh, f"repos/{full}/git/trees", "POST", {"tree": entries})
+    commit = gh_api(
+        gh, f"repos/{full}/git/commits", "POST",
+        {
+            "message": message,
+            "tree": tree["sha"],
+            "parents": [parent] if parent else [],
+        },
+    )
+    if parent:
+        gh_api(
+            gh, f"repos/{full}/git/refs/heads/{branch}", "PATCH",
+            {"sha": commit["sha"], "force": False},
+        )
+    else:
+        gh_api(
+            gh, f"repos/{full}/git/refs", "POST",
+            {"ref": f"refs/heads/{branch}", "sha": commit["sha"]},
+        )
+
+
+def deploy_github(version: str, repo: str, source: Path) -> str:
     gh = find_gh()
     auth = run_gh(gh, "auth", "status", check=False)
     if auth.returncode != 0:
@@ -38829,54 +38904,21 @@ def deploy_github(version: str, repo: str) -> str:
     full = ensure_repo(gh, repo)
     (PUBLIC / ".nojekyll").write_text("", encoding="utf-8")
 
-    ref = gh_api(gh, f"repos/{full}/git/ref/heads/gh-pages", check=False)
-    parent = str(ref.get("object", {}).get("sha") or "") or None
-    if not parent:
-        # Git Data API 在完全空的仓库上会返回 409，先用 Contents API 建立首个提交。
-        gh_api(
-            gh, f"repos/{full}/contents/.nojekyll", "PUT",
-            {
-                "message": "chore: initialize pages branch",
-                "content": base64.b64encode(b"\n").decode("ascii"),
-            },
-        )
+    public_files = [
+        (path.relative_to(PUBLIC).as_posix(), path)
+        for path in sorted(PUBLIC.rglob("*"))
+        if path.is_file() and ".git" not in path.relative_to(PUBLIC).parts
+    ]
+    upload_tree(gh, full, "gh-pages", public_files, f"deploy: Darkitten Launcher {version}")
 
-    entries: list[dict] = []
-    for path in sorted(PUBLIC.rglob("*")):
-        if not path.is_file():
-            continue
-        relative = path.relative_to(PUBLIC).as_posix()
-        if ".git" in relative.split("/"):
-            continue
-        content = base64.b64encode(path.read_bytes()).decode("ascii")
-        blob = gh_api(
-            gh, f"repos/{full}/git/blobs", "POST",
-            {"content": content, "encoding": "base64"},
-        )
-        entries.append(
-            {"path": relative, "mode": "100644", "type": "blob", "sha": blob["sha"]}
-        )
-
-    # 不传 base_tree，整棵树按本次 public 内容重建，旧版本文件不会残留。
-    tree = gh_api(gh, f"repos/{full}/git/trees", "POST", {"tree": entries})
-    commit = gh_api(
-        gh, f"repos/{full}/git/commits", "POST",
-        {
-            "message": f"deploy: Darkitten Launcher {version}",
-            "tree": tree["sha"],
-            "parents": [parent] if parent else [],
-        },
+    source_repo_files = [
+        (relative.as_posix(), source / relative) for relative in source_files(source)
+    ]
+    source_repo_files.extend(
+        (f"website/{relative.as_posix()}", SITE / relative)
+        for relative in website_files()
     )
-    if parent:
-        gh_api(
-            gh, f"repos/{full}/git/refs/heads/gh-pages", "PATCH",
-            {"sha": commit["sha"], "force": False},
-        )
-    else:
-        gh_api(
-            gh, f"repos/{full}/git/refs", "POST",
-            {"ref": "refs/heads/gh-pages", "sha": commit["sha"]},
-        )
+    upload_tree(gh, full, "main", source_repo_files, f"source: Darkitten Launcher {version}")
 
     pages_payload = {"source": {"branch": "gh-pages", "path": "/"}}
     pages = gh_api(gh, f"repos/{full}/pages", check=False)
@@ -38972,7 +39014,7 @@ def build(source: Path, version: str, deploy: bool, repo: str) -> int:
     print("source txt sha256:", manifest["source_txt_sha256"])
 
     if deploy:
-        pages_url = deploy_github(version, repo)
+        pages_url = deploy_github(version, repo, source)
         print("pages url:", pages_url)
     return 0
 
@@ -40810,9 +40852,9 @@ body.modal-open { overflow: hidden; }
   "source_txt_url": "downloads/DarkittenLauncher-1.9.13-source.txt",
   "sha256": "74b184fbcda73e3329e898ccb910bd582e714b5218ca742f49ae2d06d6c674fd",
   "size": 977369,
-  "source_sha256": "1c6ce149f39222ef93a7be5f82abc64b6f18a09f8bbd67bf0e85b5fe08e7d61d",
-  "source_size": 1689455,
-  "source_txt_sha256": "d5d9ca3b1b03c3244038dce3428b701d6492edc97cad0c4fa458572bb5dd5b4e",
+  "source_sha256": "156a86000a1e9ad78eeefd17be7227e3e294f81c7cea14bc7bd82439a46945e7",
+  "source_size": 1689456,
+  "source_txt_sha256": "0005d8c23223eb359cc7dba2894f9c64463d530e7c2b3ffbeaa178f737aadbe6",
   "source_txt_size": 1498231
 }
 
