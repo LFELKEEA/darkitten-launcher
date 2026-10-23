@@ -1,0 +1,751 @@
+from __future__ import annotations
+
+from pathlib import Path
+
+from PySide6.QtCore import Qt
+from PySide6.QtWidgets import (
+    QCheckBox,
+    QFileDialog,
+    QFrame,
+    QGridLayout,
+    QHBoxLayout,
+    QLabel,
+    QLineEdit,
+    QProgressBar,
+    QPushButton,
+    QVBoxLayout,
+    QWidget,
+)
+
+from ..modrinth_pack import (
+    ModrinthPackInfo,
+    inspect_modrinth_pack,
+    looks_like_modrinth_pack,
+)
+from ..packs import (
+    CONTENT_LABELS,
+    PACK_EXTENSION,
+    PackError,
+    PackInfo,
+    PackOptions,
+    human_size,
+    inspect_pack,
+    normalize_version_id,
+    unique_version_id,
+)
+from ..paths import version_game_dir
+from ..versions import version_json_path
+from ..workers import (
+    ModrinthPackImportWorker,
+    PackExportWorker,
+    PackFetchWorker,
+    PackImportWorker,
+)
+from . import icons
+from .dialogs import ConfirmDialog, StyledDialog
+from .widgets import badge, colors, icon_button
+
+
+def _count_files(root: Path) -> int:
+    if not root.is_dir():
+        return 0
+    count = 0
+    try:
+        for path in root.rglob("*"):
+            if path.is_file():
+                count += 1
+    except OSError:
+        pass
+    return count
+
+
+class PackExportDialog(StyledDialog):
+    """把当前版本连同 mods / config 打包成 .dklpack。"""
+
+    def __init__(self, main, version_id: str) -> None:
+        super().__init__(main, "打包带走", "package", colors()["accent"], width=570)
+        self.main = main
+        self.version_id = version_id
+        self._worker: PackExportWorker | None = None
+        self._busy = False
+        self._result_path = ""
+
+        run_dir = version_game_dir(
+            self.main.config.game_path,
+            version_id,
+            self.main.config.version_isolation,
+        )
+        mods = _count_files(run_dir / "mods")
+        configs = _count_files(run_dir / "config") + _count_files(
+            run_dir / "defaultconfigs"
+        )
+
+        intro = QLabel(
+            f"把 <b>{version_id}</b> 装进猫猫的纸箱，"
+            "带去别的电脑也能一键还原。"
+        )
+        intro.setObjectName("DialogText")
+        intro.setWordWrap(True)
+        self.body.addWidget(intro)
+
+        state = QFrame()
+        state.setObjectName("SoftCard")
+        state.setAttribute(Qt.WA_StyledBackground, True)
+        state_box = QHBoxLayout(state)
+        state_box.setContentsMargins(12, 9, 12, 9)
+        state_box.setSpacing(10)
+        state_box.addWidget(badge(f"Mod {mods}", "purple"))
+        state_box.addWidget(badge(f"配置文件 {configs}", "blue"))
+        state_box.addStretch(1)
+        isolated = badge(
+            "版本隔离" if self.main.config.version_isolation else "共享目录",
+            "green" if self.main.config.version_isolation else "orange",
+        )
+        state_box.addWidget(isolated)
+        self.body.addWidget(state)
+
+        self.name_edit = QLineEdit(f"{version_id} 的猫猫整合包")
+        self.name_edit.setPlaceholderText("整合包名称")
+        self.name_edit.setMaxLength(80)
+        self.body.addWidget(self._field_label("整合包名称"))
+        self.body.addWidget(self.name_edit)
+
+        self.desc_edit = QLineEdit()
+        self.desc_edit.setPlaceholderText("写一句给接手的猫猫看的话（可选）")
+        self.desc_edit.setMaxLength(300)
+        self.body.addWidget(self._field_label("简介"))
+        self.body.addWidget(self.desc_edit)
+
+        self.body.addWidget(self._field_label("纸箱里还要装什么？"))
+        grid = QGridLayout()
+        grid.setHorizontalSpacing(16)
+        grid.setVerticalSpacing(8)
+        self.option_boxes: dict[str, QCheckBox] = {}
+        options = [
+            ("config", "config 配置", True),
+            ("defaultconfigs", "defaultconfigs", True),
+            ("resourcepacks", "资源包", False),
+            ("shaderpacks", "光影包", False),
+            ("saves", "存档", False),
+        ]
+        for index, (key, text, default) in enumerate(options):
+            box = QCheckBox(text)
+            box.setChecked(default)
+            box.setToolTip(
+                "存档可能包含大量区域文件，默认不打包，避免纸箱太重。"
+                if key == "saves"
+                else "会以文件夹结构原样放进整合包。"
+            )
+            self.option_boxes[key] = box
+            grid.addWidget(box, index // 3, index % 3)
+        mods_note = QLabel("mods 文件夹会自动包含，不需要额外勾选。")
+        mods_note.setObjectName("Tiny")
+        grid.addWidget(mods_note, 2, 0, 1, 3)
+        self.body.addLayout(grid)
+
+        note = QLabel(
+            "不会打包账户令牌、启动器配置或下载缓存。"
+            "导入时会自动补齐原版客户端、依赖库和资源文件。"
+        )
+        note.setObjectName("Tiny")
+        note.setWordWrap(True)
+        self.body.addWidget(note)
+
+        if not self.main.config.version_isolation:
+            warning = QLabel(
+                "版本隔离当前是关闭的：这里打包的是游戏目录下共享的 "
+                "mods 和 config，可能混入其他版本的文件。"
+            )
+            warning.setWordWrap(True)
+            warning.setStyleSheet(
+                f"color: {colors()['orange']}; font-size: 11px;"
+            )
+            self.body.addWidget(warning)
+
+        self.progress_box = QWidget()
+        progress_layout = QVBoxLayout(self.progress_box)
+        progress_layout.setContentsMargins(0, 0, 0, 0)
+        progress_layout.setSpacing(5)
+        self.progress = QProgressBar()
+        self.progress.setRange(0, 100)
+        self.progress.setTextVisible(False)
+        self.progress.setFixedHeight(7)
+        self.progress_text = QLabel("")
+        self.progress_text.setObjectName("Tiny")
+        self.progress_text.setWordWrap(True)
+        progress_layout.addWidget(self.progress)
+        progress_layout.addWidget(self.progress_text)
+        self.progress_box.setVisible(False)
+        self.body.addWidget(self.progress_box)
+
+        self.error = QLabel("")
+        self.error.setWordWrap(True)
+        self.error.setStyleSheet(f"color: {colors()['red']}; font-size: 11px;")
+        self.error.setVisible(False)
+        self.body.addWidget(self.error)
+
+        self.cancel_btn = self.add_button("取消", "Secondary", self._on_cancel)
+        self.pack_btn = self.add_button(
+            "选择位置并打包", "Primary", self._start_export
+        )
+
+    @staticmethod
+    def _field_label(text: str) -> QLabel:
+        label = QLabel(text)
+        label.setObjectName("SegLabel")
+        return label
+
+    def _options(self) -> PackOptions:
+        values = {key: box.isChecked() for key, box in self.option_boxes.items()}
+        return PackOptions(**values)
+
+    def _start_export(self) -> None:
+        if self._busy:
+            return
+        if not self.name_edit.text().strip():
+            self._show_error("给纸箱写个名字吧，空名字会被猫猫叼走。")
+            return
+        default_name = normalize_version_id(self.name_edit.text()) or self.version_id
+        path, _ = QFileDialog.getSaveFileName(
+            self,
+            "保存 DKL 整合包",
+            str(self.main.config.game_path / f"{default_name}{PACK_EXTENSION}"),
+            f"Darkitten 整合包 (*{PACK_EXTENSION})",
+        )
+        if not path:
+            return
+        output = Path(path)
+        if output.suffix.lower() != PACK_EXTENSION:
+            output = output.with_suffix(PACK_EXTENSION)
+        self._begin_busy()
+        worker = PackExportWorker(
+            self.main.config.game_path,
+            self.version_id,
+            output,
+            name=self.name_edit.text().strip(),
+            description=self.desc_edit.text().strip(),
+            options=self._options(),
+            isolated=self.main.config.version_isolation,
+            parent=self,
+        )
+        self._worker = worker
+        worker.progress.connect(self._on_progress)
+        worker.log_line.connect(self.main.log)
+        worker.finished.connect(self._on_finished)
+        worker.start()
+
+    def _begin_busy(self) -> None:
+        self._busy = True
+        self._hide_error()
+        self.name_edit.setEnabled(False)
+        self.desc_edit.setEnabled(False)
+        for box in self.option_boxes.values():
+            box.setEnabled(False)
+        self.progress.setValue(0)
+        self.progress_box.setVisible(True)
+        self.progress_text.setText("正在折纸箱…")
+        self.pack_btn.setEnabled(False)
+        self.cancel_btn.setText("取消打包")
+
+    def _on_progress(self, percent: int, message: str) -> None:
+        self.progress.setValue(percent)
+        self.progress_text.setText(message)
+
+    def _on_finished(self, success: bool, message: str, path: str) -> None:
+        self._busy = False
+        self._worker = None
+        self.progress.setValue(100 if success else 0)
+        if success:
+            self._result_path = path
+            self.progress_text.setText(message)
+            self.pack_btn.setText("完成")
+            self.pack_btn.setEnabled(True)
+            try:
+                self.pack_btn.clicked.disconnect()
+            except (RuntimeError, TypeError):
+                pass
+            self.pack_btn.clicked.connect(self.accept)
+            self.cancel_btn.setVisible(False)
+            self.main.log(message)
+            self.main.toast("整合包已经装进纸箱，喵。", "success")
+            return
+        self.progress_box.setVisible(False)
+        self.name_edit.setEnabled(True)
+        self.desc_edit.setEnabled(True)
+        for box in self.option_boxes.values():
+            box.setEnabled(True)
+        self.pack_btn.setEnabled(True)
+        self.pack_btn.setText("重新打包")
+        self.cancel_btn.setText("取消")
+        self._show_error(message or "打包失败")
+        self.main.log(f"打包失败：{message}")
+
+    def _show_error(self, text: str) -> None:
+        self.error.setText(text)
+        self.error.setVisible(True)
+
+    def _hide_error(self) -> None:
+        self.error.clear()
+        self.error.setVisible(False)
+
+    def _on_cancel(self) -> None:
+        if self._busy:
+            if not self._worker:
+                return
+            self._worker.cancel()
+            self.progress_text.setText("正在把纸箱收回来…")
+            self.cancel_btn.setEnabled(False)
+            return
+        self.reject()
+
+    def reject(self) -> None:
+        if self._busy:
+            dialog = ConfirmDialog(
+                self,
+                "停止打包",
+                "纸箱还没封好，现在离开会取消打包。确定吗？",
+                primary_text="停止打包",
+                secondary_text="继续",
+                icon_name="warning",
+                icon_color=colors()["orange"],
+            )
+            if not dialog.exec():
+                return
+            if self._worker:
+                self._worker.cancel()
+            self._busy = False
+        super().reject()
+
+    def result_path(self) -> str:
+        return self._result_path
+
+
+class PackImportDialog(StyledDialog):
+    """从本地文件或链接导入 .dklpack / .mrpack，并补齐原版依赖。"""
+
+    def __init__(self, main, initial_path: Path | str | None = None) -> None:
+        super().__init__(main, "领养整合包", "package", colors()["accent"], width=640)
+        self.main = main
+        self._info: PackInfo | ModrinthPackInfo | None = None
+        self._kind = ""
+        self._worker: (
+            PackImportWorker | ModrinthPackImportWorker | PackFetchWorker | None
+        ) = None
+        self._mode = "idle"
+        self._attempted_version_id = ""
+        self.imported_version = ""
+
+        intro = QLabel(
+            "把别人打包好的猫窝搬回来。选择本地 .dklpack、Modrinth "
+            "整合包（.mrpack / .zip），或粘贴下载链接，本喵会补齐原版与依赖。"
+        )
+        intro.setObjectName("DialogText")
+        intro.setWordWrap(True)
+        self.body.addWidget(intro)
+
+        local_label = QLabel("本地整合包")
+        local_label.setObjectName("SegLabel")
+        self.body.addWidget(local_label)
+        local_row = QHBoxLayout()
+        local_row.setSpacing(8)
+        self.path_edit = QLineEdit()
+        self.path_edit.setReadOnly(True)
+        self.path_edit.setPlaceholderText("还没有选择文件")
+        choose_btn = QPushButton("选择文件")
+        choose_btn.setObjectName("Secondary")
+        choose_btn.setIcon(icons.icon("folder", colors()["text2"], 15))
+        choose_btn.setCursor(Qt.PointingHandCursor)
+        choose_btn.clicked.connect(self._choose_file)
+        self.choose_btn = choose_btn
+        local_row.addWidget(self.path_edit, 1)
+        local_row.addWidget(choose_btn)
+        self.body.addLayout(local_row)
+
+        url_label = QLabel("或者从链接下载")
+        url_label.setObjectName("SegLabel")
+        self.body.addWidget(url_label)
+        url_row = QHBoxLayout()
+        url_row.setSpacing(8)
+        self.url_edit = QLineEdit()
+        self.url_edit.setPlaceholderText("https://…/某个整合包.dklpack 或 .mrpack")
+        self.url_edit.returnPressed.connect(self._download_url)
+        self.download_btn = QPushButton("下载并查看")
+        self.download_btn.setObjectName("Soft")
+        self.download_btn.setIcon(icons.icon("download", colors()["accent"], 15))
+        self.download_btn.setCursor(Qt.PointingHandCursor)
+        self.download_btn.clicked.connect(self._download_url)
+        url_row.addWidget(self.url_edit, 1)
+        url_row.addWidget(self.download_btn)
+        self.body.addLayout(url_row)
+
+        self.progress_box = QWidget()
+        progress_layout = QVBoxLayout(self.progress_box)
+        progress_layout.setContentsMargins(0, 0, 0, 0)
+        progress_layout.setSpacing(5)
+        self.progress = QProgressBar()
+        self.progress.setRange(0, 100)
+        self.progress.setTextVisible(False)
+        self.progress.setFixedHeight(7)
+        self.progress_text = QLabel("")
+        self.progress_text.setObjectName("Tiny")
+        self.progress_text.setWordWrap(True)
+        progress_layout.addWidget(self.progress)
+        progress_layout.addWidget(self.progress_text)
+        self.progress_box.setVisible(False)
+        self.body.addWidget(self.progress_box)
+
+        self.error = QLabel("")
+        self.error.setWordWrap(True)
+        self.error.setStyleSheet(f"color: {colors()['red']}; font-size: 11px;")
+        self.error.setVisible(False)
+        self.body.addWidget(self.error)
+
+        self.preview = QFrame()
+        self.preview.setObjectName("SoftCard")
+        self.preview.setAttribute(Qt.WA_StyledBackground, True)
+        preview_layout = QVBoxLayout(self.preview)
+        preview_layout.setContentsMargins(14, 12, 14, 12)
+        preview_layout.setSpacing(7)
+
+        head = QHBoxLayout()
+        head.setSpacing(7)
+        self.preview_name = QLabel("")
+        self.preview_name.setStyleSheet("font-size: 15px; font-weight: 800;")
+        head.addWidget(self.preview_name)
+        self.preview_loader = badge("", "purple")
+        self.preview_mc = badge("", "blue")
+        head.addWidget(self.preview_loader)
+        head.addWidget(self.preview_mc)
+        head.addStretch(1)
+        preview_layout.addLayout(head)
+
+        self.preview_meta = QLabel("")
+        self.preview_meta.setObjectName("Tiny")
+        self.preview_meta.setWordWrap(True)
+        preview_layout.addWidget(self.preview_meta)
+        self.preview_contents = QLabel("")
+        self.preview_contents.setObjectName("Tiny")
+        self.preview_contents.setWordWrap(True)
+        preview_layout.addWidget(self.preview_contents)
+        self.preview_desc = QLabel("")
+        self.preview_desc.setObjectName("Muted")
+        self.preview_desc.setWordWrap(True)
+        preview_layout.addWidget(self.preview_desc)
+        self.preview.setVisible(False)
+        self.body.addWidget(self.preview)
+
+        self.import_options = QWidget()
+        options_layout = QVBoxLayout(self.import_options)
+        options_layout.setContentsMargins(0, 0, 0, 0)
+        options_layout.setSpacing(6)
+        name_label = QLabel("导入后的版本名称（也是版本文件夹名）")
+        name_label.setObjectName("SegLabel")
+        options_layout.addWidget(name_label)
+        self.name_edit = QLineEdit()
+        self.name_edit.setPlaceholderText("例如：猫猫的 1.21.1 整合包")
+        self.name_edit.setMaxLength(64)
+        self.name_edit.textChanged.connect(self._clear_error)
+        options_layout.addWidget(self.name_edit)
+        self.name_hint = QLabel("")
+        self.name_hint.setObjectName("Tiny")
+        self.name_hint.setWordWrap(True)
+        options_layout.addWidget(self.name_hint)
+        self.overwrite = QCheckBox("覆盖目标版本中已经存在的 mods / config 文件")
+        self.overwrite.setToolTip(
+            "不勾选时会跳过同名文件，避免覆盖你原来的配置。"
+        )
+        options_layout.addWidget(self.overwrite)
+        self.import_options.setVisible(False)
+        self.body.addWidget(self.import_options)
+
+        self.cancel_btn = self.add_button("取消", "Secondary", self._on_cancel)
+        self.import_btn = self.add_button(
+            "导入猫窝", "Primary", self._start_import
+        )
+        self.import_btn.setEnabled(False)
+        if initial_path:
+            self._load_pack(Path(initial_path))
+
+    # ------------------------------------------------------------------
+    def _choose_file(self) -> None:
+        path, _ = QFileDialog.getOpenFileName(
+            self,
+            "选择整合包",
+            str(self.main.config.game_path),
+            "整合包 (*.dklpack *.mrpack *.zip);;所有文件 (*)",
+        )
+        if path:
+            self._load_pack(Path(path))
+
+    def _load_pack(self, path: Path) -> None:
+        self._info = None
+        self._kind = ""
+        dkl_error: Exception | None = None
+        info: PackInfo | ModrinthPackInfo
+        try:
+            info = inspect_pack(path)
+        except Exception as exc:
+            dkl_error = exc
+        else:
+            self._kind = "dkl"
+
+        if not self._kind:
+            if looks_like_modrinth_pack(path):
+                try:
+                    info = inspect_modrinth_pack(path)
+                except Exception as exc:
+                    self._show_error(f"Modrinth 整合包无法导入：{exc}")
+                    self.preview.setVisible(False)
+                    self.import_options.setVisible(False)
+                    self.import_btn.setEnabled(False)
+                    return
+                self._kind = "modrinth"
+            else:
+                self._show_error(str(dkl_error or "无法识别这个整合包"))
+                self.preview.setVisible(False)
+                self.import_options.setVisible(False)
+                self.import_btn.setEnabled(False)
+                return
+
+        self._info = info
+        self._attempted_version_id = ""
+        self.path_edit.setText(str(path))
+        self.progress_box.setVisible(False)
+        self._hide_error()
+        self.preview.setVisible(True)
+        self.import_options.setVisible(True)
+        self.preview_name.setText(info.name)
+        loader_text = info.loader or "原版"
+        if info.loader and info.loader_version:
+            loader_text += f" {info.loader_version}"
+        self.preview_loader.setText(loader_text)
+        self.preview_mc.setText(f"Minecraft {info.minecraft_version or '未知'}")
+        self.preview_loader.setVisible(bool(info.loader))
+        if self._kind == "modrinth":
+            self.preview_meta.setText(
+                f"来自 Modrinth · {info.total_files} 个文件 · "
+                f"下载约 {human_size(info.total_bytes)} · "
+                f"压缩包 {human_size(info.archive_bytes)}"
+            )
+        else:
+            created = (
+                info.created_at[:19].replace("T", " ")
+                if info.created_at
+                else "未知"
+            )
+            self.preview_meta.setText(
+                f"来自 {info.created_with or 'DKL'} · {created} · "
+                f"{info.total_files} 个文件 · 解压后 {human_size(info.total_bytes)} · "
+                f"压缩包 {human_size(info.archive_bytes)}"
+            )
+        parts = []
+        for key in ("mods", "config", "defaultconfigs", "resourcepacks", "shaderpacks", "saves"):
+            count = int(info.counts.get(key) or 0)
+            if count:
+                parts.append(f"{CONTENT_LABELS.get(key, key)} {count}")
+        self.preview_contents.setText("纸箱里装着：" + ("、".join(parts) or "只有版本信息"))
+        self.preview_contents.setVisible(bool(parts))
+        self.preview_desc.setText(info.description)
+        self.preview_desc.setVisible(bool(info.description))
+
+        default_id = unique_version_id(self.main.config.game_path, info.name)
+        self.name_edit.setText(default_id)
+        hint = "默认使用整合包名称；如果已存在同名版本会自动加序号。"
+        if self._kind == "modrinth":
+            hint += (
+                f" 导入时会安装 Minecraft {info.minecraft_version}"
+                + (
+                    f" + {info.loader} {info.loader_version}"
+                    if info.loader
+                    else ""
+                )
+                + "，并下载清单里的文件。"
+            )
+        if not self.main.config.version_isolation:
+            hint += "  版本隔离关闭，mods 会写入共享目录。"
+        self.name_hint.setText(hint)
+        self.import_btn.setEnabled(True)
+        self.import_btn.setText("导入猫窝")
+
+    def _download_url(self) -> None:
+        if self._mode != "idle":
+            return
+        url = self.url_edit.text().strip()
+        if not url:
+            self._show_error("链接是空的，猫猫找不到纸箱。")
+            return
+        self._hide_error()
+        self._begin_busy("fetch")
+        worker = PackFetchWorker(
+            url,
+            threads=self.main.config.download_threads,
+            inspect_result=False,
+            parent=self,
+        )
+        self._worker = worker
+        worker.progress.connect(self._on_progress)
+        worker.finished.connect(self._on_fetch_finished)
+        worker.start()
+
+    def _on_fetch_finished(self, path: str, error: str) -> None:
+        self._worker = None
+        self._mode = "idle"
+        self._set_controls_enabled(True)
+        self.progress_box.setVisible(False)
+        self.cancel_btn.setText("取消")
+        if error:
+            self._show_error(error)
+            return
+        self.progress_text.setText("下载完成")
+        self._load_pack(Path(path))
+
+    # ------------------------------------------------------------------
+    def _start_import(self) -> None:
+        if self._mode != "idle" or not self._info:
+            return
+        target = normalize_version_id(self.name_edit.text())
+        if not target:
+            self._show_error("导入名称不能为空。")
+            return
+        version_dir = self.main.config.game_path / "versions" / target
+        resume = bool(
+            self._attempted_version_id
+            and self._attempted_version_id == target
+            and version_json_path(self.main.config.game_path, target).is_file()
+        )
+        if version_dir.exists() and not resume:
+            suggestion = unique_version_id(self.main.config.game_path, target)
+            self.name_edit.setText(suggestion)
+            self._show_error(
+                f"版本 {target} 已经存在。可以改用 {suggestion}，或先删除旧版本。"
+            )
+            return
+        self._hide_error()
+        self._begin_busy("import")
+        if self._kind == "modrinth":
+            worker: PackImportWorker | ModrinthPackImportWorker = (
+                ModrinthPackImportWorker(
+                    self._info.path,
+                    self.main.config.game_path,
+                    target,
+                    java_path=self.main.config.java_path,
+                    overwrite=self.overwrite.isChecked(),
+                    resume=resume,
+                    isolated=self.main.config.version_isolation,
+                    source=self.main.config.download_source,
+                    threads=self.main.config.download_threads,
+                    parent=self,
+                )
+            )
+        else:
+            worker = PackImportWorker(
+                self._info.path,
+                self.main.config.game_path,
+                target,
+                overwrite=self.overwrite.isChecked(),
+                resume=resume,
+                isolated=self.main.config.version_isolation,
+                source=self.main.config.download_source,
+                threads=self.main.config.download_threads,
+                parent=self,
+            )
+        self._worker = worker
+        worker.progress.connect(self._on_progress)
+        worker.log_line.connect(self.main.log)
+        worker.finished.connect(self._on_import_finished)
+        worker.start()
+
+    def _on_import_finished(self, success: bool, message: str, version_id: str) -> None:
+        self._worker = None
+        self._mode = "idle"
+        if success:
+            self.imported_version = version_id
+            self.progress.setValue(100)
+            self.progress_text.setText(message)
+            self.main.refresh_versions()
+            self.main.log(f"整合包导入完成：{version_id}")
+            self.main.toast("猫窝已经搬好，去版本列表看看喵。", "success")
+            self.accept()
+            return
+
+        self._set_controls_enabled(True)
+        self.progress_box.setVisible(False)
+        self.cancel_btn.setText("取消")
+        self.import_btn.setEnabled(True)
+        self.import_btn.setText("重新导入")
+        exists = version_json_path(
+            self.main.config.game_path,
+            normalize_version_id(self.name_edit.text()),
+        ).is_file()
+        if exists:
+            self._attempted_version_id = normalize_version_id(self.name_edit.text())
+            self.main.refresh_versions()
+            message = (
+                f"{message}\n已保留版本骨架，可以再次点击“重新导入”继续补全；"
+                "已下载的文件不会重复下载。"
+            )
+        self._show_error(message or "导入失败")
+        self.main.log(f"整合包导入失败：{message}")
+
+    def _begin_busy(self, mode: str) -> None:
+        self._mode = mode
+        self._hide_error()
+        self._set_controls_enabled(False)
+        self.progress.setValue(0)
+        self.progress_box.setVisible(True)
+        self.progress_text.setText(
+            "正在下载纸箱…" if mode == "fetch" else "正在给猫窝腾位置…"
+        )
+        self.cancel_btn.setText("取消下载" if mode == "fetch" else "取消导入")
+        self.cancel_btn.setEnabled(True)
+        self.import_btn.setEnabled(False)
+
+    def _set_controls_enabled(self, enabled: bool) -> None:
+        self.choose_btn.setEnabled(enabled)
+        self.download_btn.setEnabled(enabled)
+        self.url_edit.setEnabled(enabled)
+        self.name_edit.setEnabled(enabled)
+        self.overwrite.setEnabled(enabled)
+        self.import_btn.setEnabled(enabled and self._info is not None)
+
+    def _on_progress(self, percent: int, message: str) -> None:
+        self.progress.setValue(percent)
+        self.progress_text.setText(message)
+
+    def _on_cancel(self) -> None:
+        if self._mode != "idle" and self._worker:
+            self.cancel_btn.setEnabled(False)
+            self.progress_text.setText("正在收回猫爪…")
+            self._worker.cancel()  # type: ignore[attr-defined]
+            return
+        self.reject()
+
+    def _show_error(self, text: str) -> None:
+        self.error.setText(text)
+        self.error.setVisible(True)
+
+    def _clear_error(self) -> None:
+        self.error.clear()
+        self.error.setVisible(False)
+
+    def _hide_error(self) -> None:
+        self._clear_error()
+
+    def reject(self) -> None:
+        if self._mode != "idle":
+            dialog = ConfirmDialog(
+                self,
+                "停止当前任务",
+                "猫猫还在搬纸箱，现在离开会中断操作。已下载的临时文件可能保留。"
+                "确定停止吗？",
+                primary_text="停止",
+                secondary_text="继续",
+                icon_name="warning",
+                icon_color=colors()["orange"],
+            )
+            if not dialog.exec():
+                return
+            if self._worker:
+                self._worker.cancel()  # type: ignore[attr-defined]
+            self._mode = "idle"
+        super().reject()

@@ -1,0 +1,194 @@
+from __future__ import annotations
+
+import json
+import os
+import sys
+from dataclasses import asdict, dataclass, field, fields
+from pathlib import Path
+from typing import Any
+
+APP_NAME = "Darkitten Launcher"
+APP_NAME_EN = "Darkitten Launcher"
+APP_SHORT_NAME = "DKL"
+APP_TAGLINE = "恶魔小猫的秘密基地"
+APP_AUTHOR = "LFELKEEA"
+APP_EMAIL = "lfel278623@outlook.com"
+APP_VERSION = "1.9.13"
+# 保持旧的 APP_ID 以兼容已加密的账户 / 樱花密钥配置。
+APP_ID = "StellarLauncher"
+DEFAULT_UPDATE_URL = "https://lfelkeea.github.io/darkitten-launcher/update.json"
+LEGACY_UPDATE_URLS = {
+    "http://127.0.0.1:8765/update.json",
+    "http://localhost:8765/update.json",
+    "https://darkitten-launcher.pages.dev/update.json",
+}
+
+if getattr(sys, "frozen", False):
+    APP_DIR = Path(sys.executable).resolve().parent
+else:
+    APP_DIR = Path(__file__).resolve().parent.parent
+
+CONFIG_PATH = APP_DIR / "config.json"
+LOG_DIR = APP_DIR / "logs"
+LOG_FILE = LOG_DIR / "launcher.log"
+
+
+def default_game_dir() -> str:
+    """新安装默认把游戏目录放在启动器文件夹内。"""
+    return str(APP_DIR / "minecraft")
+
+
+@dataclass
+class Config:
+    game_dir: str = ""
+    java_path: str = ""
+    memory_mb: int = 4096
+    jvm_args: str = ""
+    download_source: str = "auto"
+    download_threads: int = 8
+    theme: str = "dark"
+    last_version: str = ""
+    player_name: str = "Steve"
+    window_width: int = 1180
+    window_height: int = 760
+    auto_complete: bool = True
+    version_isolation: bool = True
+    shortcut_offered: bool = False
+    microsoft_client_id: str = ""
+    microsoft_email: str = ""
+    account: dict[str, Any] = field(default_factory=dict)
+    skin_path: str = ""
+    skin_variant: str = "classic"
+    sakura_token: str = ""
+    sakura_frpc_path: str = ""
+    sakura_node_id: int = 0
+    sakura_tunnel_id: int = 0
+    update_url: str = DEFAULT_UPDATE_URL
+    update_auto_check: bool = True
+    update_skipped_version: str = ""
+    update_last_check: str = ""
+
+    def __post_init__(self) -> None:
+        if not self.game_dir:
+            self.game_dir = default_game_dir()
+
+    @property
+    def game_path(self) -> Path:
+        return Path(os.path.expandvars(self.game_dir)).expanduser()
+
+    def version_game_path(self, version_id: str) -> Path:
+        from .paths import version_game_dir
+
+        return version_game_dir(
+            self.game_path, version_id, self.version_isolation
+        )
+
+    def mods_path(self, version_id: str = "") -> Path:
+        return self.version_game_path(version_id) / "mods"
+
+    @classmethod
+    def load(cls) -> "Config":
+        data: dict = {}
+        try:
+            if CONFIG_PATH.exists():
+                data = json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
+        except Exception:
+            data = {}
+
+        known = {f.name for f in fields(cls)}
+        clean = {k: v for k, v in data.items() if k in known}
+        cfg = cls(**clean)
+
+        # 1.6.x 及更早版本没有线程设置；旧配置里的 BMCLAPI 单源容易在
+        # 镜像不稳定时拖慢整个安装，这里一次性迁移到智能加速。
+        if "download_threads" not in data and cfg.download_source == "bmclapi":
+            cfg.download_source = "auto"
+
+        if not str(cfg.player_name).strip():
+            cfg.player_name = "Steve"
+        try:
+            cfg.memory_mb = max(512, min(65536, int(cfg.memory_mb)))
+        except Exception:
+            cfg.memory_mb = 4096
+        if cfg.theme not in ("light", "dark"):
+            cfg.theme = "light"
+        if cfg.download_source not in ("auto", "official", "bmclapi"):
+            cfg.download_source = "auto"
+        try:
+            cfg.download_threads = max(1, min(16, int(cfg.download_threads)))
+        except Exception:
+            cfg.download_threads = 8
+        cfg.version_isolation = bool(cfg.version_isolation)
+        cfg.shortcut_offered = bool(cfg.shortcut_offered)
+        cfg.microsoft_client_id = str(cfg.microsoft_client_id or "").strip()
+        cfg.microsoft_email = str(cfg.microsoft_email or "").strip()
+        if not isinstance(cfg.account, dict):
+            cfg.account = {}
+        cfg.skin_path = str(cfg.skin_path or "").strip()
+        cfg.skin_variant = (
+            "slim" if str(cfg.skin_variant or "").lower() == "slim" else "classic"
+        )
+        cfg.sakura_token = str(cfg.sakura_token or "").strip()
+        cfg.sakura_frpc_path = str(cfg.sakura_frpc_path or "").strip()
+        try:
+            cfg.sakura_node_id = max(0, int(cfg.sakura_node_id))
+        except Exception:
+            cfg.sakura_node_id = 0
+        try:
+            cfg.sakura_tunnel_id = max(0, int(cfg.sakura_tunnel_id))
+        except Exception:
+            cfg.sakura_tunnel_id = 0
+        cfg.update_url = str(cfg.update_url or DEFAULT_UPDATE_URL).strip()
+        if cfg.update_url in LEGACY_UPDATE_URLS:
+            cfg.update_url = DEFAULT_UPDATE_URL
+        cfg.update_auto_check = bool(cfg.update_auto_check)
+        cfg.update_skipped_version = str(
+            cfg.update_skipped_version or ""
+        ).strip()
+        cfg.update_last_check = str(cfg.update_last_check or "").strip()
+        return cfg
+
+    @property
+    def sakura_access_token(self) -> str:
+        from .secret import unprotect
+
+        return unprotect(self.sakura_token)
+
+    def set_sakura_token(self, token: str) -> None:
+        from .secret import protect
+
+        self.sakura_token = protect(str(token or "").strip())
+
+    def save(self) -> None:
+        try:
+            CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
+            tmp = CONFIG_PATH.with_name(CONFIG_PATH.name + ".tmp")
+            tmp.write_text(
+                json.dumps(asdict(self), ensure_ascii=False, indent=2),
+                encoding="utf-8",
+            )
+            os.replace(tmp, CONFIG_PATH)
+        except Exception:
+            pass
+
+
+def ensure_dirs() -> None:
+    LOG_DIR.mkdir(parents=True, exist_ok=True)
+    config = Config.load()
+    try:
+        config.game_path.mkdir(parents=True, exist_ok=True)
+    except Exception:
+        pass
+
+
+def append_log(message: str) -> None:
+    """把启动器日志写入文件；失败时静默忽略。"""
+    try:
+        LOG_DIR.mkdir(parents=True, exist_ok=True)
+        from datetime import datetime
+
+        stamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        with LOG_FILE.open("a", encoding="utf-8") as fp:
+            fp.write(f"[{stamp}] {message}\n")
+    except Exception:
+        pass
