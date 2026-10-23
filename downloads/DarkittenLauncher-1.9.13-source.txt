@@ -1,5 +1,5 @@
 ﻿Darkitten Launcher 1.9.13 完整源代码
-生成时间：2026-10-24 00:28:13
+生成时间：2026-10-24 00:30:21
 文本文件：103
 ================================================================================
 目录
@@ -39614,6 +39614,7 @@ if __name__ == "__main__":
     <div class="footer-links">
       <a href="update.json">更新清单</a>
       <a data-source-txt href="downloads/DarkittenLauncher-1.9.13-source.txt">源码 TXT</a>
+      <a href="https://github.com/LFELKEEA/darkitten-launcher" target="_blank" rel="noopener">GitHub 仓库</a>
       <button class="footer-link" type="button" data-feedback-open>反馈 Bug</button>
       <a href="#safety">数据安全</a>
       <a href="#top">回到顶部</a>
@@ -40809,10 +40810,10 @@ body.modal-open { overflow: hidden; }
   "source_txt_url": "downloads/DarkittenLauncher-1.9.13-source.txt",
   "sha256": "74b184fbcda73e3329e898ccb910bd582e714b5218ca742f49ae2d06d6c674fd",
   "size": 977369,
-  "source_sha256": "f7e03eef4cabf08e02dee67df2c1c14a9f66ddb3efad5531426e99bc5e1d1d5b",
-  "source_size": 1689320,
-  "source_txt_sha256": "bb8f35f1ea16f14cd2cac11efa38efc751adb9af5416a244547c8fdf72121f1d",
-  "source_txt_size": 1497973
+  "source_sha256": "1c6ce149f39222ef93a7be5f82abc64b6f18a09f8bbd67bf0e85b5fe08e7d61d",
+  "source_size": 1689455,
+  "source_txt_sha256": "d5d9ca3b1b03c3244038dce3428b701d6492edc97cad0c4fa458572bb5dd5b4e",
+  "source_txt_size": 1498231
 }
 
 
