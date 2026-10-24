@@ -10,10 +10,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from PySide6.QtWidgets import QApplication, QPushButton, QWidget
 
-from stellar.config import Config
-from stellar.servers import ServerInfo
-import stellar.ui.server_addons as server_addons
-from stellar.ui.server_addons import ServerAddonDialog
+from darkitten.config import Config
+from darkitten.servers import ServerInfo
+import darkitten.ui.server_addons as server_addons
+from darkitten.ui.server_addons import ServerAddonDialog
 
 
 class FakeMain(QWidget):

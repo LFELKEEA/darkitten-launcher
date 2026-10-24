@@ -16,19 +16,19 @@ if str(PROJECT) not in sys.path:
 
 from PySide6.QtWidgets import QApplication, QWidget
 
-from stellar import curseforge as cf
-from stellar import modrinth as mr
-from stellar import workers as wk
-from stellar.config import Config
-from stellar.curseforge_pack import (
+from darkitten import curseforge as cf
+from darkitten import modrinth as mr
+from darkitten import workers as wk
+from darkitten.config import Config
+from darkitten.curseforge_pack import (
     CurseForgePackError,
     import_curseforge_pack,
     inspect_curseforge_pack,
     looks_like_curseforge_pack,
 )
-from stellar.versions import VersionSummary
-import stellar.ui.mod_dialog as mod_dialog
-from stellar.ui.mod_dialog import ModBrowserDialog
+from darkitten.versions import VersionSummary
+import darkitten.ui.mod_dialog as mod_dialog
+from darkitten.ui.mod_dialog import ModBrowserDialog
 
 
 def check(label: str, value: bool, detail: str = "") -> bool:
@@ -615,7 +615,7 @@ def ui_tests() -> bool:
         f"source={getattr(worker, 'source', '')} type={getattr(worker, 'content_type', '')}",
     )
 
-    from stellar.ui.pack_dialog import PackImportDialog
+    from darkitten.ui.pack_dialog import PackImportDialog
 
     pack = root / "demo.zip"
     make_pack(pack)

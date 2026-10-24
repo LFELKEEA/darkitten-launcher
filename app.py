@@ -14,10 +14,10 @@ from PySide6.QtCore import QTimer, Qt
 from PySide6.QtGui import QFont
 from PySide6.QtWidgets import QApplication
 
-from stellar.config import APP_NAME, LOG_DIR, Config, ensure_dirs
-from stellar.ui import icons, theme
-from stellar.ui.animations import SplashScreen
-from stellar.ui.main_window import MainWindow
+from darkitten.config import APP_NAME, LOG_DIR, Config, ensure_dirs
+from darkitten.ui import icons, theme
+from darkitten.ui.animations import SplashScreen
+from darkitten.ui.main_window import MainWindow
 
 
 def _install_exception_hook() -> None:

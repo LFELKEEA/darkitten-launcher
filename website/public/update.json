@@ -1,23 +1,21 @@
 {
-  "version": "1.9.14",
+  "version": "1.9.15",
   "released": "2026-10-24",
   "notes": [
-    "加载器与游戏版本拆成独立界面：版本设置里可绑定已装好的加载器，也能直接原版启动。",
-    "加载器页面可以配置每个加载器供哪些游戏版本使用，解绑后不会被自动重新绑定。",
-    "新增整合包、材质与光影下载：Modrinth 与 CurseForge 双源，整合包下载完成后自动进入导入。",
-    "新增 CurseForge 整合包导入：自动安装对应 Minecraft 与加载器，下载清单文件并解压覆盖内容。",
-    "材质与光影会按版本隔离写入各自游戏版本的 resourcepacks / shaderpacks 目录。",
-    "清理旧下载源与旧名称 StellarLauncher，更新源固定为 GitHub Pages。",
-    "修复加载器安装流程，并补上必需前置 Mod 的跳转下载。"
+    "内部代码包由 stellar 正式更名为 darkitten，源码与安装目录不再保留旧包名。",
+    "更新包内置一次性兼容垫片：1.9.14 及更早版本也能直接检测并升级到 1.9.15。",
+    "升级时旧 stellar 包会移动到 updates/legacy-stellar-* 备份，不再参与启动。",
+    "修复源码仓库旧目录未清理的问题，重新上传完整源码、源码 TXT 与更新包。",
+    "游戏版本、Mod、整合包、账户、好友、皮肤和全部设置继续完整保留。"
   ],
-  "download_url": "downloads/DKL-1.9.14-update.zip",
+  "download_url": "downloads/DKL-1.9.15-update.zip",
   "page_url": "index.html",
-  "source_url": "downloads/DarkittenLauncher-1.9.14-source.zip",
-  "source_txt_url": "downloads/DarkittenLauncher-1.9.14-source.txt",
-  "sha256": "d0f8941e9b7d1fa2f23e897f7e384e7e69a251bf93de09d9ea7a256ecb1532aa",
-  "size": 996430,
-  "source_sha256": "5cc415da49afce40ed75679afdd2c2d042cb547674194eeeb395c282d4e772ad",
-  "source_size": 1717040,
-  "source_txt_sha256": "3da378aa2ca543ed9693c6933e6df7384caef4494d7f2ee80ad222b526668c1b",
-  "source_txt_size": 1610508
+  "source_url": "downloads/DarkittenLauncher-1.9.15-source.zip",
+  "source_txt_url": "downloads/DarkittenLauncher-1.9.15-source.txt",
+  "sha256": "df75934a2e13f32470f4d092612c086b8a0ec9a5a5697742e3a356b10cb1a437",
+  "size": 997847,
+  "source_sha256": "3c1e52e75717576bf7f462d762d5c7f6450083d7f0d12ac3ec03cdf3ccac93fd",
+  "source_size": 1720200,
+  "source_txt_sha256": "a7e37e7c681108bd873dcebdfb5e0bc0b064b986bac49ee98d9a14a344a93922",
+  "source_txt_size": 1620169
 }

@@ -12,12 +12,12 @@ from PySide6.QtCore import QEventLoop, QTimer
 from PySide6.QtGui import QFont
 from PySide6.QtWidgets import QApplication, QScrollArea
 
-from stellar.config import Config
-from stellar.mods import read_mod
-from stellar.ui import theme
-from stellar.ui.dialogs import ConfirmDialog
-from stellar.ui.main_window import MainWindow
-from stellar.ui.theme import colors
+from darkitten.config import Config
+from darkitten.mods import read_mod
+from darkitten.ui import theme
+from darkitten.ui.dialogs import ConfirmDialog
+from darkitten.ui.main_window import MainWindow
+from darkitten.ui.theme import colors
 
 ROOT = Path(__file__).resolve().parent.parent
 OUT = ROOT / "qa" / "shots170"

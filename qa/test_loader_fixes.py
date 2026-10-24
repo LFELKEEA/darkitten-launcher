@@ -7,15 +7,15 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from stellar.loaders import (
+from darkitten.loaders import (
     _find_loader_version,
     _installer_urls,
     _short_forge_version,
 )
-from stellar.config import Config
-from stellar.java import JavaInfo
-from stellar.launch import _ignore_client_jar, prepare_launch
-from stellar.versions import detect_loader, scan_versions
+from darkitten.config import Config
+from darkitten.java import JavaInfo
+from darkitten.launch import _ignore_client_jar, prepare_launch
+from darkitten.versions import detect_loader, scan_versions
 
 
 def write_version(root: Path, version_id: str, data: dict) -> None:

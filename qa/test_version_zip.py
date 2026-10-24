@@ -12,7 +12,7 @@ PROJECT = Path(__file__).resolve().parents[1]
 if str(PROJECT) not in sys.path:
     sys.path.insert(0, str(PROJECT))
 
-from stellar.version_zip import (
+from darkitten.version_zip import (
     VersionZipError,
     import_version_zip,
     inspect_version_zip,

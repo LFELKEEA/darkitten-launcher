@@ -13,10 +13,10 @@ if str(PROJECT) not in sys.path:
 
 from PySide6.QtCore import QCoreApplication, QEventLoop, QTimer
 
-import stellar.workers as workers
-from stellar.accounts import Account
-from stellar.config import Config
-from stellar.launch import GameProcess
+import darkitten.workers as workers
+from darkitten.accounts import Account
+from darkitten.config import Config
+from darkitten.launch import GameProcess
 
 
 def test_launch_cancel(app: QCoreApplication) -> bool:

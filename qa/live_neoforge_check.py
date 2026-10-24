@@ -16,9 +16,9 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from stellar.config import Config
-from stellar.launch import prepare_launch
-from stellar.paths import version_game_dir
+from darkitten.config import Config
+from darkitten.launch import prepare_launch
+from darkitten.paths import version_game_dir
 
 VERSION = "neoforge-21.1.264"
 LOG_PATH = ROOT / "qa" / "live_neoforge.log"

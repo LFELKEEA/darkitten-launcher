@@ -7,8 +7,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-import stellar.config as config_module
-from stellar.config import Config, DEFAULT_UPDATE_URL
+import darkitten.config as config_module
+from darkitten.config import Config, DEFAULT_UPDATE_URL
 
 
 def check(name: str, condition: bool, detail: str = "") -> None:

@@ -10,10 +10,10 @@ if str(PROJECT) not in sys.path:
 from PySide6.QtCore import QTimer
 from PySide6.QtWidgets import QApplication
 
-from stellar.config import Config
-from stellar.ui.animations import GameLoadingOverlay, SplashScreen
-from stellar.ui.main_window import MainWindow
-from stellar.ui.widgets import ChibiCompanion
+from darkitten.config import Config
+from darkitten.ui.animations import GameLoadingOverlay, SplashScreen
+from darkitten.ui.main_window import MainWindow
+from darkitten.ui.widgets import ChibiCompanion
 
 QA = PROJECT / "qa"
 app = QApplication(sys.argv)

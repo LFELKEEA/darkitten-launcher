@@ -15,7 +15,7 @@ from PySide6.QtGui import QColor, QFont, QGuiApplication, QImage, QPainter, QPen
 
 def main() -> int:
     app = QGuiApplication.instance() or QGuiApplication([])
-    from stellar.ui import icons
+    from darkitten.ui import icons
 
     width, height = 760, 380
     canvas = QImage(width, height, QImage.Format_ARGB32)

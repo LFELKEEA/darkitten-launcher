@@ -22,8 +22,8 @@ def main() -> int:
     from PySide6.QtWidgets import QApplication, QWidget
 
     app = QApplication.instance() or QApplication([])
-    from stellar.ui import icons
-    from stellar.ui.widgets import ChibiCompanion, GrassLogo, HeroArt
+    from darkitten.ui import icons
+    from darkitten.ui.widgets import ChibiCompanion, GrassLogo, HeroArt
 
     logo = icons.logo_pixmap(32)
     app_icon = icons.app_icon_pixmap(32)

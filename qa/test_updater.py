@@ -12,7 +12,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from stellar.updater import (
+from darkitten.updater import (
     UpdateError,
     apply_update_code,
     check_for_update,
@@ -27,20 +27,20 @@ from stellar.updater import (
 
 def build_payload(root: Path, version: str) -> Path:
     package = root / f"DarkittenLauncher-{version}-source"
-    (package / "stellar").mkdir(parents=True)
+    (package / "darkitten").mkdir(parents=True)
     (package / "assets").mkdir(parents=True)
     (package / "app.py").write_text(
-        "from stellar.config import APP_VERSION\nprint(APP_VERSION)\n",
+        "from darkitten.config import APP_VERSION\nprint(APP_VERSION)\n",
         encoding="utf-8",
     )
-    (package / "stellar" / "config.py").write_text(
+    (package / "darkitten" / "config.py").write_text(
         f'APP_VERSION = "{version}"\n', encoding="utf-8"
     )
-    (package / "stellar" / "new_module.py").write_text(
+    (package / "darkitten" / "new_module.py").write_text(
         "VALUE = 'new'\n", encoding="utf-8"
     )
-    (package / "stellar" / "__pycache__").mkdir()
-    (package / "stellar" / "__pycache__" / "junk.pyc").write_bytes(b"junk")
+    (package / "darkitten" / "__pycache__").mkdir()
+    (package / "darkitten" / "__pycache__" / "junk.pyc").write_bytes(b"junk")
     (package / "assets" / "new.txt").write_text("new asset", encoding="utf-8")
     (package / "requirements.txt").write_text(
         "PySide6-Essentials==6.12.0\n", encoding="utf-8"
@@ -51,20 +51,20 @@ def build_payload(root: Path, version: str) -> Path:
 
 def build_install(root: Path) -> Path:
     install = root / "install"
-    (install / "stellar").mkdir(parents=True)
+    (install / "darkitten").mkdir(parents=True)
     (install / "assets").mkdir(parents=True)
     (install / "minecraft" / "versions" / "1.21.1" / "mods").mkdir(parents=True)
     (install / "skins").mkdir(parents=True)
     (install / "servers" / "paper").mkdir(parents=True)
     (install / "app.py").write_text("OLD APP\n", encoding="utf-8")
-    (install / "stellar" / "config.py").write_text(
+    (install / "darkitten" / "config.py").write_text(
         'APP_VERSION = "1.9.11"\n', encoding="utf-8"
     )
-    (install / "stellar" / "old_module.py").write_text(
+    (install / "darkitten" / "old_module.py").write_text(
         "OLD = True\n", encoding="utf-8"
     )
-    (install / "stellar" / "__pycache__").mkdir()
-    (install / "stellar" / "__pycache__" / "old.pyc").write_bytes(b"old")
+    (install / "darkitten" / "__pycache__").mkdir()
+    (install / "darkitten" / "__pycache__" / "old.pyc").write_bytes(b"old")
     (install / "assets" / "old.txt").write_text("old asset", encoding="utf-8")
     (install / "config.json").write_text(
         json.dumps(
@@ -177,15 +177,15 @@ def main() -> int:
             check(
                 "prepare_payload",
                 read_version(prepared) == "1.9.12"
-                and (prepared / "stellar" / "new_module.py").is_file(),
+                and (prepared / "darkitten" / "new_module.py").is_file(),
             )
 
             backup = apply_update_code(prepared, install)
             check(
                 "applied_code",
-                "from stellar.config" in (install / "app.py").read_text(encoding="utf-8")
-                and (install / "stellar" / "new_module.py").is_file()
-                and not (install / "stellar" / "old_module.py").exists()
+                "from darkitten.config" in (install / "app.py").read_text(encoding="utf-8")
+                and (install / "darkitten" / "new_module.py").is_file()
+                and not (install / "darkitten" / "old_module.py").exists()
                 and read_version(install) == "1.9.12",
             )
             check(
@@ -226,11 +226,11 @@ def main() -> int:
             check(
                 "backup_created",
                 (backup / "app.py").read_text(encoding="utf-8") == "OLD APP\n"
-                and (backup / "stellar" / "old_module.py").is_file(),
+                and (backup / "darkitten" / "old_module.py").is_file(),
             )
             check(
                 "pycache_ignored",
-                not (install / "stellar" / "__pycache__" / "junk.pyc").exists(),
+                not (install / "darkitten" / "__pycache__" / "junk.pyc").exists(),
             )
 
             bad_manifest = dict(manifest)
@@ -269,7 +269,7 @@ def main() -> int:
             with zipfile.ZipFile(slip_zip, "w") as zf:
                 zf.writestr("../evil.txt", "bad")
                 zf.writestr("DKL/app.py", "bad")
-                zf.writestr("DKL/stellar/config.py", "bad")
+                zf.writestr("DKL/darkitten/config.py", "bad")
             try:
                 prepare_update(slip_zip, root / "slip-out", "1.9.12")
             except UpdateError:

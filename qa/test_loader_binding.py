@@ -14,12 +14,12 @@ if str(PROJECT) not in sys.path:
 
 from PySide6.QtWidgets import QApplication, QCheckBox
 
-import stellar.config as config_module
-from stellar.config import Config
-from stellar.ui.main_window import MainWindow
-from stellar.ui.pages.loaders import LoaderCard
-from stellar.ui.version_settings_dialog import VersionSettingsDialog
-from stellar.versions import game_versions, loader_profiles, scan_versions
+import darkitten.config as config_module
+from darkitten.config import Config
+from darkitten.ui.main_window import MainWindow
+from darkitten.ui.pages.loaders import LoaderCard
+from darkitten.ui.version_settings_dialog import VersionSettingsDialog
+from darkitten.versions import game_versions, loader_profiles, scan_versions
 
 VANILLA = "1.21.1"
 FABRIC = "fabric-loader-0.16.5-1.21.1"

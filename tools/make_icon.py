@@ -12,7 +12,7 @@ if str(ROOT) not in sys.path:
 from PySide6.QtCore import QBuffer, QByteArray, QIODevice
 from PySide6.QtGui import QGuiApplication
 
-from stellar.ui import icons
+from darkitten.ui import icons
 
 SIZES = (16, 24, 32, 48, 64, 128, 256)
 

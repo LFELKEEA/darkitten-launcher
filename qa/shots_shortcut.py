@@ -10,14 +10,14 @@ if str(PROJECT) not in sys.path:
 from PySide6.QtCore import QTimer
 from PySide6.QtWidgets import QApplication
 
-from stellar.config import Config
-from stellar.ui.main_window import MainWindow
+from darkitten.config import Config
+from darkitten.ui.main_window import MainWindow
 
 QA = PROJECT / "qa"
 app = QApplication(sys.argv)
 window: MainWindow | None = None
 original_offered = False
-import stellar.shortcut as shortcut_module
+import darkitten.shortcut as shortcut_module
 original_exists = shortcut_module.shortcut_exists
 
 

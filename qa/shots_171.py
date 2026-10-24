@@ -11,10 +11,10 @@ from PySide6.QtCore import QEventLoop, QTimer
 from PySide6.QtGui import QFont
 from PySide6.QtWidgets import QApplication, QPushButton
 
-from stellar.config import Config
-from stellar.ui import theme
-from stellar.ui.main_window import MainWindow
-import stellar.ui.mod_dialog as mod_dialog
+from darkitten.config import Config
+from darkitten.ui import theme
+from darkitten.ui.main_window import MainWindow
+import darkitten.ui.mod_dialog as mod_dialog
 
 ROOT = Path(__file__).resolve().parent.parent
 OUT = ROOT / "qa" / "shots171"

@@ -1645,7 +1645,7 @@ class SakuraRoomWorker(QObject):
             if reused and tunnel is not None:
                 if tunnel.node not in nodes:
                     raise Exception(
-                        "现有 StellarRoom 隧道所在节点已不存在，"
+                        "现有 DarkittenRoom 隧道所在节点已不存在，"
                         "请到樱花穿透面板迁移或删除该隧道后重试。"
                     )
                 node = nodes[tunnel.node]
@@ -1656,9 +1656,9 @@ class SakuraRoomWorker(QObject):
 
             if tunnel is not None:
                 if tunnel.type != "tcp":
-                    raise Exception("现有 StellarRoom 隧道不是 TCP 类型，请到面板改为 TCP。")
+                    raise Exception("现有 DarkittenRoom 隧道不是 TCP 类型，请到面板改为 TCP。")
                 if tunnel.status == 2:
-                    raise Exception("现有 StellarRoom 隧道已被封禁，请到樱花穿透面板处理。")
+                    raise Exception("现有 DarkittenRoom 隧道已被封禁，请到樱花穿透面板处理。")
                 self._log(
                     f"复用隧道 {tunnel.name}（#{tunnel.id}）· 节点 {node.label}"
                 )
@@ -1672,7 +1672,7 @@ class SakuraRoomWorker(QObject):
             else:
                 if not node.can_create:
                     raise Exception(f"节点“{node.label}”当前无法创建隧道，请换一个节点。")
-                self._progress(20, "正在创建 StellarRoom 隧道…")
+                self._progress(20, "正在创建 DarkittenRoom 隧道…")
                 created = client.create_tunnel(
                     ROOM_TUNNEL_NAME, node.id, self.local_port
                 )

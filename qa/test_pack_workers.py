@@ -16,8 +16,8 @@ if str(PROJECT) not in sys.path:
 from PySide6.QtCore import QEventLoop, QTimer
 from PySide6.QtWidgets import QApplication
 
-import stellar.workers as workers
-from stellar.packs import inspect_pack
+import darkitten.workers as workers
+from darkitten.packs import inspect_pack
 
 
 def make_version(game_dir: Path, version_id: str) -> None:

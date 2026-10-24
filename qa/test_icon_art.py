@@ -22,7 +22,7 @@ def test_pixel_art() -> None:
     from PySide6.QtGui import QColor, QGuiApplication
 
     _app = QGuiApplication.instance() or QGuiApplication([])
-    from stellar.ui import icons
+    from darkitten.ui import icons
 
     image = icons.app_icon_image(32)
     check("32px canvas", image.size().width() == 32 and image.size().height() == 32)

@@ -37,7 +37,7 @@ def make_version(root: Path, version_id: str) -> None:
 
 
 def test_migration() -> None:
-    from stellar.migration import (
+    from darkitten.migration import (
         MigrationCancelled,
         collect_migration_plan,
         run_migration,
@@ -135,7 +135,7 @@ def test_migration() -> None:
 
 
 def test_social() -> None:
-    from stellar.social import (
+    from darkitten.social import (
         SocialError,
         encode_invite,
         load_store,
@@ -204,8 +204,8 @@ def test_visuals() -> None:
     from PySide6.QtWidgets import QApplication
 
     app = QApplication.instance() or QApplication([])
-    from stellar.ui import icons
-    from stellar.ui.widgets import Avatar, HeroArt
+    from darkitten.ui import icons
+    from darkitten.ui.widgets import Avatar, HeroArt
 
     avatar = Avatar(48)
     avatar.refresh()

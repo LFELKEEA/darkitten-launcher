@@ -9,10 +9,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from PySide6.QtCore import QCoreApplication, QEventLoop, QTimer
 
-from stellar.downloader import partial_files
-from stellar.workers import InstallWorker
+from darkitten.downloader import partial_files
+from darkitten.workers import InstallWorker
 
-ROOT = Path(tempfile.gettempdir()) / "stellar_shots" / "cancel_game"
+ROOT = Path(tempfile.gettempdir()) / "darkitten_shots" / "cancel_game"
 
 
 def main() -> int:

@@ -18,9 +18,9 @@ from PySide6.QtCore import QMimeData, QPoint, QPointF, Qt, QUrl
 from PySide6.QtGui import QDragEnterEvent, QDragLeaveEvent, QDropEvent
 from PySide6.QtWidgets import QApplication
 
-from stellar.config import Config
-from stellar.ui.main_window import MainWindow
-from stellar.ui.version_zip_dialog import VersionZipDialog
+from darkitten.config import Config
+from darkitten.ui.main_window import MainWindow
+from darkitten.ui.version_zip_dialog import VersionZipDialog
 
 
 def make_zip(path: Path) -> None:
@@ -102,7 +102,7 @@ def main() -> None:
         mr_paths = window._archive_paths(mime_for(mrpack))
         ok &= check("mrpack_archive_paths", mr_paths == [mrpack], str(mr_paths))
 
-        from stellar.ui.pack_dialog import PackImportDialog
+        from darkitten.ui.pack_dialog import PackImportDialog
 
         mr_dialog = PackImportDialog(window, initial_path=mrpack)
         mr_dialog_ok = (
@@ -194,8 +194,8 @@ def main() -> None:
         ok &= check("dialog_drop", drop_load_ok)
         dialog.deleteLater()
 
-        from stellar.ui import version_zip_dialog as dialog_module
-        from stellar.workers import VersionZipImportWorker
+        from darkitten.ui import version_zip_dialog as dialog_module
+        from darkitten.workers import VersionZipImportWorker
 
         worker_results: list[tuple[bool, str, str]] = []
         worker = VersionZipImportWorker(

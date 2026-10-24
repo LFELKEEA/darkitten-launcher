@@ -12,11 +12,11 @@ if str(PROJECT) not in sys.path:
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QApplication, QPushButton
 
-from stellar.config import Config
-from stellar.mods import ModInfo
-from stellar.ui.main_window import MainWindow
-from stellar.ui.pages.mods import ModRow
-from stellar.ui.widgets import VersionRow
+from darkitten.config import Config
+from darkitten.mods import ModInfo
+from darkitten.ui.main_window import MainWindow
+from darkitten.ui.pages.mods import ModRow
+from darkitten.ui.widgets import VersionRow
 
 
 def main() -> None:
@@ -55,7 +55,7 @@ def main() -> None:
         ok &= export_ok
 
         try:
-            from stellar.ui.pack_dialog import PackExportDialog, PackImportDialog
+            from darkitten.ui.pack_dialog import PackExportDialog, PackImportDialog
 
             export_dialog = PackExportDialog(window, summary.id)
             import_dialog = PackImportDialog(window)

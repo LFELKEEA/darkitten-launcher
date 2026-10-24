@@ -8,6 +8,7 @@ import os
 import re
 import shutil
 import subprocess
+import tempfile
 import time
 import zipfile
 from datetime import date, datetime
@@ -59,10 +60,10 @@ def sha256(path: Path) -> str:
 
 
 def read_version(source: Path) -> str:
-    text = (source / "stellar" / "config.py").read_text(encoding="utf-8")
+    text = (source / "darkitten" / "config.py").read_text(encoding="utf-8")
     match = re.search(r'APP_VERSION\s*=\s*"([^"]+)"', text)
     if not match:
-        raise SystemExit("无法从 stellar/config.py 读取 APP_VERSION")
+        raise SystemExit("无法从 darkitten/config.py 读取 APP_VERSION")
     return match.group(1)
 
 
@@ -153,6 +154,74 @@ def write_source_txt(target: Path, source: Path, version: str) -> None:
         lines.append("")
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text("\n".join(lines) + "\n", encoding="utf-8-sig")
+
+
+LEGACY_SHIM_UPDATER = '''from __future__ import annotations
+
+import re
+import shutil
+import sys
+from datetime import datetime
+from pathlib import Path
+
+
+def _legacy_version(install_dir: Path) -> str:
+    try:
+        text = (install_dir / "stellar" / "config.py").read_text(encoding="utf-8")
+    except Exception:
+        return ""
+    match = re.search(r'APP_VERSION\\s*=\\s*"([^"]+)"', text)
+    return match.group(1) if match else ""
+
+
+def apply_update_code(payload_root: Path, install_dir: Path) -> Path:
+    """1.9.14 及更早版本只有 stellar 包，这里转交给新的 darkitten 实现。"""
+    payload_root = Path(payload_root).resolve()
+    install_dir = Path(install_dir).resolve()
+    legacy_version = _legacy_version(install_dir)
+    if str(payload_root) not in sys.path:
+        sys.path.insert(0, str(payload_root))
+    from darkitten.updater import apply_update_code as apply_new
+
+    backup = apply_new(payload_root, install_dir)
+    if legacy_version and backup.name.startswith("backup-unknown-"):
+        renamed = backup.with_name(
+            backup.name.replace("backup-unknown-", f"backup-{legacy_version}-", 1)
+        )
+        try:
+            backup.rename(renamed)
+            backup = renamed
+        except Exception:
+            pass
+
+    legacy = install_dir / "stellar"
+    if legacy.exists():
+        stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+        target = install_dir / "updates" / f"legacy-stellar-{stamp}"
+        try:
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.move(str(legacy), str(target))
+        except Exception:
+            shutil.rmtree(legacy, ignore_errors=True)
+    return backup
+'''
+
+
+def legacy_shim_entries(
+    directory: Path, version: str, update_root: str
+) -> list[tuple[Path, str]]:
+    shim = directory / "stellar"
+    shim.mkdir(parents=True, exist_ok=True)
+    (shim / "__init__.py").write_text("", encoding="utf-8")
+    (shim / "config.py").write_text(
+        f'APP_VERSION = "{version}"\n', encoding="utf-8"
+    )
+    (shim / "updater.py").write_text(LEGACY_SHIM_UPDATER, encoding="utf-8")
+    return [
+        (path, f"{update_root}/stellar/{path.relative_to(shim).as_posix()}")
+        for path in sorted(shim.rglob("*"))
+        if path.is_file()
+    ]
 
 
 def sync_site_version(version: str) -> None:
@@ -373,7 +442,7 @@ def build(source: Path, version: str, deploy: bool, repo: str) -> int:
         path = source / name
         if path.is_file():
             update_entries.append((path, f"{update_root}/{name}"))
-    for name in ("stellar", "assets"):
+    for name in ("darkitten", "assets"):
         folder = source / name
         if not folder.is_dir():
             continue
@@ -392,7 +461,13 @@ def build(source: Path, version: str, deploy: bool, repo: str) -> int:
     update_zip = DOWNLOADS / f"DKL-{version}-update.zip"
     source_txt = DOWNLOADS / f"DarkittenLauncher-{version}-source.txt"
     write_zip(source_zip, source_entries)
-    write_zip(update_zip, update_entries)
+    # 更新包额外带一份 stellar 兼容垫片：1.9.14 的旧更新器只认 stellar/config.py
+    # 和 stellar.updater，用它把更新转交给 darkitten 后再清理旧包。
+    with tempfile.TemporaryDirectory(prefix="dkl-legacy-shim-") as shim_tmp:
+        update_entries.extend(
+            legacy_shim_entries(Path(shim_tmp), version, update_root)
+        )
+        write_zip(update_zip, update_entries)
     write_source_txt(source_txt, source, version)
 
     manifest = {
@@ -442,7 +517,7 @@ def build(source: Path, version: str, deploy: bool, repo: str) -> int:
 def main() -> int:
     parser = argparse.ArgumentParser(description="构建并发布 Darkitten Launcher")
     parser.add_argument("--source", type=Path, default=DEFAULT_SOURCE, help="启动器源码目录")
-    parser.add_argument("--version", default="", help="默认读取 stellar/config.py")
+    parser.add_argument("--version", default="", help="默认读取 darkitten/config.py")
     parser.add_argument("--deploy", action="store_true", help="构建后部署到 GitHub Pages")
     parser.add_argument("--repo", default=DEFAULT_REPO, help="GitHub 仓库名或 owner/repo")
     args = parser.parse_args()

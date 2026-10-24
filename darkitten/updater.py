@@ -26,7 +26,7 @@ from .downloader import (
 MAX_UPDATE_BYTES = 200 * 1024 * 1024
 CODE_PATHS = (
     "app.py",
-    "stellar",
+    "darkitten",
     "assets",
     "requirements.txt",
     "launch.bat",
@@ -93,7 +93,7 @@ def main() -> int:
     _log(log_path, f"开始应用更新：{payload}")
     try:
         sys.path.insert(0, str(payload))
-        from stellar.updater import apply_update_code
+        from darkitten.updater import apply_update_code
 
         backup = apply_update_code(payload, install_dir)
         _log(log_path, f"更新完成，原代码备份：{backup}")
@@ -390,7 +390,7 @@ def _payload_root(staging: Path) -> Path:
 
 
 def read_version(root: Path) -> str:
-    config_path = Path(root) / "stellar" / "config.py"
+    config_path = Path(root) / "darkitten" / "config.py"
     try:
         text = config_path.read_text(encoding="utf-8")
     except Exception:
@@ -412,7 +412,7 @@ def prepare_update(
     _safe_extract(archive, staging)
     payload = _payload_root(staging)
     if not (payload / "app.py").is_file() or not (
-        payload / "stellar" / "config.py"
+        payload / "darkitten" / "config.py"
     ).is_file():
         raise UpdateError("更新包缺少启动器核心文件")
     version = read_version(payload)
@@ -460,7 +460,7 @@ def apply_update_code(payload_root: Path, install_dir: Path) -> Path:
     payload_root = Path(payload_root)
     install_dir = Path(install_dir)
     if not (payload_root / "app.py").is_file() or not (
-        payload_root / "stellar" / "config.py"
+        payload_root / "darkitten" / "config.py"
     ).is_file():
         raise UpdateError("更新包内容不完整")
     old_version = read_version(install_dir) or "unknown"

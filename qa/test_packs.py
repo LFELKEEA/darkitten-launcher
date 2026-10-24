@@ -12,7 +12,7 @@ PROJECT = Path(__file__).resolve().parents[1]
 if str(PROJECT) not in sys.path:
     sys.path.insert(0, str(PROJECT))
 
-from stellar.packs import (
+from darkitten.packs import (
     PackError,
     PackOptions,
     export_pack,
@@ -21,7 +21,7 @@ from stellar.packs import (
     normalize_version_id,
     unique_version_id,
 )
-from stellar.ui.skin_preview import rotate_model_point
+from darkitten.ui.skin_preview import rotate_model_point
 
 
 def make_version(game_dir: Path, version_id: str) -> Path:

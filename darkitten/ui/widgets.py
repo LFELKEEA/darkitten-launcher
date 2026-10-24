@@ -107,7 +107,7 @@ def icon_button(
     button.setIcon(icons.icon(name, c, icon_size))
     button.setIconSize(QSize(icon_size, icon_size))
     try:
-        button._stellar_icon_spec = (name, color, icon_size)  # type: ignore[attr-defined]
+        button._darkitten_icon_spec = (name, color, icon_size)  # type: ignore[attr-defined]
     except Exception:
         pass
     _THEMED_ICON_BUTTONS.append(button)
@@ -119,7 +119,7 @@ def refresh_themed_icons() -> None:
     alive: list[QPushButton] = []
     for button in _THEMED_ICON_BUTTONS:
         try:
-            spec = getattr(button, "_stellar_icon_spec", None)
+            spec = getattr(button, "_darkitten_icon_spec", None)
             if not spec:
                 continue
             name, color, size = spec

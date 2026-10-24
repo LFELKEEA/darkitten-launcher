@@ -207,7 +207,7 @@ def change_skin(access_token: str, png_data: bytes, variant: str = "classic") ->
         variant = "classic"
     if not png_data:
         raise SkinError("没有可上传的皮肤文件。")
-    boundary = "----StellarSkin" + uuid.uuid4().hex
+    boundary = "----DarkittenSkin" + uuid.uuid4().hex
     chunks: list[bytes] = [
         f"--{boundary}\r\n".encode("ascii"),
         b'Content-Disposition: form-data; name="variant"\r\n\r\n',

@@ -14,7 +14,7 @@ from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication
 
 import app as entry
-from stellar.ui.main_window import MainWindow
+from darkitten.ui.main_window import MainWindow
 
 
 def main() -> None:

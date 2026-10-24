@@ -56,7 +56,7 @@ def read_shortcut(path: Path) -> dict[str, str]:
 
 
 def test_create_shortcut() -> None:
-    import stellar.shortcut as shortcut
+    import darkitten.shortcut as shortcut
 
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp)
@@ -87,7 +87,7 @@ def test_create_shortcut() -> None:
 
 
 def test_config_flag() -> None:
-    import stellar.config as config
+    import darkitten.config as config
 
     with tempfile.TemporaryDirectory() as tmp:
         original_path = config.CONFIG_PATH
@@ -108,13 +108,13 @@ def test_settings_button() -> None:
     from PySide6.QtWidgets import QApplication
 
     app = QApplication.instance() or QApplication([])
-    import stellar.shortcut as shortcut
+    import darkitten.shortcut as shortcut
 
     original_exists = shortcut.shortcut_exists
     try:
         shortcut.shortcut_exists = lambda: False
-        from stellar.config import Config
-        from stellar.ui.main_window import MainWindow
+        from darkitten.config import Config
+        from darkitten.ui.main_window import MainWindow
 
         window = MainWindow(Config.load())
         check(
@@ -134,7 +134,7 @@ def test_settings_button() -> None:
         window.offer_shortcut_once()
         check("offer skipped when flagged", True)
 
-        from stellar.ui import dialogs
+        from darkitten.ui import dialogs
 
         original_exec = dialogs.ConfirmDialog.exec
         original_create = shortcut.create_desktop_shortcut

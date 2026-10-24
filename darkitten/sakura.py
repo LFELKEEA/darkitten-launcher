@@ -33,7 +33,7 @@ SAKURA_API = "https://api.natfrp.com/v4"
 SAKURA_PANEL = "https://www.natfrp.com/"
 SAKURA_MC_DOCS = "https://doc.natfrp.com/game/mc/"
 SAKURA_TUNNEL_DOCS = "https://doc.natfrp.com/natfrp/tunnel.html"
-ROOM_TUNNEL_NAME = "StellarRoom"
+ROOM_TUNNEL_NAME = "DarkittenRoom"
 USER_AGENT = f"DarkittenLauncher/{APP_VERSION}"
 
 _CREATE_NO_WINDOW = 0x08000000 if sys.platform == "win32" else 0

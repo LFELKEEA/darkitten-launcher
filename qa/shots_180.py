@@ -11,11 +11,11 @@ if str(PROJECT) not in sys.path:
 from PySide6.QtCore import QTimer
 from PySide6.QtWidgets import QApplication
 
-from stellar.config import Config
-from stellar.packs import export_pack
-from stellar.ui.animations import SplashScreen
-from stellar.ui.main_window import MainWindow
-from stellar.ui.pack_dialog import PackExportDialog, PackImportDialog
+from darkitten.config import Config
+from darkitten.packs import export_pack
+from darkitten.ui.animations import SplashScreen
+from darkitten.ui.main_window import MainWindow
+from darkitten.ui.pack_dialog import PackExportDialog, PackImportDialog
 
 QA = PROJECT / "qa"
 app = QApplication(sys.argv)

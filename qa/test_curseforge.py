@@ -12,11 +12,11 @@ if str(PROJECT) not in sys.path:
 
 from PySide6.QtWidgets import QApplication, QWidget
 
-from stellar import curseforge as cf
-from stellar.config import Config
-from stellar.downloader import DownloadCancelled
-import stellar.ui.mod_dialog as mod_dialog
-from stellar.ui.mod_dialog import ModBrowserDialog
+from darkitten import curseforge as cf
+from darkitten.config import Config
+from darkitten.downloader import DownloadCancelled
+import darkitten.ui.mod_dialog as mod_dialog
+from darkitten.ui.mod_dialog import ModBrowserDialog
 
 
 def check(label: str, value: bool, detail: str = "") -> bool:

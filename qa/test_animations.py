@@ -13,9 +13,9 @@ from PySide6.QtCore import QEventLoop, Qt, QTimer
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication
 
-from stellar.config import APP_NAME, APP_SHORT_NAME, Config
-from stellar.ui.animations import GameLoadingOverlay, SplashScreen
-from stellar.ui.main_window import MainWindow
+from darkitten.config import APP_NAME, APP_SHORT_NAME, Config
+from darkitten.ui.animations import GameLoadingOverlay, SplashScreen
+from darkitten.ui.main_window import MainWindow
 
 
 def wait(ms: int) -> None:

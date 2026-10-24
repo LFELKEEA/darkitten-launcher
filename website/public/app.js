@@ -169,7 +169,7 @@
   }
 
   function feedbackVersion() {
-    return (manifest && manifest.version) || "1.9.14";
+    return (manifest && manifest.version) || "1.9.15";
   }
 
   function openFeedback() {

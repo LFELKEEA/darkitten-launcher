@@ -14,7 +14,7 @@ if str(PROJECT) not in sys.path:
 
 from PySide6.QtCore import QCoreApplication, QTimer
 
-from stellar.launch import GameProcess, LaunchPlan
+from darkitten.launch import GameProcess, LaunchPlan
 
 
 def main() -> int:

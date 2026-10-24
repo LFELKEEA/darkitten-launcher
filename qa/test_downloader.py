@@ -12,7 +12,7 @@ PROJECT = Path(__file__).resolve().parents[1]
 if str(PROJECT) not in sys.path:
     sys.path.insert(0, str(PROJECT))
 
-from stellar.downloader import (
+from darkitten.downloader import (
     DownloadCancelled,
     cleanup_partial_files,
     download_to_file,

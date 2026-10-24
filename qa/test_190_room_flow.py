@@ -15,8 +15,8 @@ from PySide6.QtWidgets import QApplication
 
 def main() -> None:
     app = QApplication.instance() or QApplication([])
-    from stellar.config import Config
-    from stellar.ui.main_window import MainWindow
+    from darkitten.config import Config
+    from darkitten.ui.main_window import MainWindow
 
     config = Config.load()
     window = MainWindow(config)

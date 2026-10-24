@@ -16,9 +16,9 @@ from PySide6.QtCore import QTimer
 from PySide6.QtGui import QFont
 from PySide6.QtWidgets import QApplication
 
-from stellar.config import Config
-from stellar.ui.main_window import MainWindow
-from stellar.ui.version_zip_dialog import VersionZipDialog
+from darkitten.config import Config
+from darkitten.ui.main_window import MainWindow
+from darkitten.ui.version_zip_dialog import VersionZipDialog
 
 QA = PROJECT / "qa"
 app = QApplication(sys.argv)

@@ -12,10 +12,10 @@ if str(PROJECT) not in sys.path:
 from PySide6.QtCore import QTimer
 from PySide6.QtWidgets import QApplication
 
-from stellar.config import Config
-from stellar.ui.main_window import MainWindow
-from stellar.ui.migration_dialog import MigrationDialog
-from stellar.ui.social_dialog import SocialDialog
+from darkitten.config import Config
+from darkitten.ui.main_window import MainWindow
+from darkitten.ui.migration_dialog import MigrationDialog
+from darkitten.ui.social_dialog import SocialDialog
 
 QA = PROJECT / "qa"
 SOCIAL = PROJECT / "social.json"

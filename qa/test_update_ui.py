@@ -10,11 +10,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from PySide6.QtGui import QFont
 from PySide6.QtWidgets import QApplication
 
-from stellar.config import APP_VERSION, Config
-from stellar.ui import theme
-from stellar.ui.main_window import MainWindow
-from stellar.ui.update_dialog import UpdateDialog
-from stellar.updater import ReleaseInfo
+from darkitten.config import APP_VERSION, Config
+from darkitten.ui import theme
+from darkitten.ui.main_window import MainWindow
+from darkitten.ui.update_dialog import UpdateDialog
+from darkitten.updater import ReleaseInfo
 
 
 def make_release(version: str = "1.9.12") -> ReleaseInfo:

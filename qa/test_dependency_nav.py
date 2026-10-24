@@ -10,9 +10,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from PySide6.QtWidgets import QApplication, QPushButton, QWidget
 
-from stellar.config import Config
-import stellar.ui.mod_dialog as mod_dialog
-from stellar.ui.mod_dialog import ModBrowserDialog
+from darkitten.config import Config
+import darkitten.ui.mod_dialog as mod_dialog
+from darkitten.ui.mod_dialog import ModBrowserDialog
 
 
 class FakeMain(QWidget):
