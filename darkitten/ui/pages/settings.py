@@ -537,6 +537,33 @@ class SettingsPage(QWidget):
         )
         layout.addWidget(hline())
 
+        feedback_box = QWidget()
+        feedback_layout = QHBoxLayout(feedback_box)
+        feedback_layout.setContentsMargins(0, 0, 0, 0)
+        feedback_layout.setSpacing(8)
+        bug_btn = QPushButton("Bug 反馈")
+        bug_btn.setObjectName("Secondary")
+        bug_btn.setCursor(Qt.PointingHandCursor)
+        bug_btn.setIcon(icons.icon("message", colors()["text2"], 14))
+        bug_btn.clicked.connect(lambda: self.main.open_feedback_dialog("bug"))
+        idea_btn = QPushButton("改进建议")
+        idea_btn.setObjectName("Ghost")
+        idea_btn.setCursor(Qt.PointingHandCursor)
+        idea_btn.setIcon(icons.icon("message", colors()["text2"], 14))
+        idea_btn.clicked.connect(
+            lambda: self.main.open_feedback_dialog("suggestion")
+        )
+        feedback_layout.addWidget(bug_btn)
+        feedback_layout.addWidget(idea_btn)
+        layout.addWidget(
+            self._row(
+                "猫猫意见箱",
+                "反馈会进入启动器收件箱和网站反馈中心；反馈中心离线时可改用 GitHub 或邮件。",
+                feedback_box,
+            )
+        )
+        layout.addWidget(hline())
+
         theme_box = QWidget()
         theme_layout = QHBoxLayout(theme_box)
         theme_layout.setContentsMargins(0, 0, 0, 0)

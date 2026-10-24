@@ -27,8 +27,8 @@ ASSET_SUFFIXES = {".png", ".jpg", ".jpeg", ".webp", ".gif", ".svg", ".ico"}
 DOWNLOAD_SUFFIXES = {".zip", ".txt"}
 CSP = (
     "default-src 'self'; img-src 'self' data:; style-src 'self'; "
-    "script-src 'self'; connect-src 'self'; base-uri 'none'; "
-    "form-action 'self' mailto:; frame-ancestors 'none'"
+    "script-src 'self'; connect-src 'self' https://dkl-feedback.lfelkeea.workers.dev; "
+    "base-uri 'none'; form-action 'self' mailto:; frame-ancestors 'none'"
 )
 
 _rate_lock = threading.Lock()
@@ -165,6 +165,7 @@ class DownloadHandler(SimpleHTTPRequestHandler):
             "title": title,
             "description": description,
             "contact": _clean(payload.get("contact"), 120),
+            "source": _clean(payload.get("source"), 20) or "website",
             "page": _clean(payload.get("page"), 300),
             "user_agent": _clean(self.headers.get("User-Agent") or payload.get("user_agent"), 300),
             "remote_address": address,

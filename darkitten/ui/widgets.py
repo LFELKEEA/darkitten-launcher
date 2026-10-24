@@ -42,6 +42,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from ..developer import developer_mode
 from ..versions import LOADER_COLORS, VersionSummary
 from . import icons, theme
 
@@ -388,6 +389,51 @@ class ChibiCompanion(QWidget):
         "settings": ("这里是猫猫的窝", "别把本喵调坏了", "设置要乖乖保存", "喜好都记下了"),
     }
 
+    DEVELOPER_PHRASES = {
+        "home": (
+            "开发者大人，今天要修几个 bug？",
+            "收件箱闪起来了，要看看吗？",
+            "猫猫把反馈都叼回来了",
+            "先喝口水，再继续改代码吧",
+        ),
+        "download": (
+            "开发者大人，下载速度还要再压吗？",
+            "猫猫盯着连接复用和分段",
+            "这轮吞吐量合格吗？",
+            "别在发布前改坏下载器哦",
+        ),
+        "mods": (
+            "开发者大人，前置依赖报告写好了",
+            "这个模组又在告状",
+            "猫猫帮你翻日志，你改代码",
+            "要复现哪个加载器的问题？",
+        ),
+        "skin": (
+            "开发者大人，皮肤渲染检查完毕",
+            "转一圈看看贴图有没有歪",
+            "模型中心和命中区域都对齐了",
+            "这套皮肤适合写进测试用例",
+        ),
+        "room": (
+            "开发者大人，樱花隧道日志在这",
+            "Smart App Control 又拦东西了吗？",
+            "猫猫守住房主，你去看堆栈",
+            "穿透失败的话，先看节点和签名",
+        ),
+        "server": (
+            "开发者大人，世界数据猫猫看好了",
+            "插件日志要一起翻吗？",
+            "服务端能安全停，放心发布",
+            "猫猫看家，你去改代码",
+        ),
+        "settings": (
+            "开发者大人，配置已经收好",
+            "别把调试开关忘在发布版里",
+            "邮箱和账户条件都匹配了",
+            "开发者模式只对 LFELKEEA 开放",
+        ),
+    }
+
     def __init__(
         self,
         size: int = 58,
@@ -448,7 +494,12 @@ class ChibiCompanion(QWidget):
     def _poke(self) -> None:
         now = time.monotonic()
         self._click_at = now
-        phrases = self.PHRASES.get(self._context, self.PHRASES["home"])
+        if developer_mode():
+            phrases = self.DEVELOPER_PHRASES.get(
+                self._context, self.DEVELOPER_PHRASES["home"]
+            )
+        else:
+            phrases = self.PHRASES.get(self._context, self.PHRASES["home"])
         self._phrase = random.choice(phrases)
         radius = self._size * 0.42
         for _ in range(7):
@@ -649,6 +700,20 @@ class HeroArt(QWidget):
         "不许偷偷装整合包",
         "耳朵不可以揪",
     )
+    DEVELOPER_PHRASES = (
+        "开发者大人，今天也要修 bug 吗",
+        "猫猫收到新的投诉啦",
+        "收件箱在闪，要打开看看吗",
+        "先深呼吸，再看堆栈",
+        "反馈已归档，猫爪盖章",
+        "这次发布稳了吗？",
+        "别熬太晚，猫猫会心疼的",
+        "开发者模式已确认，只有你能看",
+        "要猫猫帮你复现一下吗",
+        "代码会骗人，日志不会",
+        "改完记得跑回归测试",
+        "这版修完就发布吧",
+    )
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -712,7 +777,9 @@ class HeroArt(QWidget):
     def _poke(self) -> None:
         now = time.monotonic()
         self._click_at = now
-        self._phrase = random.choice(self.PHRASES)
+        self._phrase = random.choice(
+            self.DEVELOPER_PHRASES if developer_mode() else self.PHRASES
+        )
         body = self._body_rect()
         for _ in range(10):
             angle = random.uniform(-2.75, -0.39)

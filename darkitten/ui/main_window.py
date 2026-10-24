@@ -34,6 +34,7 @@ from ..config import (
     LOG_DIR,
     Config,
 )
+from ..developer import is_developer, set_developer_mode
 from ..updater import restart_executable, schedule_apply
 from ..java import pick_java
 from ..launch import (
@@ -62,6 +63,7 @@ from . import icons, theme
 from .animations import GameLoadingOverlay
 from .dialogs import ConfirmDialog, NoticeDialog
 from .download_center import DownloadCenter, DownloadTasksDialog, TopDownloadChip
+from .feedback_dialog import FeedbackDialog
 from .update_dialog import UpdateDialog
 from .pages.download import DownloadPage
 from .pages.home import HomePage
@@ -152,10 +154,22 @@ class AccountChip(QFrame):
         self.name.setMinimumWidth(74)
         self.mode = QLabel("离线")
         self.mode.setObjectName("Tiny")
+        self.dev_badge = QLabel("DEV")
+        self.dev_badge.setStyleSheet(
+            "background: rgba(226,58,94,40); color: #E23A5E;"
+            " border-radius: 6px; padding: 1px 5px;"
+            " font-size: 9px; font-weight: 800;"
+        )
+        self.dev_badge.setToolTip("开发者模式：可查看其他人提交的反馈")
+        self.dev_badge.setVisible(False)
         layout.addWidget(self.avatar)
         layout.addWidget(self.name)
+        layout.addWidget(self.dev_badge)
         layout.addWidget(self.mode)
         transparent_children(self)
+
+    def set_developer(self, enabled: bool) -> None:
+        self.dev_badge.setVisible(bool(enabled))
 
     def set_account(self, name: str, mode: str, online: bool = False) -> None:
         self.name.setText(name)
@@ -364,6 +378,12 @@ class MainWindow(QWidget):
             layout.addSpacing(2)
 
         layout.addStretch(1)
+        self.feedback_btn = icon_button(
+            "message", "Bug 反馈 / 改进建议", colors()["text2"], 32, 17
+        )
+        self.feedback_btn.clicked.connect(lambda: self.open_feedback_dialog("bug"))
+        layout.addWidget(self.feedback_btn)
+        layout.addSpacing(4)
         self.download_chip = TopDownloadChip()
         self.download_chip.clicked.connect(self.open_download_tasks)
         layout.addWidget(self.download_chip)
@@ -1156,13 +1176,22 @@ class MainWindow(QWidget):
 
     def _update_account(self) -> None:
         account = self.current_account()
+        dev_mode = is_developer(self.config, account)
+        set_developer_mode(dev_mode)
         if hasattr(self, "account_chip"):
             self.account_chip.set_account(
                 account.display_name if account.is_msa else self.config.player_name,
                 "正版" if account.is_msa else "离线",
                 account.is_msa,
             )
+            self.account_chip.set_developer(dev_mode)
             self.account_chip.avatar.refresh()
+        if hasattr(self, "feedback_btn"):
+            self.feedback_btn.setToolTip(
+                "开发者收件箱 · Bug 反馈 / 改进建议"
+                if dev_mode
+                else "Bug 反馈 / 改进建议"
+            )
         if hasattr(self, "home_page"):
             self.home_page._refresh_status()
         if hasattr(self, "settings_page"):
@@ -1496,6 +1525,22 @@ class MainWindow(QWidget):
         dialog = SocialDialog(self)
         dialog.join_requested.connect(self.join_friend_room)
         dialog.exec()
+
+    def open_feedback_dialog(self, kind: str = "bug") -> None:
+        """打开 Bug 反馈 / 改进建议；开发者会额外看到收件箱。"""
+        dialog = FeedbackDialog(self, kind=kind)
+        dialog.exec()
+        self._update_account()
+
+    def open_feedback_inbox(self) -> None:
+        """开发者快捷入口：直接打开收件箱标签。"""
+        dialog = FeedbackDialog(self, kind="bug")
+        try:
+            dialog.tabs.set_value("inbox", emit=True)
+        except Exception:
+            pass
+        dialog.exec()
+        self._update_account()
 
     def offer_shortcut_once(self) -> None:
         """第一次启动时询问是否创建桌面快捷方式，之后不再打扰。"""

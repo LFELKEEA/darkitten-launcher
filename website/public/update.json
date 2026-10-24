@@ -1,22 +1,23 @@
 {
-  "version": "1.9.20",
+  "version": "1.9.21",
   "released": "2026-10-24",
   "notes": [
-    "下载模块重写连接层：同一站点的 HTTP/HTTPS 连接会复用，小文件下载不再每次重新握手，本地基准测试中 80 个小文件从 5.40 秒降到 0.59 秒。",
-    "整合包与 CurseForge 整合包改为多文件并行下载，并聚合显示总进度；大量小文件场景明显更快。",
-    "已知文件大小时不再额外发送探测请求，直接按大小分段下载，减少一次往返和超时等待。",
-    "分段下载支持断点续传：某个分段网络中断后会从已写入的位置继续，不再整段重下。",
-    "单线程下载也加入重试与续传；服务器不支持 Range 时自动回退为整文件下载，不影响兼容性。",
-    "安装器提高依赖库与资源文件的并发数，并保留镜像回退；版本安装、加载器安装与整合包导入整体提速。"
+    "新增“猫猫意见箱”：启动器标题栏与设置页可以直接提交 Bug 反馈或改进建议，自动附带版本号与联系方式。",
+    "新增开发者模式：正版账户名为 LFELKEEA 且填写指定 Microsoft 邮箱时自动开启，顶栏出现 DEV 标记，可查看所有反馈并修改处理状态。",
+    "开发者模式下 OC 台词切换为对开发者说话，首页大图和侧边 Q 版形象都有专属互动文案。",
+    "网站新增“反馈 / 建议”导航与 FEEDBACK LOOP 区块，可从 Bug 或建议入口直接打开对应表单，并支持 #feedback-bug、#feedback-suggestion 深链。",
+    "反馈提交失败时自动展开 GitHub 公开提交、邮件发送与复制内容三种兜底方式，已填写的内容不会丢失。",
+    "反馈服务 API 与页面 CSP 同步放行；启动器收件箱会合并云端反馈与 GitHub Issues，按时间排序并去重。",
+    "修复减少动态效果模式下网站反馈区块不显示的问题，并统一标注反馈来源（启动器 / 网站 / GitHub）。"
   ],
-  "download_url": "downloads/DKL-1.9.20-update.zip",
+  "download_url": "downloads/DKL-1.9.21-update.zip",
   "page_url": "index.html",
-  "source_url": "downloads/DarkittenLauncher-1.9.20-source.zip",
-  "source_txt_url": "downloads/DarkittenLauncher-1.9.20-source.txt",
-  "sha256": "e019ea60b01378d48991d1e36507f66e08f261b740249044ca7739b65d9c6ae8",
-  "size": 1056432,
-  "source_sha256": "c69ea18c8fa5c1a4ed2d70395f57e17f365ab9025bb1ee881bb3f9d4782f7489",
-  "source_size": 1815621,
-  "source_txt_sha256": "d7bad846c9422de6b5eb81214c967b45715fdbc96a0978071e8b76ee2158065a",
-  "source_txt_size": 1996228
+  "source_url": "downloads/DarkittenLauncher-1.9.21-source.zip",
+  "source_txt_url": "downloads/DarkittenLauncher-1.9.21-source.txt",
+  "sha256": "1734b037f094bf1cdc3529e64e3e65bf413bc0fa417ba80288b3321bc66c9b10",
+  "size": 1071620,
+  "source_sha256": "d86061201d2a39dac2a218b8ce680578521caf72053a96e3b6b1d2d42576c69e",
+  "source_size": 1837537,
+  "source_txt_sha256": "8bae924e3826cb4704e7b0d82cad0fb0bb3fed5b2266bd7b635ad618fb62a63d",
+  "source_txt_size": 2077355
 }

@@ -170,6 +170,15 @@ QWidget {{
     border: 1px solid {c['border']};
     border-radius: 11px;
 }}
+#FeedbackRow {{
+    background: {c['card2']};
+    border: 1px solid {c['border']};
+    border-radius: 10px;
+}}
+#FeedbackRow:hover {{
+    background: {c['card']};
+    border: 1px solid {c['accent']};
+}}
 #Divider {{
     background: {c['border']};
     min-height: 1px;

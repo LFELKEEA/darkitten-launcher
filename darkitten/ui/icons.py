@@ -94,6 +94,15 @@ def pixmap(name: str, color: str = "#59637A", size: int = 18) -> QPixmap:
         _line(p, [(5.8, 6.0), (12.2, 6.0)])
         _line(p, [(5.8, 9.0), (12.2, 9.0)])
         _line(p, [(5.8, 12.0), (10.2, 12.0)])
+    elif name == "message":
+        path = QPainterPath()
+        path.addRoundedRect(QRectF(2.4 * u, 3.1 * u, 13.2 * u, 9.6 * u), 2.2 * u, 2.2 * u)
+        p.drawPath(path)
+        p.drawPolygon(QPolygonF([pt(6.4, 12.4), pt(6.4, 15.8), pt(10.2, 12.7)]))
+        p.setBrush(c)
+        p.setPen(Qt.NoPen)
+        for x in (6.0, 9.0, 12.0):
+            p.drawEllipse(pt(x, 7.9), 0.85 * u, 0.85 * u)
     elif name == "plus":
         _line(p, [(9, 3.2), (9, 14.8)])
         _line(p, [(3.2, 9), (14.8, 9)])

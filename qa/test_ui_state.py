@@ -73,6 +73,8 @@ def main() -> None:
         ok &= bool(dialogs_ok)
 
     home = window.home_page
+    # 干净环境里可能没有已安装版本，给状态切换一个占位版本，避免 _refresh_status 提前返回。
+    home._selected = home._selected or "ui-state-test"
     window.launch_active = True
     home.set_launching(True)
     launching_ok = (
