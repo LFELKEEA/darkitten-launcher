@@ -157,6 +157,10 @@ class AccountChip(QFrame):
         self.setAttribute(Qt.WA_StyledBackground, True)
         self.setCursor(Qt.PointingHandCursor)
         self.setFixedHeight(40)
+        self._compact = False
+        self._developer = False
+        self._display_name = "Steve"
+        self._mode_text = "离线"
         layout = QHBoxLayout(self)
         layout.setContentsMargins(6, 3, 11, 3)
         layout.setSpacing(7)
@@ -181,15 +185,45 @@ class AccountChip(QFrame):
         transparent_children(self)
 
     def set_developer(self, enabled: bool) -> None:
-        self.dev_badge.setVisible(bool(enabled))
+        self._developer = bool(enabled)
+        self.dev_badge.setVisible(self._developer and not self._compact)
+        self._sync_tooltip()
 
     def set_account(self, name: str, mode: str, online: bool = False) -> None:
+        self._display_name = name
+        self._mode_text = mode
         self.name.setText(name)
         self.name.setToolTip(name)
         self.mode.setText(mode)
         self.mode.setStyleSheet(
             f"color: {colors()['green']}; font-weight: 700;" if online else ""
         )
+        self._sync_tooltip()
+
+    def set_compact(self, compact: bool) -> None:
+        """窄窗口只保留头像，避免账户胶囊挤压导航与窗口按钮。"""
+        compact = bool(compact)
+        if compact == self._compact:
+            return
+        self._compact = compact
+        self.name.setVisible(not compact)
+        self.mode.setVisible(not compact)
+        self.dev_badge.setVisible(self._developer and not compact)
+        if compact:
+            self.setFixedWidth(47)
+        else:
+            self.setMinimumWidth(0)
+            self.setMaximumWidth(16777215)
+        self._sync_tooltip()
+        self.updateGeometry()
+
+    def _sync_tooltip(self) -> None:
+        lines = [f"{self._display_name} · {self._mode_text}"]
+        if self._developer:
+            # 窄窗口收起 DEV 徽章时，仍要在提示里说明开发者身份。
+            lines.append("开发者模式：可查看其他人提交的反馈")
+        lines.append("点击管理账户与好友")
+        self.setToolTip("\n".join(lines))
 
     def mouseReleaseEvent(self, event: QMouseEvent) -> None:
         if event.button() == Qt.LeftButton:
@@ -279,6 +313,7 @@ class MainWindow(QWidget):
         QTimer.singleShot(6000, self._check_feedback_reminder)
         QApplication.instance().installEventFilter(self)
         self._restore_geometry()
+        self._apply_titlebar_mode()
         self.ensure_java_detected()
         self._update_account()
         self._update_status_version()
@@ -379,6 +414,8 @@ class MainWindow(QWidget):
         brand.addWidget(tag)
         layout.addLayout(brand)
         layout.addSpacing(18)
+        self.brand_name = name
+        self.brand_tag = tag
 
         self.nav_buttons: dict[str, NavButton] = {}
         nav_specs = [
@@ -606,8 +643,27 @@ class MainWindow(QWidget):
         if event.type() == QEvent.WindowStateChange and hasattr(self, "max_btn"):
             self._update_window_icons()
 
+    def _apply_titlebar_mode(self) -> None:
+        """窄窗口收缩品牌、账户与下载胶囊，保证导航标签不被裁切或重叠。"""
+        width = self.width()
+        show_brand = width >= 1180
+        full_account = width >= 1400
+        tight_nav = width < 1400
+        compact_download = width < 1500
+        if hasattr(self, "brand_name"):
+            self.brand_name.setVisible(show_brand)
+            self.brand_tag.setVisible(show_brand)
+        if hasattr(self, "account_chip"):
+            self.account_chip.set_compact(not full_account)
+        if hasattr(self, "download_chip"):
+            self.download_chip.set_compact(compact_download)
+        if hasattr(self, "nav_buttons"):
+            for button in self.nav_buttons.values():
+                button.set_tight(tight_nav)
+
     def resizeEvent(self, event) -> None:
         super().resizeEvent(event)
+        self._apply_titlebar_mode()
         if hasattr(self, "loading_overlay") and self.loading_overlay.isVisible():
             self.loading_overlay.setGeometry(self.rect())
         if hasattr(self, "drop_hint") and self.drop_hint.isVisible():

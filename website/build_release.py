@@ -237,7 +237,17 @@ def legacy_shim_entries(
 def sync_site_version(version: str) -> None:
     index = PUBLIC / "index.html"
     text = index.read_text(encoding="utf-8")
-    text = re.sub(r"1\.9\.\d+", version, text)
+    previous = ""
+    try:
+        manifest = json.loads((PUBLIC / "update.json").read_text(encoding="utf-8"))
+        previous = str(manifest.get("version") or "")
+    except (OSError, ValueError):
+        pass
+    if previous and previous != version:
+        # 精确替换上一版版本号，避免误伤页面里的 Minecraft 版本号。
+        text = text.replace(previous, version)
+    else:
+        text = re.sub(r"1\.(?:9|10)\.\d+", version, text)
     index.write_text(text, encoding="utf-8")
 
     script = PUBLIC / "app.js"

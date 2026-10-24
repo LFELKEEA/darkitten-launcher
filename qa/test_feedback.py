@@ -349,7 +349,11 @@ def settings_unlock_test(app: QApplication) -> None:
         check("settings_unlock_row_hidden", page.developer_unlock_row.isHidden())
         check("settings_actions_visible", not page.developer_actions.isHidden())
         check("settings_table_url", feedback_table_url(config).endswith("#key=" + config.developer_page_token))
-        check("settings_dev_badge_chip", not window.account_chip.dev_badge.isHidden())
+        chip = window.account_chip
+        check(
+            "settings_dev_badge_chip",
+            not chip.dev_badge.isHidden() or "开发者模式" in chip.toolTip(),
+        )
 
         page._lock_developer()
         pump(app)

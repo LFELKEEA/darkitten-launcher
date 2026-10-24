@@ -29,10 +29,13 @@ def _new_painter(size: int) -> tuple[QPixmap, QPainter, int]:
     return pixmap, painter, size
 
 
-def _line(painter: QPainter, points: list[tuple[float, float]]) -> None:
-    path = QPainterPath(QPointF(*points[0]))
+def _line(painter: QPainter, points: list[tuple[float, float] | QPointF]) -> None:
+    def _point(value: tuple[float, float] | QPointF) -> QPointF:
+        return value if isinstance(value, QPointF) else QPointF(*value)
+
+    path = QPainterPath(_point(points[0]))
     for point in points[1:]:
-        path.lineTo(QPointF(*point))
+        path.lineTo(_point(point))
     painter.drawPath(path)
 
 
@@ -55,9 +58,10 @@ def pixmap(name: str, color: str = "#59637A", size: int = 18) -> QPixmap:
         p.setBrush(c)
         p.drawPolygon(QPolygonF([pt(5.2, 3.2), pt(5.2, 14.8), pt(14.8, 9.0)]))
     elif name == "download":
-        _line(p, [(9, 2.6), (9, 11.4)])
-        _line(p, [(4.8, 7.4), (9, 11.7), (13.2, 7.4)])
-        _line(p, [(3.2, 14.6), (14.8, 14.6)])
+        # 与其他图标一样按 size/18 缩放，否则 14px 时箭头会偏向右下并被裁切。
+        _line(p, [pt(9, 2.6), pt(9, 11.4)])
+        _line(p, [pt(4.8, 7.4), pt(9, 11.7), pt(13.2, 7.4)])
+        _line(p, [pt(3.2, 14.6), pt(14.8, 14.6)])
     elif name == "cube":
         p.drawPolygon(
             QPolygonF([pt(9, 2.1), pt(15.3, 5.7), pt(9, 9.3), pt(2.7, 5.7)])

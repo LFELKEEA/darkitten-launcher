@@ -196,25 +196,40 @@ class NavButton(QPushButton):
         self._icon_name = icon_name
         self._accent = accent
         self._active = False
+        self._tight = False
         self.setCheckable(False)
         self.setCursor(Qt.PointingHandCursor)
         self.setFixedHeight(34)
         self.setIconSize(QSize(16, 16))
         self.set_active(False)
 
+    def set_tight(self, tight: bool) -> None:
+        """窄窗口收窄左右内边距，让全部导航标签仍能完整显示。"""
+        tight = bool(tight)
+        if tight == self._tight:
+            return
+        self._tight = tight
+        self._refresh_style()
+
     def set_active(self, active: bool) -> None:
         self._active = active
         c = colors()
         icon_color = self._accent if active else c["text2"]
         self.setIcon(icons.icon(self._icon_name, icon_color, 16))
-        if active:
+        self._refresh_style()
+
+    def _refresh_style(self) -> None:
+        padding = "padding: 0 10px;" if self._tight else ""
+        if self._active:
             tint = QColor(self._accent)
             self.setStyleSheet(
-                f"QPushButton#Nav {{ background: rgba({tint.red()},{tint.green()},"
-                f"{tint.blue()},30); color: {self._accent}; }}"
+                f"QPushButton#Nav {{ {padding} background: rgba({tint.red()},"
+                f"{tint.green()},{tint.blue()},30); color: {self._accent}; }}"
                 f"QPushButton#Nav:hover {{ background: rgba({tint.red()},"
                 f"{tint.green()},{tint.blue()},46); color: {self._accent}; }}"
             )
+        elif self._tight:
+            self.setStyleSheet(f"QPushButton#Nav {{ {padding} }}")
         else:
             self.setStyleSheet("")
 

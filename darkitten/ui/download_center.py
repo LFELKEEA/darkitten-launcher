@@ -591,6 +591,8 @@ class TopDownloadChip(QFrame):
         self.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
         self._task: DownloadTask | None = None
         self._final_task_id = 0
+        self._compact = False
+        self._icon_only: bool | None = None
         self._hide_timer = QTimer(self)
         self._hide_timer.setSingleShot(True)
         self._hide_timer.setInterval(8000)
@@ -599,6 +601,7 @@ class TopDownloadChip(QFrame):
         outer = QHBoxLayout(self)
         outer.setContentsMargins(7, 4, 9, 4)
         outer.setSpacing(7)
+        self._outer = outer
 
         self.icon_box = QLabel()
         self.icon_box.setFixedSize(24, 24)
@@ -640,10 +643,35 @@ class TopDownloadChip(QFrame):
         self.message_label.setVisible(not compact)
         self.percent_label.setVisible(self.width() >= 72)
         self.status_label.setVisible(self.width() >= 84)
-        if compact:
-            self.progress.setVisible(False)
+        self.progress.setVisible(not compact)
+        self._sync_icon_margins(compact)
+
+    def _sync_icon_margins(self, icon_only: bool) -> None:
+        """只显示图标时取消右侧留白，否则图标会偏左约 6px。"""
+        if icon_only == self._icon_only:
+            return
+        self._icon_only = icon_only
+        if icon_only:
+            self._outer.setContentsMargins(12, 4, 12, 4)
+            self._outer.setSpacing(0)
         else:
-            self.progress.setVisible(True)
+            self._outer.setContentsMargins(7, 4, 9, 4)
+            self._outer.setSpacing(7)
+
+    def set_compact(self, compact: bool) -> None:
+        """窄窗口固定为图标大小，任务运行时也不再横向撑开顶栏。"""
+        compact = bool(compact)
+        if compact == self._compact:
+            return
+        self._compact = compact
+        if compact:
+            self.setMinimumWidth(48)
+            self.setMaximumWidth(48)
+        else:
+            self.setMaximumWidth(196)
+            active = self._task is not None and self._task.running
+            self.setMinimumWidth(120 if active else 48)
+        self.updateGeometry()
 
     def sync(self, center: DownloadCenter) -> None:
         active = center.active_tasks()
@@ -685,7 +713,10 @@ class TopDownloadChip(QFrame):
         self, task: DownloadTask, running_count: int, final: bool = False
     ) -> None:
         self._task = task
-        if final:
+        if self._compact:
+            self.setMinimumWidth(48)
+            self.setMaximumWidth(48)
+        elif final:
             self.setMinimumWidth(48)
             self.setMaximumWidth(196)
         else:

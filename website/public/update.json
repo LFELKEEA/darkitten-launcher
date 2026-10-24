@@ -1,29 +1,19 @@
 {
-  "version": "1.10.0",
+  "version": "1.10.1",
   "released": "2026-10-24",
   "notes": [
-    "新增“一键性能优化”：读取系统内存、显卡与当前实例的 Mod 数量，按加载器推荐内存和 JVM 参数，只写入当前游戏版本，不改动全局默认设置与其他版本。",
-    "性能优化会补齐适配加载器的优化 Mod：Fabric / Quilt 使用 Sodium、Lithium、FerriteCore、ModernFix、ImmediatelyFast、EntityCulling；Forge / NeoForge 使用 Embeddium、Canary 等对应组合，并自动安装必需前置。",
-    "已禁用的 Mod 仍视为已安装，不会被重新下载或擅自启用；检测到 OptiFine 时跳过冲突的渲染优化并给出提示。",
-    "优化记录保存在当前版本目录，可在同一窗口一键撤销：恢复优化前的内存、JVM 参数与 options.txt；启动器装入且未被修改的文件会移到备份目录，改动过的文件保持原样。",
-    "新增“画面一键升级”：提供性能、均衡、画质三档，按显卡推荐档位，写入渲染距离、模拟距离、粒子、阴影、云层等选项，并在修改前自动备份 options.txt。",
-    "画面升级可为 Fabric / Quilt / NeoForge 安装 Iris 与 Complementary Reimagined 光影并设为默认；Forge 或已安装 OptiFine 时保留原有方案，只调整画面选项。",
-    "联机邀请卡现在可以携带房主的 Mod 清单：房主复制邀请卡时后台整理已启用 Mod 的文件名、大小、SHA1 与 Modrinth / CurseForge 来源，不再阻塞界面。",
-    "客人粘贴邀请卡后会自动填入房间号与版本，并显示已有、缺失、无法识别三类 Mod；同步只下载缺失且能确认来源的文件，逐个校验 SHA1，不会删除或覆盖已有 Mod。",
-    "新增“同步房主 Mod”窗口，也可以单独粘贴 Mod 清单到任意已安装版本；加载器或游戏版本不一致时会明确提示。",
-    "下载速度进一步优化：分块提升到 1 MiB，扩大连接复用池，启用 TCP_NODELAY，提高分段并发上限；Mod 与 CurseForge 下载使用更多连接，整合包安装的分段数随线程数提升。",
-    "修复房间号输入框最多只能输入 40 个字符的问题：好友邀请卡现在可以完整粘贴并解析，携带大量 Mod 的邀请卡也不会被截断；同时修正联机 Mod 数量提示重复与顶栏标题被裁切。",
-    "修复断点续传在“文件刚好下载完、但尚未收尾”时可能出现的 HTTP 416：现在会直接校验并完成文件，不再反复重试失败。",
-    "源码包与源码 TXT 只保留启动器运行所需的代码和资源，不再附带网站源码与构建脚本；网站源码仍保留在 GitHub 仓库。"
+    "修复窗口缩小时顶栏拥挤：导航标签不再被裁切或互相重叠，窗口按钮与账户入口保持完整。",
+    "窗口较窄时自动收起品牌名和账户文字，只保留图标；放大窗口后自动恢复，顶栏高度始终保持一致。",
+    "修复顶栏下载图标在 14px 下偏移并被裁切的问题，空闲时图标在按钮内居中显示。"
   ],
-  "download_url": "downloads/DKL-1.10.0-update.zip",
+  "download_url": "downloads/DKL-1.10.1-update.zip",
   "page_url": "index.html",
-  "source_url": "downloads/DarkittenLauncher-1.10.0-source.zip",
-  "source_txt_url": "downloads/DarkittenLauncher-1.10.0-source.txt",
-  "sha256": "ba409be1d0b55f8711324f81ea8f5fb0bf081a31455018410e4323c88628ee6b",
-  "size": 878457,
-  "source_sha256": "80cb5355c89e92e318c562df7ce069ee1a3fb5be7556a251d7b99ddcc24eaeee",
-  "source_size": 881087,
-  "source_txt_sha256": "74672422890575009d533e75ee57bb8963f6d1284d01e97518126c3444fd6509",
-  "source_txt_size": 1924750
+  "source_url": "downloads/DarkittenLauncher-1.10.1-source.zip",
+  "source_txt_url": "downloads/DarkittenLauncher-1.10.1-source.txt",
+  "sha256": "b89f71be85745d99d3259aade312adee34a5034835971655a22781671c16bd21",
+  "size": 879674,
+  "source_sha256": "4dc6c4fe58019ae7c7a69bc599f8427c3be29659d3652d7766622e54e41042c1",
+  "source_size": 882304,
+  "source_txt_sha256": "ebbb7c5a9e0a1e57c41cb6729020d6a90209fca0e7d928555eaa398fbf8e4ab4",
+  "source_txt_size": 1929165
 }
