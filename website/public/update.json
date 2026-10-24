@@ -1,21 +1,22 @@
 {
-  "version": "1.9.19",
+  "version": "1.9.20",
   "released": "2026-10-24",
   "notes": [
-    "修复下载中心没有真正接管任务的问题：整合包导入、版本 ZIP 导入、本地内容导入、游戏版本安装、加载器安装和服务端安装都会进入全局下载中心。",
-    "关闭整合包、版本包、本地导入、加载器或服务端安装窗口后，任务会转到顶栏继续，不再取消；可以继续浏览页面或做别的事。",
-    "顶栏下载中心改为常驻入口：没有任务时也显示下载图标，点击可以查看最近的下载与导入记录。",
-    "下载中心统一显示“下载中 / 导入中 / 安装中”和进度、目标目录，并支持取消、打开文件夹和完成后的导入跳转。",
-    "任务在后台完成后会统一刷新版本、Mod 或服务端列表，并提示结果；加载器完成时继续自动绑定到原游戏版本。"
+    "下载模块重写连接层：同一站点的 HTTP/HTTPS 连接会复用，小文件下载不再每次重新握手，本地基准测试中 80 个小文件从 5.40 秒降到 0.59 秒。",
+    "整合包与 CurseForge 整合包改为多文件并行下载，并聚合显示总进度；大量小文件场景明显更快。",
+    "已知文件大小时不再额外发送探测请求，直接按大小分段下载，减少一次往返和超时等待。",
+    "分段下载支持断点续传：某个分段网络中断后会从已写入的位置继续，不再整段重下。",
+    "单线程下载也加入重试与续传；服务器不支持 Range 时自动回退为整文件下载，不影响兼容性。",
+    "安装器提高依赖库与资源文件的并发数，并保留镜像回退；版本安装、加载器安装与整合包导入整体提速。"
   ],
-  "download_url": "downloads/DKL-1.9.19-update.zip",
+  "download_url": "downloads/DKL-1.9.20-update.zip",
   "page_url": "index.html",
-  "source_url": "downloads/DarkittenLauncher-1.9.19-source.zip",
-  "source_txt_url": "downloads/DarkittenLauncher-1.9.19-source.txt",
-  "sha256": "3b748a027a4b5eb0a3fb5a4db20ae63ed795760c922e9613a4ea90100a5d9609",
-  "size": 1051731,
-  "source_sha256": "c1058a75e50040b2a46dd73c219e7854de8da83c67526902ac628b6eb0959702",
-  "source_size": 1804460,
-  "source_txt_sha256": "4585cb0a5ce4c85edc0ce7ff5b55e0027ea12175dc56e60f0310ae7b775048c7",
-  "source_txt_size": 1951280
+  "source_url": "downloads/DarkittenLauncher-1.9.20-source.zip",
+  "source_txt_url": "downloads/DarkittenLauncher-1.9.20-source.txt",
+  "sha256": "e019ea60b01378d48991d1e36507f66e08f261b740249044ca7739b65d9c6ae8",
+  "size": 1056432,
+  "source_sha256": "c69ea18c8fa5c1a4ed2d70395f57e17f365ab9025bb1ee881bb3f9d4782f7489",
+  "source_size": 1815621,
+  "source_txt_sha256": "d7bad846c9422de6b5eb81214c967b45715fdbc96a0978071e8b76ee2158065a",
+  "source_txt_size": 1996228
 }

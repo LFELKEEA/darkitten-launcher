@@ -505,7 +505,7 @@ def _preseed_libraries(
             log_cb(f"依赖预下载失败：{path}（{exc}）")
             return False
 
-    with ThreadPoolExecutor(max_workers=4) as pool:
+    with ThreadPoolExecutor(max_workers=8) as pool:
         futures = [pool.submit(task, lib) for lib in libs]
         try:
             for future in as_completed(futures):

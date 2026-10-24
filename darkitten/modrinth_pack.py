@@ -12,7 +12,12 @@ from typing import Any, Callable
 
 from urllib.parse import urlparse
 
-from .downloader import DownloadCancelled, download_to_file, http_open
+from .downloader import (
+    BatchDownload,
+    download_batch,
+    download_to_file,
+    http_open,
+)
 from .installer import Installer
 from .loaders import install_loader
 from .paths import version_game_dir
@@ -557,82 +562,76 @@ def import_modrinth_pack(
     downloaded = 0
     total_files = max(1, len(info.files))
 
-    for index, item in enumerate(info.files, 1):
+    pending: list[BatchDownload] = []
+    seen_paths: set[str] = set()
+    for item in info.files:
         check_cancel()
         destination = _inside(run_dir, run_dir / item.path)
-        start = 48 + int(44 * (index - 1) / total_files)
-        end = 48 + int(44 * index / total_files)
+        key = str(destination).lower()
+        if key in seen_paths:
+            skipped += 1
+            continue
+        seen_paths.add(key)
         if _file_matches(destination, item.sha1, item.size):
             skipped += 1
-            progress(end, f"已有 {item.path}")
             continue
-        destination.parent.mkdir(parents=True, exist_ok=True)
-        last = [0]
 
-        def on_bytes(done: int, total: int, start=start, end=end) -> None:
-            percent = start + int((end - start) * min(1.0, done / total)) if total else start
-            if percent != last[0]:
-                last[0] = percent
-                progress(percent, f"下载 {item.path}")
+        item_urls = list(item.urls or [])
 
-        if url_resolver is not None:
-            candidates = list(url_resolver(item) or item.urls)
-        else:
-            candidates = _preferred_urls(item)
-        candidates = list(dict.fromkeys(candidates + item.urls))
-        errors: list[str] = []
-        for url in candidates:
-            check_cancel()
-            try:
-                download_func(
-                    url,
-                    destination,
-                    sha1=item.sha1,
-                    size=item.size,
-                    cancel_event=cancel,
-                    progress_cb=on_bytes,
-                    connections=connections,
-                )
-                break
-            except DownloadCancelled:
-                raise ModrinthPackError("导入已取消") from None
-            except Exception as exc:
-                check_cancel()
-                errors.append(str(exc))
-        else:
-            if url_resolver is None and not any(
-                (urlparse(url).hostname or "").lower() == "cdn.modrinth.com"
-                for url in candidates
-            ):
-                for url in _modrinth_fallback_urls(item.sha1):
-                    check_cancel()
-                    try:
-                        download_func(
-                            url,
-                            destination,
-                            sha1=item.sha1,
-                            size=item.size,
-                            cancel_event=cancel,
-                            progress_cb=on_bytes,
-                            connections=connections,
-                        )
-                        break
-                    except DownloadCancelled:
-                        raise ModrinthPackError("导入已取消") from None
-                    except Exception as exc:
-                        check_cancel()
-                        errors.append(str(exc))
-                else:
-                    detail = errors[-1] if errors else "没有可用的下载地址"
-                    raise ModrinthPackError(f"下载 {item.path} 失败：{detail}")
+        def candidates(
+            item: ModrinthFile = item, item_urls: list[str] = item_urls
+        ) -> list[str]:
+            if url_resolver is not None:
+                urls = list(url_resolver(item) or item_urls)
             else:
-                detail = errors[-1] if errors else "没有可用的下载地址"
-                raise ModrinthPackError(f"下载 {item.path} 失败：{detail}")
-        imported += 1
-        downloaded += 1
-        imported_bytes += max(0, int(item.size))
-        progress(end, f"已下载 {item.path}")
-        log(f"下载完成：{item.path}")
+                urls = _preferred_urls(item)
+            return list(dict.fromkeys(urls + item_urls))
+
+        def fallback(
+            item: ModrinthFile = item, item_urls: list[str] = item_urls
+        ) -> list[str]:
+            if url_resolver is not None:
+                return []
+            if any(
+                (urlparse(url).hostname or "").lower() == "cdn.modrinth.com"
+                for url in item_urls
+            ):
+                return []
+            return _modrinth_fallback_urls(item.sha1)
+
+        pending.append(
+            BatchDownload(
+                dest=destination,
+                urls=candidates,
+                sha1=item.sha1,
+                size=item.size,
+                label=item.path,
+                fallback=fallback,
+            )
+        )
+
+    if pending:
+        start_percent = 48 + int(44 * skipped / total_files)
+        downloaded, failures = download_batch(
+            pending,
+            cancel_event=cancel,
+            connections=connections,
+            max_workers=min(8, max(2, int(threads))),
+            progress_cb=progress,
+            percent_range=(start_percent, 92),
+            log_cb=log,
+            label="下载整合包文件",
+            download_func=download_func,
+        )
+        imported += downloaded
+        imported_bytes += sum(max(0, int(task.size)) for task in pending)
+        if failures:
+            detail = failures[0]
+            raise ModrinthPackError(
+                f"{len(failures)} 个文件下载失败：{detail}"
+            )
+    else:
+        downloaded = 0
 
     override_total = sum(max(0, item.size) for item in info.overrides) or 1
     override_done = 0

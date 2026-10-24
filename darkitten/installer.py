@@ -569,7 +569,7 @@ class Installer:
 
         if total:
             with ThreadPoolExecutor(
-                max_workers=max(4, min(12, self.threads))
+                max_workers=max(6, min(16, self.threads + 4))
             ) as pool:
                 futures = [pool.submit(worker, art) for art in all_arts]
                 try:
@@ -727,7 +727,7 @@ class Installer:
         if tasks:
             self.log(f"需要下载 {len(tasks)} 个资源文件")
             with ThreadPoolExecutor(
-                max_workers=max(4, min(24, self.threads * 2))
+                max_workers=max(8, min(32, self.threads * 3))
             ) as pool:
                 futures = [pool.submit(worker, task) for task in tasks]
                 try:

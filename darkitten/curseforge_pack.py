@@ -5,12 +5,17 @@ import re
 import shutil
 import threading
 import zipfile
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
 from typing import Any, Callable
 
 from .curseforge import candidate_download_urls, fetch_file
-from .downloader import DownloadCancelled, download_to_file
+from .downloader import (
+    BatchDownload,
+    download_batch,
+    download_to_file,
+)
 from .installer import Installer
 from .loaders import install_loader
 from .paths import version_game_dir
@@ -496,12 +501,12 @@ def import_curseforge_pack(
     downloaded = 0
     total_files = max(1, len(info.files))
 
-    for index, item in enumerate(info.files, 1):
+    def resolve(item: CurseForgeFile) -> tuple[CurseForgeFile, dict[str, Any]]:
         check_cancel()
-        start = 48 + int(44 * (index - 1) / total_files)
-        end = 48 + int(44 * index / total_files)
         try:
-            version = fetch_meta(item.project_id, item.file_id, content_type="mod")
+            version = fetch_meta(
+                item.project_id, item.file_id, content_type="mod"
+            )
         except Exception as exc:
             raise CurseForgePackError(
                 f"读取 CurseForge 文件 {item.project_id}/{item.file_id} 失败：{exc}"
@@ -520,6 +525,21 @@ def import_curseforge_pack(
                 f"作者未开放文件 {item.project_id}/{item.file_id} 的第三方下载，"
                 "请到 CurseForge 页面手动下载"
             )
+        return item, file
+
+    resolved: list[tuple[CurseForgeFile, dict[str, Any]]] = []
+    if info.files:
+        metadata_workers = min(8, max(2, int(threads)), len(info.files))
+        if metadata_workers > 1:
+            with ThreadPoolExecutor(max_workers=metadata_workers) as pool:
+                resolved = list(pool.map(resolve, info.files))
+        else:
+            resolved = [resolve(item) for item in info.files]
+
+    pending: list[BatchDownload] = []
+    seen_dest: set[str] = set()
+    for item, file in resolved:
+        check_cancel()
         filename = Path(str(file.get("filename") or "")).name
         if not filename:
             raise CurseForgePackError(
@@ -530,51 +550,52 @@ def import_curseforge_pack(
         sha1 = str((file.get("hashes") or {}).get("sha1") or "")
         if destination.is_file() and size and destination.stat().st_size == size:
             skipped += 1
-            progress(end, f"已有 mods/{filename}")
             continue
-        destination.parent.mkdir(parents=True, exist_ok=True)
-        last = [0]
+        key = str(destination).lower()
+        if key in seen_dest:
+            skipped += 1
+            continue
+        seen_dest.add(key)
 
-        def on_bytes(done: int, total: int, start=start, end=end, name=filename) -> None:
-            percent = (
-                start + int((end - start) * min(1.0, done / total))
-                if total
-                else start
-            )
-            if percent != last[0]:
-                last[0] = percent
-                progress(percent, f"下载 mods/{name}")
-
-        candidates = candidate_download_urls(str(file.get("url") or ""))
-        if not candidates:
+        raw_url = str(file.get("url") or "")
+        if not candidate_download_urls(raw_url):
             raise CurseForgePackError(f"文件 {filename} 没有可用的下载地址")
-        errors: list[str] = []
-        for url in candidates:
-            check_cancel()
-            try:
-                download_func(
-                    url,
-                    destination,
-                    sha1=sha1,
-                    size=size,
-                    cancel_event=cancel,
-                    progress_cb=on_bytes,
-                    connections=connections,
-                )
-                break
-            except DownloadCancelled:
-                raise CurseForgePackError("导入已取消") from None
-            except Exception as exc:
-                check_cancel()
-                errors.append(str(exc))
-        else:
-            detail = errors[-1] if errors else "没有可用的下载地址"
-            raise CurseForgePackError(f"下载 {filename} 失败：{detail}")
-        imported += 1
-        downloaded += 1
-        imported_bytes += max(0, size)
-        progress(end, f"已下载 mods/{filename}")
-        log(f"下载完成：mods/{filename}")
+
+        def candidates(url: str = raw_url) -> list[str]:
+            return candidate_download_urls(url)
+
+        pending.append(
+            BatchDownload(
+                dest=destination,
+                urls=candidates,
+                sha1=sha1,
+                size=size,
+                label=f"mods/{filename}",
+            )
+        )
+
+    if pending:
+        start_percent = 48 + int(44 * skipped / total_files)
+        downloaded, failures = download_batch(
+            pending,
+            cancel_event=cancel,
+            connections=connections,
+            max_workers=min(8, max(2, int(threads))),
+            progress_cb=progress,
+            percent_range=(start_percent, 92),
+            log_cb=log,
+            label="下载整合包文件",
+            download_func=download_func,
+        )
+        imported += downloaded
+        imported_bytes += sum(max(0, int(task.size)) for task in pending)
+        if failures:
+            detail = failures[0]
+            raise CurseForgePackError(
+                f"{len(failures)} 个文件下载失败：{detail}"
+            )
+    else:
+        downloaded = 0
 
     override_total = sum(max(0, item.size) for item in info.overrides) or 1
     override_done = 0
