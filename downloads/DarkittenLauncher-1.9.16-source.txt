@@ -1,5 +1,5 @@
 ﻿Darkitten Launcher 1.9.16 完整源代码
-生成时间：2026-10-24 12:39:36
+生成时间：2026-10-24 12:42:56
 文本文件：114
 ================================================================================
 目录
@@ -46598,25 +46598,26 @@ body.modal-open { overflow: hidden; }
 # FILE: website/public/update.json
 ################################################################################
 {
-  "version": "1.9.15",
+  "version": "1.9.16",
   "released": "2026-10-24",
   "notes": [
-    "内部代码包由 stellar 正式更名为 darkitten，源码与安装目录不再保留旧包名。",
-    "更新包内置一次性兼容垫片：1.9.14 及更早版本也能直接检测并升级到 1.9.15。",
-    "升级时旧 stellar 包会移动到 updates/legacy-stellar-* 备份，不再参与启动。",
-    "修复源码仓库旧目录未清理的问题，重新上传完整源码、源码 TXT 与更新包。",
-    "游戏版本、Mod、整合包、账户、好友、皮肤和全部设置继续完整保留。"
+    "服务端页面新增“打包服务端”：可导出 ZIP 压缩包或完整文件夹，方便备份、换机和分享。",
+    "打包会保留世界存档、玩家数据、白名单 / OP / 封禁名单、server.properties、EULA、插件或 Mod 及其配置。",
+    "打包自动排除 logs、crash-reports、缓存、session.lock 和临时文件；服务端运行中会提示先停止，避免存档写入。",
+    "支持把服务端 ZIP 或整个服务端文件夹直接拖进启动器导入，也可以在服务端页面选择文件或文件夹。",
+    "导入会安全解压并拒绝路径穿越与符号链接，同名服务端自动使用新文件夹，不覆盖原来的世界和玩家数据。",
+    "修复服务端设置页打包按钮在切换主题后图标颜色不刷新的问题。"
   ],
-  "download_url": "downloads/DKL-1.9.15-update.zip",
+  "download_url": "downloads/DKL-1.9.16-update.zip",
   "page_url": "index.html",
-  "source_url": "downloads/DarkittenLauncher-1.9.15-source.zip",
-  "source_txt_url": "downloads/DarkittenLauncher-1.9.15-source.txt",
-  "sha256": "df75934a2e13f32470f4d092612c086b8a0ec9a5a5697742e3a356b10cb1a437",
-  "size": 997847,
-  "source_sha256": "3c1e52e75717576bf7f462d762d5c7f6450083d7f0d12ac3ec03cdf3ccac93fd",
-  "source_size": 1720200,
-  "source_txt_sha256": "a7e37e7c681108bd873dcebdfb5e0bc0b064b986bac49ee98d9a14a344a93922",
-  "source_txt_size": 1620169
+  "source_url": "downloads/DarkittenLauncher-1.9.16-source.zip",
+  "source_txt_url": "downloads/DarkittenLauncher-1.9.16-source.txt",
+  "sha256": "36d055e80b808e5a5b3f6061ce6d2aee8f8cf9028e600dbb149cadf5010f42de",
+  "size": 1013306,
+  "source_sha256": "842d09b94c36ea25346c1ba29d6a2d4505707bec160ebe8b5ffa318f06b28a20",
+  "source_size": 1744203,
+  "source_txt_sha256": "5951dbb3681252c6ac4966bb49341c398f87b66860e400a02c6859765874fe96",
+  "source_txt_size": 1720126
 }
 
 
