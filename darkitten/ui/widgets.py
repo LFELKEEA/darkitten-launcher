@@ -840,7 +840,7 @@ class HeroArt(QWidget):
         max_text_w = max(56.0, available_w - pad_x * 2 - 4.0)
         natural_w = float(metrics.horizontalAdvance(self._phrase))
         text_w = max(48.0, min(natural_w, max_text_w))
-        flags = Qt.AlignCenter | Qt.TextWordWrap | Qt.TextWrapAnywhere
+        flags = Qt.AlignCenter | Qt.TextWordWrap
         needed = metrics.boundingRect(
             QRect(0, 0, max(1, int(math.ceil(text_w))), 1000),
             flags,
@@ -1011,7 +1011,7 @@ class HeroArt(QWidget):
             p.setFont(font)
             p.drawText(
                 text_rect,
-                Qt.AlignCenter | Qt.TextWordWrap | Qt.TextWrapAnywhere,
+                Qt.AlignCenter | Qt.TextWordWrap,
                 self._phrase,
             )
             p.setOpacity(1.0)

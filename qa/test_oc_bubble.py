@@ -17,7 +17,7 @@ from darkitten.ui.widgets import ChibiCompanion, HeroArt
 
 PASS = 0
 FAIL = 0
-WRAP_FLAGS = Qt.AlignCenter | Qt.TextWordWrap | Qt.TextWrapAnywhere
+WRAP_FLAGS = Qt.AlignCenter | Qt.TextWordWrap
 
 
 def check(name: str, condition: bool, detail: str = "") -> None:
