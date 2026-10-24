@@ -13,7 +13,7 @@ if str(PROJECT) not in sys.path:
 
 from PySide6.QtCore import QBuffer, QIODevice, Signal
 from PySide6.QtGui import QColor, QImage
-from PySide6.QtWidgets import QApplication, QWidget
+from PySide6.QtWidgets import QApplication, QPushButton, QWidget
 
 import darkitten.config as config_module
 import darkitten.skin_library as library
@@ -246,6 +246,31 @@ def ui_tests(root: Path, app: QApplication) -> None:
     page._import_to_library(second_png)
     app.processEvents()
     check("ui_library_two", page.library_grid.count() == 2)
+
+    from darkitten.ui.pages.skin import LibrarySkinCard
+
+    cards = page.findChildren(LibrarySkinCard)
+    check("ui_library_cards_present", len(cards) >= 2, f"cards={len(cards)}")
+    if cards:
+        actions = {
+            button.toolTip(): button for button in cards[0].findChildren(QPushButton)
+        }
+        rename = actions.get("重命名皮肤")
+        delete = actions.get("从皮肤库移除")
+        check(
+            "ui_skin_rename_action",
+            rename is not None
+            and rename.objectName() == "SkinAction"
+            and rename.width() >= 30
+            and rename.iconSize().width() >= 16,
+        )
+        check(
+            "ui_skin_delete_action",
+            delete is not None
+            and delete.objectName() == "SkinAction"
+            and delete.width() >= 30
+            and delete.iconSize().width() >= 16,
+        )
 
     active = next(item for item in library.list_skins() if library.path_matches(item, cfg.skin_path))
     page.variant_tabs.set_value("slim", emit=True)

@@ -300,6 +300,16 @@ QPushButton#IconBtn {{
 QPushButton#IconBtn:hover {{
     background: {c['hover']};
 }}
+QPushButton#SkinAction {{
+    background: transparent;
+    border: 1px solid {c['border']};
+    border-radius: 8px;
+    padding: 0;
+}}
+QPushButton#SkinAction:hover {{
+    background: {c['hover']};
+    border-color: {c['accent']};
+}}
 QPushButton#Launch {{
     background: #FFFFFF;
     color: #3A0F1C;

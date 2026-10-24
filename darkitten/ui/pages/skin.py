@@ -199,14 +199,16 @@ class LibrarySkinCard(QFrame):
         use_btn.setEnabled(not active)
         use_btn.clicked.connect(lambda: self.use_requested.emit(self.entry.id))
         rename_btn = icon_button(
-            "edit", "重命名皮肤", colors()["text2"], 28, 14
+            "edit", "重命名皮肤", colors()["text2"], 30, 16
         )
+        rename_btn.setObjectName("SkinAction")
         rename_btn.clicked.connect(
             lambda: self.rename_requested.emit(self.entry.id)
         )
         delete_btn = icon_button(
-            "trash", "从皮肤库移除", colors()["red"], 28, 14
+            "trash", "从皮肤库移除", colors()["red"], 30, 16
         )
+        delete_btn.setObjectName("SkinAction")
         delete_btn.clicked.connect(
             lambda: self.delete_requested.emit(self.entry.id)
         )

@@ -296,6 +296,13 @@ class SegmentedControl(QWidget):
         outer.setContentsMargins(0, 0, 0, 0)
         outer.addWidget(self.box)
 
+    @staticmethod
+    def _fit_button(button: QPushButton) -> None:
+        """保证分段按钮至少能完整放下标签，避免被布局挤成少一个字。"""
+        button.ensurePolished()
+        text_width = button.fontMetrics().horizontalAdvance(button.text())
+        button.setMinimumWidth(max(56, text_width + 30))
+
     def add_item(self, text: str, value: str) -> None:
         button = QPushButton(text)
         button.setObjectName("Segment")
@@ -304,6 +311,7 @@ class SegmentedControl(QWidget):
         button.clicked.connect(lambda _=False, v=value: self._on_click(v))
         self._group.addButton(button)
         self._layout.addWidget(button)
+        self._fit_button(button)
         self._buttons[value] = button
         if not self._current:
             button.setChecked(True)
@@ -328,6 +336,7 @@ class SegmentedControl(QWidget):
         button = self._buttons.get(value)
         if button is not None:
             button.setText(text)
+            self._fit_button(button)
 
     def current(self) -> str:
         return self._current

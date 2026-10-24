@@ -234,6 +234,40 @@ class ModsPage(QWidget):
         self.main.selection_changed.connect(self._on_selection_changed)
         self.refresh_mods()
 
+    def resizeEvent(self, event) -> None:
+        super().resizeEvent(event)
+        self._reflow_toolbar()
+
+    def _reflow_toolbar(self) -> None:
+        """宽度不足时把动作按钮折到第二行，优先保证筛选器完整显示。"""
+        if not hasattr(self, "_actions_host") or self.width() <= 0:
+            return
+        content_width = self.width() - 44
+        needed = (
+            30
+            + self.search.width()
+            + 9
+            + self._filters.minimumSizeHint().width()
+            + 9
+            + max(36, self.count_label.sizeHint().width())
+            + 9
+            + self._actions_host.sizeHint().width()
+            + 12
+        )
+        compact = content_width < needed
+        if compact == self._toolbar_compact:
+            return
+        self._toolbar_compact = compact
+        actions_row = self._toolbar_actions_row.layout()
+        if compact:
+            self._toolbar_top.removeWidget(self._actions_host)
+            actions_row.addWidget(self._actions_host)
+            self._toolbar_actions_row.show()
+        else:
+            actions_row.removeWidget(self._actions_host)
+            self._toolbar_top.addWidget(self._actions_host)
+            self._toolbar_actions_row.hide()
+
     def _build(self) -> None:
         outer = QVBoxLayout(self)
         outer.setContentsMargins(22, 18, 22, 18)
@@ -267,9 +301,13 @@ class ModsPage(QWidget):
         outer.addLayout(header)
 
         toolbar = Card()
-        toolbar_layout = QHBoxLayout(toolbar)
+        toolbar_layout = QVBoxLayout(toolbar)
         toolbar_layout.setContentsMargins(15, 10, 15, 10)
-        toolbar_layout.setSpacing(9)
+        toolbar_layout.setSpacing(8)
+
+        top_row = QHBoxLayout()
+        top_row.setSpacing(9)
+        self._toolbar_top = top_row
 
         self.search = QLineEdit()
         self.search.setPlaceholderText("搜索 Mod…")
@@ -279,19 +317,31 @@ class ModsPage(QWidget):
         )
         self.search.setFixedWidth(240)
         self.search.textChanged.connect(lambda _: self.refresh_mods())
-        toolbar_layout.addWidget(self.search)
+        top_row.addWidget(self.search)
 
-        filters = SegmentedControl()
-        filters.add_item("全部", "all")
-        filters.add_item("已启用", "enabled")
-        filters.add_item("已禁用", "disabled")
-        filters.changed.connect(self._on_filter)
-        toolbar_layout.addWidget(filters)
-        toolbar_layout.addStretch(1)
+        self._filters = SegmentedControl()
+        self._filters.add_item("全部", "all")
+        self._filters.add_item("已启用", "enabled")
+        self._filters.add_item("已禁用", "disabled")
+        self._filters.changed.connect(self._on_filter)
+        top_row.addWidget(self._filters)
+        top_row.addStretch(1)
 
         self.count_label = QLabel("")
         self.count_label.setObjectName("Tiny")
-        toolbar_layout.addWidget(self.count_label)
+        top_row.addWidget(self.count_label)
+
+        # 动作按钮单独装一层：窄窗口时落到第二行，避免把筛选器挤到裁字。
+        self._toolbar_actions_row = QWidget()
+        actions_row = QHBoxLayout(self._toolbar_actions_row)
+        actions_row.setContentsMargins(0, 0, 0, 0)
+        actions_row.setSpacing(0)
+        actions_row.addStretch(1)
+
+        self._actions_host = QWidget()
+        action_layout = QHBoxLayout(self._actions_host)
+        action_layout.setContentsMargins(0, 0, 0, 0)
+        action_layout.setSpacing(9)
 
         self.check_btn = QPushButton("检查更新")
         self.check_btn.setObjectName("Ghost")
@@ -301,21 +351,21 @@ class ModsPage(QWidget):
             "通过 Modrinth / CurseForge 检查当前版本已安装 Mod 的新版本"
         )
         self.check_btn.clicked.connect(self._check_updates)
-        toolbar_layout.addWidget(self.check_btn)
+        action_layout.addWidget(self.check_btn)
 
         self.health_btn = QPushButton("环境检查")
         self.health_btn.setObjectName("Ghost")
         self.health_btn.setCursor(Qt.PointingHandCursor)
         self.health_btn.setToolTip("检查 Mod 冲突、缺失前置和加载器混装")
         self.health_btn.clicked.connect(self._show_health)
-        toolbar_layout.addWidget(self.health_btn)
+        action_layout.addWidget(self.health_btn)
 
         self.update_all_btn = QPushButton("全部更新")
         self.update_all_btn.setObjectName("Primary")
         self.update_all_btn.setCursor(Qt.PointingHandCursor)
         self.update_all_btn.setVisible(False)
         self.update_all_btn.clicked.connect(self._update_all)
-        toolbar_layout.addWidget(self.update_all_btn)
+        action_layout.addWidget(self.update_all_btn)
 
         download_btn = QPushButton("下载内容")
         download_btn.setObjectName("Primary")
@@ -323,7 +373,7 @@ class ModsPage(QWidget):
         download_btn.setCursor(Qt.PointingHandCursor)
         download_btn.setToolTip("从 Modrinth 或 CurseForge 下载 Mod、整合包、材质与光影")
         download_btn.clicked.connect(self.main.open_mod_download)
-        toolbar_layout.addWidget(download_btn)
+        action_layout.addWidget(download_btn)
 
         add_btn = QPushButton("添加内容")
         add_btn.setObjectName("Secondary")
@@ -331,18 +381,23 @@ class ModsPage(QWidget):
         add_btn.setCursor(Qt.PointingHandCursor)
         add_btn.setToolTip("导入 Mod、材质包、光影包或内容合集")
         add_btn.clicked.connect(self.add_mods)
-        toolbar_layout.addWidget(add_btn)
+        action_layout.addWidget(add_btn)
 
         folder_btn = QPushButton("打开文件夹")
         folder_btn.setObjectName("Secondary")
         folder_btn.setIcon(icons.icon("folder", colors()["text2"], 15))
         folder_btn.setCursor(Qt.PointingHandCursor)
         folder_btn.clicked.connect(self.open_folder)
-        toolbar_layout.addWidget(folder_btn)
+        action_layout.addWidget(folder_btn)
 
         refresh_btn = icon_button("refresh", "刷新 Mod 列表")
         refresh_btn.clicked.connect(self.refresh_mods)
-        toolbar_layout.addWidget(refresh_btn)
+        action_layout.addWidget(refresh_btn)
+
+        actions_row.addWidget(self._actions_host)
+        toolbar_layout.addLayout(top_row)
+        toolbar_layout.addWidget(self._toolbar_actions_row)
+        self._toolbar_compact = True
         outer.addWidget(toolbar)
 
         self.repair_banner = Card(soft=True)
@@ -479,6 +534,7 @@ class ModsPage(QWidget):
             visible.append(mod)
 
         self.count_label.setText(f"{len(visible)} / {len(self._mods)}")
+        self._reflow_toolbar()
         while self.list_layout.count() > 1:
             item = self.list_layout.takeAt(0)
             widget = item.widget()
@@ -509,6 +565,7 @@ class ModsPage(QWidget):
         self.update_all_btn.setVisible(bool(self._updates))
         if self._updates:
             self.update_all_btn.setText(f"全部更新 ({len(self._updates)})")
+        self._reflow_toolbar()
 
     def _game_context(self) -> tuple[str, str]:
         version_id = self.main.selected_version or ""
