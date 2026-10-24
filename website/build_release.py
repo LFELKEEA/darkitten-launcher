@@ -109,7 +109,7 @@ PACKAGE_EXCLUDED_PARTS = {"qa", "tools"}
 
 
 def package_files(source: Path) -> list[Path]:
-    """发布包只带运行代码、资源和网站源码，不带测试与开发工具。"""
+    """发布包只带启动器运行所需的代码与资源，不带测试、工具和网站源码。"""
     return [
         relative
         for relative in source_files(source)
@@ -140,9 +140,6 @@ def text_entries(source: Path) -> list[tuple[str, Path]]:
     for relative in package_files(source):
         if relative.suffix.lower() in TEXT_SUFFIXES:
             entries.append((relative.as_posix(), source / relative))
-    for relative in website_files():
-        if relative.suffix.lower() in TEXT_SUFFIXES or relative.name == "_headers":
-            entries.append((f"website/{relative.as_posix()}", SITE / relative))
     return entries
 
 
@@ -459,10 +456,6 @@ def build(source: Path, version: str, deploy: bool, repo: str) -> int:
     root = f"DarkittenLauncher-{version}-source"
     for relative in package_files(source):
         source_entries.append((source / relative, f"{root}/{relative.as_posix()}"))
-
-    for relative in website_files():
-        arc = Path("website") / relative
-        source_entries.append((SITE / relative, f"{root}/{arc.as_posix()}"))
 
     update_entries: list[tuple[Path, str]] = []
     update_root = f"DKL-{version}"
