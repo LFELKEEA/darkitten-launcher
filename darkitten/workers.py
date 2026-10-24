@@ -58,6 +58,11 @@ from .curseforge import (
     search_mods as search_curseforge_mods,
 )
 from .servers import ServerInfo, install_server
+from .server_pack import (
+    ServerPackCancelled,
+    export_server,
+    import_server_pack,
+)
 from .updater import check_for_update, download_update, prepare_update
 from .sakura import (
     ROOM_TUNNEL_NAME,
@@ -457,6 +462,102 @@ class PackImportWorker(QObject):
                 ),
                 result.version_id,
             )
+
+
+class ServerPackExportWorker(QObject):
+    """把服务端（世界、玩家、权限、配置）打包成 ZIP 或文件夹。"""
+
+    progress = Signal(int, str)
+    log_line = Signal(str)
+    finished = Signal(bool, str, str)
+
+    def __init__(
+        self,
+        info: ServerInfo,
+        output_path: Path,
+        as_zip: bool = True,
+        parent: QObject | None = None,
+    ) -> None:
+        super().__init__(parent)
+        self.info = info
+        self.output_path = Path(output_path)
+        self.as_zip = bool(as_zip)
+        self.cancel_event = threading.Event()
+
+    def start(self) -> None:
+        threading.Thread(target=self._run, daemon=True).start()
+
+    def cancel(self) -> None:
+        self.cancel_event.set()
+
+    def _run(self) -> None:
+        try:
+            path = export_server(
+                self.info,
+                self.output_path,
+                as_zip=self.as_zip,
+                progress_cb=lambda p, m: self.progress.emit(p, m),
+                log_cb=lambda m: self.log_line.emit(m),
+                cancel_event=self.cancel_event,
+            )
+        except ServerPackCancelled:
+            self.finished.emit(False, "打包已取消", "")
+        except Exception as exc:
+            if self.cancel_event.is_set():
+                self.finished.emit(False, "打包已取消", "")
+            else:
+                self.log_line.emit(str(exc))
+                self.finished.emit(False, str(exc), "")
+        else:
+            self.finished.emit(True, f"服务端已打包到 {path}", str(path))
+
+
+class ServerPackImportWorker(QObject):
+    """从 ZIP 或文件夹导入服务端，保留世界、玩家与权限数据。"""
+
+    progress = Signal(int, str)
+    log_line = Signal(str)
+    finished = Signal(bool, str, str)
+
+    def __init__(
+        self,
+        source: Path,
+        name: str = "",
+        servers_dir: Path | None = None,
+        parent: QObject | None = None,
+    ) -> None:
+        super().__init__(parent)
+        self.source = Path(source)
+        self.name = str(name or "")
+        self.servers_dir = Path(servers_dir) if servers_dir else None
+        self.cancel_event = threading.Event()
+
+    def start(self) -> None:
+        threading.Thread(target=self._run, daemon=True).start()
+
+    def cancel(self) -> None:
+        self.cancel_event.set()
+
+    def _run(self) -> None:
+        try:
+            folder = import_server_pack(
+                self.source,
+                name=self.name,
+                servers_dir=self.servers_dir,
+                progress_cb=lambda p, m: self.progress.emit(p, m),
+                log_cb=lambda m: self.log_line.emit(m),
+                cancel_event=self.cancel_event,
+            )
+        except ServerPackCancelled:
+            self.finished.emit(False, "导入已取消", "")
+        except Exception as exc:
+            if self.cancel_event.is_set():
+                self.finished.emit(False, "导入已取消", "")
+            else:
+                self.log_line.emit(str(exc))
+                self.finished.emit(False, str(exc), "")
+        else:
+            self.finished.emit(True, "服务端导入完成", folder)
 
 
 class ModrinthPackImportWorker(QObject):

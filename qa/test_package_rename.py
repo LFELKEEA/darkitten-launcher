@@ -18,6 +18,8 @@ from darkitten.updater import (
     read_version,
 )
 
+VERSION = config_module.APP_VERSION
+
 
 def check(name: str, condition: bool, detail: str = "") -> None:
     if not condition:
@@ -35,7 +37,7 @@ def make_zip(package: Path, target: Path, root_name: str = "") -> Path:
 
 
 def build_payload(root: Path, include_legacy_shim: bool) -> Path:
-    package = root / "DKL-1.9.15"
+    package = root / f"DKL-{VERSION}"
     shutil.copytree(ROOT / "darkitten", package / "darkitten")
     shutil.copytree(ROOT / "assets", package / "assets")
     shutil.copy2(ROOT / "app.py", package / "app.py")
@@ -44,7 +46,7 @@ def build_payload(root: Path, include_legacy_shim: bool) -> Path:
         (package / "stellar").mkdir()
         (package / "stellar" / "__init__.py").write_text("", encoding="utf-8")
         (package / "stellar" / "config.py").write_text(
-            'APP_VERSION = "1.9.15"\n', encoding="utf-8"
+            f'APP_VERSION = "{VERSION}"\n', encoding="utf-8"
         )
         (package / "stellar" / "updater.py").write_text(
             "def apply_update_code(*args, **kwargs):\n    return None\n",
@@ -77,7 +79,7 @@ def build_old_install(root: Path) -> Path:
 def main() -> int:
     check("darkitten_package", (ROOT / "darkitten" / "config.py").is_file())
     check("no_stellar_package", not (ROOT / "stellar").exists())
-    check("version_1915", config_module.APP_VERSION == "1.9.15", config_module.APP_VERSION)
+    check("version_current", config_module.APP_VERSION == VERSION, config_module.APP_VERSION)
     check(
         "code_paths",
         "darkitten" in CODE_PATHS and "stellar" not in CODE_PATHS,
@@ -93,20 +95,20 @@ def main() -> int:
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp)
         payload = build_payload(root / "payload", include_legacy_shim=True)
-        check("payload_version", read_version(payload) == "1.9.15")
+        check("payload_version", read_version(payload) == VERSION)
         archive = make_zip(payload, root / "update.zip", payload.name)
-        prepared = prepare_update(archive, root / "staging", "1.9.15")
-        check("prepare_new_payload", read_version(prepared) == "1.9.15")
+        prepared = prepare_update(archive, root / "staging", VERSION)
+        check("prepare_new_payload", read_version(prepared) == VERSION)
 
         legacy_only = root / "legacy-only"
         (legacy_only / "stellar").mkdir(parents=True)
         (legacy_only / "app.py").write_text("x\n", encoding="utf-8")
         (legacy_only / "stellar" / "config.py").write_text(
-            'APP_VERSION = "1.9.15"\n', encoding="utf-8"
+            f'APP_VERSION = "{VERSION}"\n', encoding="utf-8"
         )
         legacy_zip = make_zip(legacy_only, root / "legacy.zip")
         try:
-            prepare_update(legacy_zip, root / "legacy-staging", "1.9.15")
+            prepare_update(legacy_zip, root / "legacy-staging", VERSION)
         except UpdateError:
             rejected = True
         else:
@@ -118,7 +120,7 @@ def main() -> int:
         check(
             "installed_darkitten",
             (install / "darkitten" / "config.py").is_file()
-            and read_version(install) == "1.9.15",
+            and read_version(install) == VERSION,
         )
         check(
             "shim_not_installed_as_code",

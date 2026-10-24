@@ -79,7 +79,7 @@ from .widgets import (
     Toast,
     colors,
     icon_button,
-    local_archive_paths,
+    local_transfer_paths,
     refresh_themed_icons,
     transparent_children,
 )
@@ -292,11 +292,14 @@ class MainWindow(QWidget):
 
         self.toast_widget = Toast(self)
         self.drop_hint = QLabel(
-            "松开猫爪，把版本包放进猫窝\n支持 .zip / .dklpack / .mrpack", self
+            "松开猫爪，把包放进猫窝\n"
+            "版本包 .zip / .dklpack / .mrpack\n"
+            "服务端 ZIP 或文件夹", self
         )
         self.drop_hint.setAlignment(Qt.AlignCenter)
+        self.drop_hint.setWordWrap(True)
         self.drop_hint.setAttribute(Qt.WA_TransparentForMouseEvents, True)
-        self.drop_hint.setFixedSize(380, 88)
+        self.drop_hint.setFixedSize(400, 100)
         self.drop_hint.setStyleSheet(
             "background: rgba(20, 12, 18, 238);"
             f" border: 2px dashed {colors()['accent']};"
@@ -554,7 +557,7 @@ class MainWindow(QWidget):
 
     @staticmethod
     def _archive_paths(mime) -> list[Path]:
-        return local_archive_paths(mime)
+        return local_transfer_paths(mime)
 
     def _position_drop_hint(self) -> None:
         self.drop_hint.move(
@@ -618,8 +621,18 @@ class MainWindow(QWidget):
             self.toast("有任务正在进行，稍等一下喵", "info")
             return
         if len(paths) > 1:
-            self.toast(f"一次只拆一个版本包，先处理 {paths[0].name}", "info")
-        self.open_version_import(paths[0])
+            self.toast(f"一次只处理一个包，先处理 {paths[0].name}", "info")
+        source = paths[0]
+        from ..server_pack import looks_like_server_pack
+
+        if source.is_dir() or source.suffix.lower() == ".zip":
+            if looks_like_server_pack(source):
+                self.open_server_import(source)
+                return
+            if source.is_dir():
+                self.toast("这个文件夹不像服务端文件夹，猫猫没找到服务端文件", "error")
+                return
+        self.open_version_import(source)
 
     def nativeEvent(self, eventType, message):
         if sys.platform == "win32" and eventType == b"windows_generic_MSG":
@@ -1479,6 +1492,10 @@ class MainWindow(QWidget):
         dialog.exec()
         if dialog.imported_version:
             self.select_version(dialog.imported_version)
+
+    def open_server_import(self, path: str | Path | None = None) -> None:
+        self.switch_page("server")
+        self.server_page.open_import_dialog(path)
 
     def select_version(self, version_id: str) -> None:
         if not version_id:

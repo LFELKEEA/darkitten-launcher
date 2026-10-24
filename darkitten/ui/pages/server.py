@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import time
 from datetime import datetime
+from pathlib import Path
 
 from PySide6.QtCore import Qt, QTimer, QUrl, Signal
 from PySide6.QtGui import QDesktopServices
@@ -295,6 +296,12 @@ class ServerPage(QWidget):
         self.create_btn.setCursor(Qt.PointingHandCursor)
         self.create_btn.setIcon(icons.icon("plus", "#FFFFFF", 15))
         self.create_btn.clicked.connect(self.open_create_dialog)
+        self.import_btn = QPushButton("导入服务端")
+        self.import_btn.setObjectName("Soft")
+        self.import_btn.setCursor(Qt.PointingHandCursor)
+        self.import_btn.setIcon(icons.icon("package", colors()["accent"], 15))
+        self.import_btn.clicked.connect(lambda: self.open_import_dialog())
+        header.addWidget(self.import_btn, 0, Qt.AlignTop)
         header.addWidget(self.create_btn, 0, Qt.AlignTop)
         outer.addLayout(header)
 
@@ -380,6 +387,12 @@ class ServerPage(QWidget):
         self.empty_btn.setIcon(icons.icon("plus", "#FFFFFF", 15))
         self.empty_btn.clicked.connect(self.open_create_dialog)
         button_row.addWidget(self.empty_btn)
+        self.empty_import_btn = QPushButton("导入服务端包")
+        self.empty_import_btn.setObjectName("Soft")
+        self.empty_import_btn.setCursor(Qt.PointingHandCursor)
+        self.empty_import_btn.setIcon(icons.icon("package", colors()["accent"], 15))
+        self.empty_import_btn.clicked.connect(lambda: self.open_import_dialog())
+        button_row.addWidget(self.empty_import_btn)
         button_row.addStretch(1)
         layout.addLayout(button_row)
         layout.addStretch(2)
@@ -420,6 +433,10 @@ class ServerPage(QWidget):
         self.folder_btn = icon_button("folder", "打开服务端文件夹", size=32, icon_size=16)
         self.folder_btn.clicked.connect(self._open_server_folder)
         header.addWidget(self.folder_btn)
+
+        self.pack_icon_btn = icon_button("package", "打包服务端", size=32, icon_size=16)
+        self.pack_icon_btn.clicked.connect(self.export_server_pack)
+        header.addWidget(self.pack_icon_btn)
 
         self.start_btn = QPushButton("启动")
         self.start_btn.setObjectName("Primary")
@@ -675,6 +692,13 @@ class ServerPage(QWidget):
         self.save_btn.clicked.connect(self.save_settings)
         actions.addWidget(self.save_btn)
 
+        self.pack_btn = QPushButton("打包服务端")
+        self.pack_btn.setObjectName("Soft")
+        self.pack_btn.setCursor(Qt.PointingHandCursor)
+        self.pack_btn.setIcon(icons.icon("package", colors()["accent"], 14))
+        self.pack_btn.clicked.connect(self.export_server_pack)
+        actions.addWidget(self.pack_btn)
+
         self.reinstall_btn = QPushButton("重新安装")
         self.reinstall_btn.setObjectName("Soft")
         self.reinstall_btn.setCursor(Qt.PointingHandCursor)
@@ -772,7 +796,9 @@ class ServerPage(QWidget):
             title.setAlignment(Qt.AlignCenter)
             title.setStyleSheet("font-weight: 700;")
             empty_layout.addWidget(title)
-            hint = QLabel("点击右上角“新建服务端”开始。")
+            hint = QLabel(
+                "点击右上角“新建服务端”，或导入别人打包好的服务端。"
+            )
             hint.setObjectName("Tiny")
             hint.setAlignment(Qt.AlignCenter)
             hint.setWordWrap(True)
@@ -784,7 +810,8 @@ class ServerPage(QWidget):
             self.detail_content.setVisible(False)
             self.empty_title.setText("还没有服务端")
             self.empty_sub.setText(
-                "选择 Paper、Spigot 或模组服务端，启动器会自动下载并生成启动文件。"
+                "选择 Paper、Spigot 或模组服务端，启动器会自动下载并生成启动文件；"
+                "也可以导入 ZIP 或服务端文件夹。"
             )
             self.empty_btn.setText("新建服务端")
             return
@@ -1175,6 +1202,8 @@ class ServerPage(QWidget):
         self.save_btn.setEnabled(not installing)
         self.delete_btn.setEnabled(not running and not installing)
         self.reinstall_btn.setEnabled(not running and not installing)
+        self.pack_btn.setEnabled(not running and not installing)
+        self.pack_icon_btn.setEnabled(not running and not installing)
 
     # ------------------------------------------------------------------
     # 插件
@@ -1405,6 +1434,30 @@ class ServerPage(QWidget):
         self.toast(message, "success")
         self.refresh_servers()
 
+    def export_server_pack(self) -> None:
+        info = self._current_info()
+        if info is None:
+            self.toast("先选一个服务端，猫猫才有东西可打包", "info")
+            return
+        if self._state_of(info) != "stopped":
+            self.toast("请先停止服务端再打包，避免存档正在写入", "error")
+            return
+        if self._install_worker is not None and self._install_folder == info.folder:
+            self.toast("服务端还在安装，等装完再打包", "info")
+            return
+        from ..server_pack_dialog import ServerPackExportDialog
+
+        ServerPackExportDialog(self.main, info).exec()
+
+    def open_import_dialog(self, path: str | Path | None = None) -> None:
+        from ..server_pack_dialog import ServerPackImportDialog
+
+        dialog = ServerPackImportDialog(self.main, initial_path=path)
+        dialog.exec()
+        if dialog.imported_folder:
+            self.refresh_servers(dialog.imported_folder)
+            self.toast("服务端已经导入，世界和玩家数据都搬过来了喵。", "success")
+
     def _open_server_folder(self) -> None:
         info = self._current_info()
         if info is not None:
@@ -1529,9 +1582,17 @@ class ServerPage(QWidget):
     def refresh_theme(self) -> None:
         self.create_btn.setIcon(icons.icon("plus", "#FFFFFF", 15))
         self.empty_btn.setIcon(icons.icon("plus", "#FFFFFF", 15))
+        self.import_btn.setIcon(icons.icon("package", colors()["accent"], 15))
+        self.empty_import_btn.setIcon(
+            icons.icon("package", colors()["accent"], 15)
+        )
         self.empty_icon.setPixmap(icons.pixmap("server", colors()["muted"], 46))
         self.start_btn.setIcon(icons.icon("play", "#FFFFFF", 15))
         self.stop_btn.setIcon(icons.icon("stop", "#FFFFFF", 13))
+        self.pack_icon_btn.setIcon(
+            icons.icon("package", colors()["text2"], 16)
+        )
+        self.pack_btn.setIcon(icons.icon("package", colors()["accent"], 14))
         self.addon_open_btn.setIcon(icons.icon("folder", colors()["text2"], 14))
         self.addon_download_btn.setIcon(
             icons.icon("download", colors()["accent"], 14)

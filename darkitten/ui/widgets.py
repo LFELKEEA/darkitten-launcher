@@ -46,6 +46,37 @@ from ..versions import LOADER_COLORS, VersionSummary
 from . import icons, theme
 
 
+def local_transfer_paths(mime) -> list[Path]:
+    """从拖拽数据里取出本地压缩包与服务端文件夹。"""
+    if mime is None or not mime.hasUrls():
+        return []
+    paths: list[Path] = []
+    seen: set[str] = set()
+    for url in mime.urls():
+        if not url.isLocalFile():
+            continue
+        path = Path(url.toLocalFile())
+        try:
+            if path.is_dir():
+                pass
+            elif path.is_file() and path.suffix.lower() in (
+                ".zip",
+                ".dklpack",
+                ".mrpack",
+            ):
+                pass
+            else:
+                continue
+        except OSError:
+            continue
+        key = str(path).lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        paths.append(path)
+    return paths
+
+
 def local_archive_paths(mime) -> list[Path]:
     """从拖拽数据里挑出本地 .zip / .dklpack / .mrpack 文件。"""
     if mime is None or not mime.hasUrls():
