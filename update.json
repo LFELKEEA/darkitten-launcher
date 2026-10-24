@@ -1,22 +1,23 @@
 {
-  "version": "1.9.16",
+  "version": "1.9.17",
   "released": "2026-10-24",
   "notes": [
-    "服务端页面新增“打包服务端”：可导出 ZIP 压缩包或完整文件夹，方便备份、换机和分享。",
-    "打包会保留世界存档、玩家数据、白名单 / OP / 封禁名单、server.properties、EULA、插件或 Mod 及其配置。",
-    "打包自动排除 logs、crash-reports、缓存、session.lock 和临时文件；服务端运行中会提示先停止，避免存档写入。",
-    "支持把服务端 ZIP 或整个服务端文件夹直接拖进启动器导入，也可以在服务端页面选择文件或文件夹。",
-    "导入会安全解压并拒绝路径穿越与符号链接，同名服务端自动使用新文件夹，不覆盖原来的世界和玩家数据。",
-    "修复服务端设置页打包按钮在切换主题后图标颜色不刷新的问题。"
+    "首页“猫窝档案”拆成“游戏版本”和“加载器”两个标签页：游戏版本只列出可玩的实例，加载器单独显示基础版本、Java 和已绑定数量。",
+    "点击加载器条目可直接进入加载器工坊分配游戏版本；游戏版本仍保持原版，随时可以切回原版启动。",
+    "新增统一“导入本地文件”：版本 ZIP、版本文件夹、整合包、服务端、Mod、材质和光影都能从窗口拖入，或在首页、版本页、模组页选择。",
+    "Mod 的 .jar / .litemod 直接复制到 mods；材质和光影 ZIP 保持原样交给游戏读取，不再经过临时目录或重新打包。",
+    "版本文件夹直接复制进 versions/<版本名>，自动改写版本 id、重命名客户端 jar，并带上文件夹内的 mods 和 config；同名版本自动改名，不覆盖旧版本。",
+    "Mod 合集、内容合集和服务端包直接解压到目标目录；同名内容文件自动加序号或跳过，源文件不会被移动或删除。",
+    "导入前会检查 ZIP 路径穿越、符号链接、加密条目、文件数量和总体积；有安装或启动任务时会提示稍候，不会打断当前任务。"
   ],
-  "download_url": "downloads/DKL-1.9.16-update.zip",
+  "download_url": "downloads/DKL-1.9.17-update.zip",
   "page_url": "index.html",
-  "source_url": "downloads/DarkittenLauncher-1.9.16-source.zip",
-  "source_txt_url": "downloads/DarkittenLauncher-1.9.16-source.txt",
-  "sha256": "c91ef66c12dc6784323d152d5d03a9d478ba15b35b80bcbb0fb117e927faffa8",
-  "size": 1013306,
-  "source_sha256": "d2648cad2ac56ab1b22381979c9281e18e862d1d0df74bce51e8a2da329010d8",
-  "source_size": 1744388,
-  "source_txt_sha256": "7ca56e566b26749026ef773a4d3721e21ca6ffc186f3fe98579c1bc7b0adef16",
-  "source_txt_size": 1720412
+  "source_url": "downloads/DarkittenLauncher-1.9.17-source.zip",
+  "source_txt_url": "downloads/DarkittenLauncher-1.9.17-source.txt",
+  "sha256": "6745255b6c55406c45c3373ade2c355762821918cacbfade442dd869d4fcf8ed",
+  "size": 1030118,
+  "source_sha256": "269b0c42c6a17e6093b4270c8260acfd76a7e81ed40923c8065e087776c3c35e",
+  "source_size": 1771032,
+  "source_txt_sha256": "53df698894effba441f5934858d761a157cd26b19aabd524df87efb89e384b44",
+  "source_txt_size": 1830516
 }
