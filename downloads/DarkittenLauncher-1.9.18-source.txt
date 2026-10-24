@@ -1,5 +1,5 @@
 ﻿Darkitten Launcher 1.9.18 完整源代码
-生成时间：2026-10-24 13:44:52
+生成时间：2026-10-24 13:51:04
 文本文件：123
 ================================================================================
 目录
@@ -49971,14 +49971,24 @@ def upload_tree(
 
     # 不传 base_tree，整棵树按本次文件列表重建，旧版本文件不会残留。
     tree = gh_api(gh, f"repos/{full}/git/trees", "POST", {"tree": entries})
-    commit = gh_api(
-        gh, f"repos/{full}/git/commits", "POST",
-        {
-            "message": message,
-            "tree": tree["sha"],
-            "parents": [parent] if parent else [],
-        },
-    )
+    print(f"upload {branch}: {len(entries)} files, tree {tree['sha']}", flush=True)
+    # 新建 tree 后立刻提交偶尔会触发 GitHub 的复制延迟（Tree SHA does not exist），短暂等待后重试。
+    commit: dict = {}
+    for attempt in range(4):
+        try:
+            commit = gh_api(
+                gh, f"repos/{full}/git/commits", "POST",
+                {
+                    "message": message,
+                    "tree": tree["sha"],
+                    "parents": [parent] if parent else [],
+                },
+            )
+            break
+        except SystemExit:
+            if attempt == 3:
+                raise
+            time.sleep(2 * (attempt + 1))
     if parent:
         gh_api(
             gh, f"repos/{full}/git/refs/heads/{branch}", "PATCH",
@@ -51939,27 +51949,27 @@ body.modal-open { overflow: hidden; }
 # FILE: website/public/update.json
 ################################################################################
 {
-  "version": "1.9.17",
+  "version": "1.9.18",
   "released": "2026-10-24",
   "notes": [
-    "首页“猫窝档案”拆成“游戏版本”和“加载器”两个标签页：游戏版本只列出可玩的实例，加载器单独显示基础版本、Java 和已绑定数量。",
-    "点击加载器条目可直接进入加载器工坊分配游戏版本；游戏版本仍保持原版，随时可以切回原版启动。",
-    "新增统一“导入本地文件”：版本 ZIP、版本文件夹、整合包、服务端、Mod、材质和光影都能从窗口拖入，或在首页、版本页、模组页选择。",
-    "Mod 的 .jar / .litemod 直接复制到 mods；材质和光影 ZIP 保持原样交给游戏读取，不再经过临时目录或重新打包。",
-    "版本文件夹直接复制进 versions/<版本名>，自动改写版本 id、重命名客户端 jar，并带上文件夹内的 mods 和 config；同名版本自动改名，不覆盖旧版本。",
-    "Mod 合集、内容合集和服务端包直接解压到目标目录；同名内容文件自动加序号或跳过，源文件不会被移动或删除。",
-    "导入前会检查 ZIP 路径穿越、符号链接、加密条目、文件数量和总体积；有安装或启动任务时会提示稍候，不会打断当前任务。"
+    "顶栏新增下载进度预览：关闭 Mod 下载窗口后任务会继续，可以在启动器里做别的事，点击顶栏进度即可查看下载任务。",
+    "下载任务窗口支持同时查看多个任务、取消下载、打开目标文件夹；整合包下载完成后可直接从任务窗口导入。",
+    "修复下载的 Mod 不显示图标：下载完成后会保存项目图标，并优先读取 JAR 内置图标，列表和详情都能正常显示。",
+    "已下载 Mod 列表和 Mod 下载界面新增中文介绍；常用 Mod 使用人工整理文案，其余项目根据分类、加载器、版本和作者自动生成。",
+    "Mod 下载详情保留英文原文简介作为补充提示，分类名称同步显示为中文。",
+    "服务端列表和详情优先显示服务端文件夹内的 server-icon.png（也兼容 icon.png），没有图标时继续使用类型默认图标。",
+    "退出启动器时如果还有下载任务，会先提醒；选择退出会清理未完成的临时文件。"
   ],
-  "download_url": "downloads/DKL-1.9.17-update.zip",
+  "download_url": "downloads/DKL-1.9.18-update.zip",
   "page_url": "index.html",
-  "source_url": "downloads/DarkittenLauncher-1.9.17-source.zip",
-  "source_txt_url": "downloads/DarkittenLauncher-1.9.17-source.txt",
-  "sha256": "6745255b6c55406c45c3373ade2c355762821918cacbfade442dd869d4fcf8ed",
-  "size": 1030118,
-  "source_sha256": "269b0c42c6a17e6093b4270c8260acfd76a7e81ed40923c8065e087776c3c35e",
-  "source_size": 1771032,
-  "source_txt_sha256": "53df698894effba441f5934858d761a157cd26b19aabd524df87efb89e384b44",
-  "source_txt_size": 1830516
+  "source_url": "downloads/DarkittenLauncher-1.9.18-source.zip",
+  "source_txt_url": "downloads/DarkittenLauncher-1.9.18-source.txt",
+  "sha256": "cd7a1c5053efac3d02ed51241817df145c140e40f18524692805e34b35b65b3e",
+  "size": 1048332,
+  "source_sha256": "d45393c7587f74abc313bbe3fc053298aac40163cbb561443ab6a6b6bbf5ebca",
+  "source_size": 1797971,
+  "source_txt_sha256": "315ad0371e4665f5a0801df96f035b7e6294287b9fad9aa965cc5d07c904bd1f",
+  "source_txt_size": 1925214
 }
 
 
