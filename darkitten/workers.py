@@ -42,6 +42,9 @@ from .migration import (
     collect_migration_plan,
     run_migration,
 )
+from .mods import ModInfo
+from .mod_conflicts import scan_mod_issues
+from .mod_updates import ModUpdate, apply_mod_updates, check_mod_updates
 from .modrinth import (
     download_mod_file,
     fetch_mod_versions,
@@ -127,11 +130,9 @@ class InstallWorker(QObject):
                 check_assets=True,
             )
         except InstallCancelled:
-            removed, freed = cleanup_partial_files(self.game_dir)
-            if removed:
-                self.log_line.emit(
-                    f"已清理 {removed} 个下载临时文件（{freed / 1024 / 1024:.1f} MB）"
-                )
+            # 保留断点，下次安装同一版本时由下载器自动续传；
+            # 需要腾空间时可在设置页使用“清理下载残余”。
+            self.log_line.emit("已暂停安装，断点文件已保留，下次可继续")
             self.finished.emit(False, "下载已取消")
         except Exception as exc:
             self.log_line.emit(str(exc))
@@ -268,6 +269,109 @@ class CleanupWorker(QObject):
         except Exception:
             removed, freed = 0, 0
         self.finished.emit(removed, freed)
+
+
+class DiagnosticsWorker(QObject):
+    finished = Signal(bool, str, object)
+
+    def __init__(
+        self,
+        config,
+        java_installs,
+        version_id: str,
+        loader_id: str,
+        bundle: bool = True,
+        parent: QObject | None = None,
+    ) -> None:
+        super().__init__(parent)
+        self.config = config
+        self.java_installs = list(java_installs or [])
+        self.version_id = version_id
+        self.loader_id = loader_id
+        self.bundle = bundle
+
+    def start(self) -> None:
+        threading.Thread(target=self._run, daemon=True).start()
+
+    def _run(self) -> None:
+        from .diagnostics import build_summary, create_bundle
+
+        try:
+            if self.bundle:
+                path, summary = create_bundle(
+                    self.config,
+                    self.java_installs,
+                    self.version_id,
+                    self.loader_id,
+                )
+                payload = {"path": path, "summary": summary}
+            else:
+                summary, _info = build_summary(
+                    self.config,
+                    self.java_installs,
+                    self.version_id,
+                    self.loader_id,
+                )
+                payload = {"path": None, "summary": summary}
+            self.finished.emit(True, "", payload)
+        except Exception as exc:
+            self.finished.emit(False, str(exc), None)
+
+
+class SnapshotCreateWorker(QObject):
+    finished = Signal(bool, str, object)
+
+    def __init__(
+        self,
+        game_path: Path,
+        version_id: str,
+        note: str = "",
+        parent: QObject | None = None,
+    ) -> None:
+        super().__init__(parent)
+        self.game_path = Path(game_path)
+        self.version_id = version_id
+        self.note = note
+
+    def start(self) -> None:
+        threading.Thread(target=self._run, daemon=True).start()
+
+    def _run(self) -> None:
+        from .snapshots import create_snapshot
+
+        try:
+            info = create_snapshot(
+                self.game_path, self.version_id, note=self.note
+            )
+            self.finished.emit(True, "", info)
+        except Exception as exc:
+            self.finished.emit(False, str(exc), None)
+
+
+class SnapshotRestoreWorker(QObject):
+    finished = Signal(bool, str, int)
+
+    def __init__(
+        self,
+        archive_path: Path,
+        game_path: Path,
+        parent: QObject | None = None,
+    ) -> None:
+        super().__init__(parent)
+        self.archive_path = Path(archive_path)
+        self.game_path = Path(game_path)
+
+    def start(self) -> None:
+        threading.Thread(target=self._run, daemon=True).start()
+
+    def _run(self) -> None:
+        from .snapshots import restore_snapshot
+
+        try:
+            count = restore_snapshot(self.archive_path, self.game_path)
+            self.finished.emit(True, "", count)
+        except Exception as exc:
+            self.finished.emit(False, str(exc), 0)
 
 
 class UpdateCheckWorker(QObject):
@@ -1481,6 +1585,128 @@ class ModVersionsWorker(QObject):
             self.ready.emit([], str(exc))
         else:
             self.ready.emit(data, "")
+
+
+class ModConflictCheckWorker(QObject):
+    finished = Signal(object, object, str)
+
+    def __init__(
+        self,
+        mods_dir: Path,
+        target_loader: str = "",
+        parent: QObject | None = None,
+    ) -> None:
+        super().__init__(parent)
+        self.mods_dir = Path(mods_dir)
+        self.target_loader = str(target_loader or "")
+
+    def start(self) -> None:
+        threading.Thread(target=self._run, daemon=True).start()
+
+    def _run(self) -> None:
+        try:
+            issues, descriptors = scan_mod_issues(
+                self.mods_dir,
+                target_loader=self.target_loader,
+            )
+        except Exception as exc:
+            self.finished.emit([], [], str(exc))
+        else:
+            self.finished.emit(issues, descriptors, "")
+
+
+class ModUpdateCheckWorker(QObject):
+    progress = Signal(int, int, str)
+    finished = Signal(object, object)
+
+    def __init__(
+        self,
+        mods: list[ModInfo],
+        game_version: str = "",
+        loader: str = "",
+        parent: QObject | None = None,
+    ) -> None:
+        super().__init__(parent)
+        self.mods = list(mods)
+        self.game_version = str(game_version or "")
+        self.loader = str(loader or "")
+        self.cancel_event = threading.Event()
+
+    def start(self) -> None:
+        threading.Thread(target=self._run, daemon=True).start()
+
+    def _run(self) -> None:
+        try:
+            updates, errors = check_mod_updates(
+                self.mods,
+                self.game_version,
+                self.loader,
+                progress_cb=lambda done, total, name: self.progress.emit(
+                    done, total, name
+                ),
+                cancel_event=self.cancel_event,
+            )
+        except Exception as exc:
+            self.finished.emit([], [str(exc)])
+        else:
+            self.finished.emit(updates, errors)
+
+    def cancel(self) -> None:
+        self.cancel_event.set()
+
+
+class ModUpdateApplyWorker(QObject):
+    progress = Signal(int, str)
+    finished = Signal(bool, str, str)
+
+    def __init__(
+        self,
+        updates: list[ModUpdate],
+        mods_dir: Path,
+        threads: int = 8,
+        parent: QObject | None = None,
+    ) -> None:
+        super().__init__(parent)
+        self.updates = list(updates)
+        self.mods_dir = Path(mods_dir)
+        self.threads = max(1, min(16, int(threads)))
+        self.cancel_event = threading.Event()
+
+    def start(self) -> None:
+        threading.Thread(target=self._run, daemon=True).start()
+
+    def _run(self) -> None:
+        try:
+            paths, errors = apply_mod_updates(
+                self.updates,
+                self.mods_dir,
+                threads=self.threads,
+                progress_cb=lambda percent, message: self.progress.emit(
+                    percent, message
+                ),
+                cancel_event=self.cancel_event,
+            )
+        except Exception as exc:
+            self.finished.emit(False, str(exc), "")
+            return
+        if errors:
+            message = "；".join(errors[:3])
+            if len(errors) > 3:
+                message += f"；另有 {len(errors) - 3} 个失败"
+            self.finished.emit(
+                bool(paths),
+                f"更新完成 {len(paths)} 个，失败 {len(errors)} 个：{message}",
+                paths[-1].name if paths else "",
+            )
+            return
+        self.finished.emit(
+            True,
+            f"已更新 {len(paths)} 个 Mod",
+            paths[-1].name if paths else "",
+        )
+
+    def cancel(self) -> None:
+        self.cancel_event.set()
 
 
 class ModDownloadWorker(QObject):

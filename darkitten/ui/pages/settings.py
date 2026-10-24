@@ -6,6 +6,7 @@ from pathlib import Path
 from PySide6.QtCore import Qt, QTimer, QUrl
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
+    QApplication,
     QComboBox,
     QFileDialog,
     QFrame,
@@ -21,6 +22,12 @@ from PySide6.QtWidgets import (
 )
 
 from ...accounts import valid_player_name
+from ...developer import (
+    feedback_table_url,
+    lock_developer,
+    unlock_developer,
+    verify_developer_key,
+)
 from ...config import (
     APP_AUTHOR,
     APP_DIR,
@@ -31,10 +38,17 @@ from ...config import (
 )
 from ...java import JavaInfo, probe_java
 from ...microsoft_auth import MicrosoftAuthError, normalize_client_id
-from ...workers import CleanupWorker
+from ...snapshots import list_snapshots, snapshot_dir
+from ...workers import (
+    CleanupWorker,
+    DiagnosticsWorker,
+    SnapshotCreateWorker,
+    SnapshotRestoreWorker,
+)
 from .. import icons
 from ..account_dialog import BrowserLoginDialog, MicrosoftLoginDialog
 from ..dialogs import ConfirmDialog
+from ..snapshot_dialog import SnapshotDialog
 from ..widgets import (
     Card,
     ChibiCompanion,
@@ -77,6 +91,9 @@ class SettingsPage(QWidget):
         super().__init__(parent)
         self.main = main
         self._cleanup_worker: CleanupWorker | None = None
+        self._snapshot_create_worker: SnapshotCreateWorker | None = None
+        self._snapshot_restore_worker: SnapshotRestoreWorker | None = None
+        self._diagnostics_worker: DiagnosticsWorker | None = None
         self._save_timer = QTimer(self)
         self._save_timer.setSingleShot(True)
         self._save_timer.timeout.connect(self.main.config.save)
@@ -118,7 +135,10 @@ class SettingsPage(QWidget):
         layout.addWidget(self._build_account_card())
         layout.addWidget(self._build_game_card())
         layout.addWidget(self._build_launcher_card())
+        layout.addWidget(self._build_snapshot_card())
+        layout.addWidget(self._build_diagnostics_card())
         layout.addWidget(self._build_about_card())
+        layout.addWidget(self._build_developer_card())
         layout.addStretch(1)
         self.refresh_account()
         self.refresh_shortcut_state()
@@ -420,7 +440,7 @@ class SettingsPage(QWidget):
 
         self.source_combo = QComboBox()
         self.source_combo.setFixedWidth(280)
-        self.source_combo.addItem("智能加速（官方优先，自动回退）", "auto")
+        self.source_combo.addItem("智能加速（自动测速，失败熔断）", "auto")
         self.source_combo.addItem("Mojang 官方源", "official")
         self.source_combo.addItem("BMCLAPI 镜像（国内加速）", "bmclapi")
         index = self.source_combo.findData(self.main.config.download_source)
@@ -429,7 +449,7 @@ class SettingsPage(QWidget):
         layout.addWidget(
             self._row(
                 "下载源",
-                "智能加速优先使用 Mojang 官方线路，失败时自动回退 BMCLAPI。",
+                "智能加速会自动测速选择更快的线路；连续失败会熔断 5 分钟并切换另一条，恢复后自动重新启用。",
                 self.source_combo,
             )
         )
@@ -608,6 +628,305 @@ class SettingsPage(QWidget):
         )
         return card
 
+    def _build_snapshot_card(self) -> QWidget:
+        card = Card()
+        layout = QVBoxLayout(card)
+        layout.setContentsMargins(20, 16, 20, 14)
+        layout.setSpacing(10)
+        layout.addLayout(
+            self._card_header(
+                "世界与配置快照",
+                "把当前版本的世界、Mod 配置和选项打包备份，改崩了可以一键回到之前的状态。",
+            )
+        )
+
+        buttons = QWidget()
+        row = QHBoxLayout(buttons)
+        row.setContentsMargins(0, 0, 0, 0)
+        row.setSpacing(8)
+        self.snapshot_create_btn = QPushButton("创建快照")
+        self.snapshot_create_btn.setObjectName("Primary")
+        self.snapshot_create_btn.setCursor(Qt.PointingHandCursor)
+        self.snapshot_create_btn.clicked.connect(self._create_snapshot)
+        self.snapshot_manage_btn = QPushButton("查看 / 恢复")
+        self.snapshot_manage_btn.setObjectName("Secondary")
+        self.snapshot_manage_btn.setCursor(Qt.PointingHandCursor)
+        self.snapshot_manage_btn.clicked.connect(self._open_snapshot_dialog)
+        self.snapshot_open_btn = QPushButton("打开备份目录")
+        self.snapshot_open_btn.setObjectName("Ghost")
+        self.snapshot_open_btn.setCursor(Qt.PointingHandCursor)
+        self.snapshot_open_btn.clicked.connect(self._open_snapshot_folder)
+        row.addWidget(self.snapshot_create_btn)
+        row.addWidget(self.snapshot_manage_btn)
+        row.addWidget(self.snapshot_open_btn)
+        row.addStretch(1)
+        layout.addWidget(buttons)
+
+        self.snapshot_hint = QLabel("")
+        self.snapshot_hint.setObjectName("Tiny")
+        self.snapshot_hint.setWordWrap(True)
+        layout.addWidget(self.snapshot_hint)
+        self._refresh_snapshot_hint()
+        return card
+
+    def _snapshot_target(self, notify: bool = False) -> tuple[str, Path] | None:
+        version = str(
+            getattr(self.main, "selected_version", "")
+            or self.main.config.last_version
+            or ""
+        )
+        if not version:
+            if notify:
+                self.main.toast("请先选择一个游戏版本", "info")
+            return None
+        game_path = Path(self.main.config.version_game_path(version))
+        if not game_path.is_dir():
+            if notify:
+                self.main.toast(f"版本目录不存在：{version}", "error")
+            return None
+        return version, game_path
+
+    def _refresh_snapshot_hint(self) -> None:
+        if not hasattr(self, "snapshot_hint"):
+            return
+        target = self._snapshot_target()
+        if target is None:
+            self.snapshot_hint.setText("选择游戏版本后即可创建快照。")
+            return
+        version, game_path = target
+        snapshots = list_snapshots(game_path)
+        if not snapshots:
+            self.snapshot_hint.setText(
+                f"{version} · 还没有快照。安装新 Mod 或改配置前建议先备份一次。"
+            )
+            return
+        latest = snapshots[0]
+        self.snapshot_hint.setText(
+            f"{version} · 共 {len(snapshots)} 个快照 · 最近 {latest.created_text}"
+            f" · {latest.size_text}"
+        )
+
+    def _create_snapshot(self) -> None:
+        if self._snapshot_create_worker is not None:
+            self.main.toast("快照正在创建，请稍候", "info")
+            return
+        target = self._snapshot_target(notify=True)
+        if target is None:
+            return
+        version, game_path = target
+        worker = SnapshotCreateWorker(game_path, version, parent=self)
+        self._snapshot_create_worker = worker
+        worker.finished.connect(self._on_snapshot_created)
+        self.snapshot_create_btn.setEnabled(False)
+        self.snapshot_create_btn.setText("正在打包…")
+        self.main.set_status("正在创建世界与配置快照…", "busy")
+        self.main.log(f"开始创建 {version} 的世界与配置快照")
+        worker.start()
+
+    def _on_snapshot_created(self, success: bool, message: str, info) -> None:
+        self._snapshot_create_worker = None
+        self.snapshot_create_btn.setEnabled(True)
+        self.snapshot_create_btn.setText("创建快照")
+        if not success:
+            self.main.set_status(f"快照创建失败：{message}", "error")
+            self.main.toast(f"快照创建失败：{message}", "error")
+            return
+        self.main.set_status("世界与配置快照已创建", "success")
+        self.main.toast(f"快照已保存 · {info.size_text}", "success")
+        self.main.log(
+            f"快照已创建：{info.path.name}（{info.files} 个文件，"
+            f"{info.size_text}）"
+        )
+        self._refresh_snapshot_hint()
+
+    def _open_snapshot_dialog(self) -> None:
+        target = self._snapshot_target(notify=True)
+        if target is None:
+            return
+        version, game_path = target
+        dialog = SnapshotDialog(self, game_path, version)
+        dialog.restore_requested.connect(
+            lambda path: self._restore_snapshot(Path(path), game_path, version)
+        )
+        dialog.exec()
+
+    def _restore_snapshot(
+        self, archive_path: Path, game_path: Path, version: str
+    ) -> None:
+        if self._snapshot_restore_worker is not None:
+            self.main.toast("正在恢复快照，请稍候", "info")
+            return
+        worker = SnapshotRestoreWorker(archive_path, game_path, parent=self)
+        self._snapshot_restore_worker = worker
+        worker.finished.connect(self._on_snapshot_restored)
+        self.snapshot_create_btn.setEnabled(False)
+        self.snapshot_manage_btn.setEnabled(False)
+        self.main.set_status("正在恢复世界与配置…", "busy")
+        self.main.log(f"开始恢复 {version} 的快照：{archive_path.name}")
+        worker.start()
+
+    def _on_snapshot_restored(self, success: bool, message: str, count: int) -> None:
+        self._snapshot_restore_worker = None
+        self.snapshot_create_btn.setEnabled(True)
+        self.snapshot_manage_btn.setEnabled(True)
+        if not success:
+            self.main.set_status(f"快照恢复失败：{message}", "error")
+            self.main.toast(f"快照恢复失败：{message}", "error")
+            return
+        self.main.set_status(f"已恢复 {count} 个文件", "success")
+        self.main.toast(f"快照已恢复 · {count} 个文件", "success")
+        self.main.log(f"快照恢复完成，共 {count} 个文件")
+        self._refresh_snapshot_hint()
+
+    def _open_snapshot_folder(self) -> None:
+        target = self._snapshot_target(notify=True)
+        if target is None:
+            return
+        _version, game_path = target
+        folder = snapshot_dir(game_path)
+        folder.mkdir(parents=True, exist_ok=True)
+        QDesktopServices.openUrl(QUrl.fromLocalFile(str(folder)))
+
+    def _build_diagnostics_card(self) -> QWidget:
+        card = Card()
+        layout = QVBoxLayout(card)
+        layout.setContentsMargins(20, 16, 20, 14)
+        layout.setSpacing(10)
+        layout.addLayout(
+            self._card_header(
+                "诊断与安全",
+                "遇到启动失败、Mod 冲突或游戏闪退时，把诊断包发给开发者；"
+                "安全模式会临时禁用当前版本的 Mod，退出游戏后自动恢复。",
+            )
+        )
+
+        buttons = QWidget()
+        row = QHBoxLayout(buttons)
+        row.setContentsMargins(0, 0, 0, 0)
+        row.setSpacing(8)
+        self.diagnostics_copy_btn = QPushButton("复制诊断信息")
+        self.diagnostics_copy_btn.setObjectName("Secondary")
+        self.diagnostics_copy_btn.setCursor(Qt.PointingHandCursor)
+        self.diagnostics_copy_btn.clicked.connect(self._copy_diagnostics)
+        self.diagnostics_bundle_btn = QPushButton("生成诊断包")
+        self.diagnostics_bundle_btn.setObjectName("Primary")
+        self.diagnostics_bundle_btn.setCursor(Qt.PointingHandCursor)
+        self.diagnostics_bundle_btn.clicked.connect(self._create_diagnostics)
+        self.safe_mode_btn = QPushButton("安全模式启动")
+        self.safe_mode_btn.setObjectName("Ghost")
+        self.safe_mode_btn.setCursor(Qt.PointingHandCursor)
+        self.safe_mode_btn.clicked.connect(self._confirm_safe_mode)
+        self.diagnostics_open_btn = QPushButton("打开诊断目录")
+        self.diagnostics_open_btn.setObjectName("Ghost")
+        self.diagnostics_open_btn.setCursor(Qt.PointingHandCursor)
+        self.diagnostics_open_btn.clicked.connect(self._open_diagnostics_folder)
+        row.addWidget(self.diagnostics_bundle_btn)
+        row.addWidget(self.diagnostics_copy_btn)
+        row.addWidget(self.safe_mode_btn)
+        row.addWidget(self.diagnostics_open_btn)
+        row.addStretch(1)
+        layout.addWidget(buttons)
+
+        self.diagnostics_hint = QLabel(
+            "诊断包已隐藏访问令牌、刷新令牌和樱花 Token；"
+            "不包含账户密码、世界存档、皮肤文件与 Mod 本体。"
+        )
+        self.diagnostics_hint.setObjectName("Tiny")
+        self.diagnostics_hint.setWordWrap(True)
+        layout.addWidget(self.diagnostics_hint)
+        return card
+
+    def _diagnostics_context(self) -> tuple[str, str]:
+        version = str(
+            getattr(self.main, "selected_version", "")
+            or self.main.config.last_version
+            or ""
+        )
+        loader = self.main.config.loader_for(version) if version else ""
+        return version, loader
+
+    def _start_diagnostics(self, bundle: bool) -> None:
+        if self._diagnostics_worker is not None:
+            self.main.toast("诊断任务正在进行，请稍候", "info")
+            return
+        version, loader = self._diagnostics_context()
+        worker = DiagnosticsWorker(
+            self.main.config,
+            self.main.java_installs,
+            version,
+            loader,
+            bundle=bundle,
+            parent=self,
+        )
+        self._diagnostics_worker = worker
+        worker.finished.connect(self._on_diagnostics_finished)
+        self.diagnostics_copy_btn.setEnabled(False)
+        self.diagnostics_bundle_btn.setEnabled(False)
+        self.diagnostics_bundle_btn.setText("正在收集…" if bundle else "生成诊断包")
+        self.main.set_status("正在收集诊断信息…", "busy")
+        worker.start()
+
+    def _copy_diagnostics(self) -> None:
+        self._start_diagnostics(bundle=False)
+
+    def _create_diagnostics(self) -> None:
+        self._start_diagnostics(bundle=True)
+
+    def _on_diagnostics_finished(
+        self, success: bool, message: str, payload
+    ) -> None:
+        self._diagnostics_worker = None
+        self.diagnostics_copy_btn.setEnabled(True)
+        self.diagnostics_bundle_btn.setEnabled(True)
+        self.diagnostics_bundle_btn.setText("生成诊断包")
+        if not success or not isinstance(payload, dict):
+            self.main.set_status(f"诊断信息生成失败：{message}", "error")
+            self.main.toast(f"诊断信息生成失败：{message}", "error")
+            return
+        summary = str(payload.get("summary") or "")
+        path = payload.get("path")
+        if path is None:
+            QApplication.clipboard().setText(summary)
+            self.main.set_status("诊断信息已复制", "success")
+            self.main.toast("诊断信息已复制到剪贴板", "success")
+            self.main.log("诊断信息已复制到剪贴板")
+            return
+        self.main.set_status("诊断包已生成", "success")
+        self.main.log(f"诊断包已生成：{path}")
+        self.main.toast("诊断包已生成", "success")
+        self.diagnostics_hint.setText(
+            f"最近诊断包：{path}\n"
+            "诊断包已隐藏访问令牌、刷新令牌和樱花 Token；"
+            "不包含账户密码、世界存档、皮肤文件与 Mod 本体。"
+        )
+
+    def _open_diagnostics_folder(self) -> None:
+        folder = APP_DIR / "diagnostics"
+        folder.mkdir(parents=True, exist_ok=True)
+        QDesktopServices.openUrl(QUrl.fromLocalFile(str(folder)))
+
+    def _confirm_safe_mode(self) -> None:
+        if self.main.game_running or self.main.launch_active:
+            self.main.toast("游戏正在运行或启动中", "info")
+            return
+        target = self._snapshot_target(notify=True)
+        if target is None:
+            return
+        version, _game_path = target
+        dialog = ConfirmDialog(
+            self,
+            "安全模式启动",
+            "将临时禁用当前版本的全部 Mod 后启动游戏，"
+            "用来判断闪退是否由 Mod 引起。游戏退出或启动失败后会自动恢复。",
+            primary_text="安全模式启动",
+            secondary_text="取消",
+            icon_name="warning",
+            icon_color=colors()["orange"],
+            details=f"版本：{version}\nMod 目录：{self.main.config.mods_path(version)}",
+        )
+        if dialog.exec():
+            self.main.launch_safe_mode()
+
     def _build_about_card(self) -> QWidget:
         card = Card()
         layout = QHBoxLayout(card)
@@ -655,6 +974,136 @@ class SettingsPage(QWidget):
         log_btn.clicked.connect(self.main.toggle_log)
         layout.addWidget(log_btn)
         return card
+
+    def _build_developer_card(self) -> QWidget:
+        card = Card()
+        layout = QVBoxLayout(card)
+        layout.setContentsMargins(20, 16, 20, 16)
+        layout.setSpacing(10)
+
+        header = QHBoxLayout()
+        header.setSpacing(8)
+        title = QLabel("开发者模式")
+        title.setStyleSheet("font-size: 15px; font-weight: 700;")
+        self.developer_badge = badge("未解锁", "gray")
+        header.addWidget(title)
+        header.addWidget(self.developer_badge)
+        header.addStretch(1)
+        layout.addLayout(header)
+
+        self.developer_hint = QLabel(
+            "开发者模式会显示 DEV 标记、解锁开发者台词，并允许从启动器打开网站反馈表。"
+            "输入开发者口令后开启，口令只在本机校验，不会上传。"
+        )
+        self.developer_hint.setObjectName("Tiny")
+        self.developer_hint.setWordWrap(True)
+        layout.addWidget(self.developer_hint)
+
+        self.developer_unlock_row = QWidget()
+        unlock_layout = QHBoxLayout(self.developer_unlock_row)
+        unlock_layout.setContentsMargins(0, 0, 0, 0)
+        unlock_layout.setSpacing(8)
+        self.developer_key_edit = QLineEdit()
+        self.developer_key_edit.setEchoMode(QLineEdit.Password)
+        self.developer_key_edit.setPlaceholderText("输入开发者口令")
+        self.developer_key_edit.setMaxLength(120)
+        self.developer_key_edit.returnPressed.connect(self._unlock_developer)
+        self.developer_unlock_btn = QPushButton("解锁")
+        self.developer_unlock_btn.setObjectName("Primary")
+        self.developer_unlock_btn.setCursor(Qt.PointingHandCursor)
+        self.developer_unlock_btn.clicked.connect(self._unlock_developer)
+        unlock_layout.addWidget(self.developer_key_edit, 1)
+        unlock_layout.addWidget(self.developer_unlock_btn)
+        layout.addWidget(self.developer_unlock_row)
+
+        self.developer_actions = QWidget()
+        action_layout = QHBoxLayout(self.developer_actions)
+        action_layout.setContentsMargins(0, 0, 0, 0)
+        action_layout.setSpacing(8)
+        self.developer_table_btn = QPushButton("打开网站反馈表")
+        self.developer_table_btn.setObjectName("Primary")
+        self.developer_table_btn.setCursor(Qt.PointingHandCursor)
+        self.developer_table_btn.clicked.connect(self._open_feedback_table)
+        self.developer_lock_btn = QPushButton("退出开发者模式")
+        self.developer_lock_btn.setObjectName("Ghost")
+        self.developer_lock_btn.setCursor(Qt.PointingHandCursor)
+        self.developer_lock_btn.clicked.connect(self._lock_developer)
+        action_layout.addWidget(self.developer_table_btn)
+        action_layout.addWidget(self.developer_lock_btn)
+        action_layout.addStretch(1)
+        layout.addWidget(self.developer_actions)
+
+        self.developer_status = QLabel("")
+        self.developer_status.setObjectName("Tiny")
+        self.developer_status.setWordWrap(True)
+        layout.addWidget(self.developer_status)
+
+        self.refresh_developer_state()
+        return card
+
+    def refresh_developer_state(self) -> None:
+        if not hasattr(self, "developer_badge"):
+            return
+        unlocked = bool(getattr(self.main.config, "developer_unlocked", False))
+        self.developer_badge.setText("已解锁" if unlocked else "未解锁")
+        self.developer_badge.setProperty("badge", "green" if unlocked else "gray")
+        repolish(self.developer_badge)
+        self.developer_unlock_row.setVisible(not unlocked)
+        self.developer_actions.setVisible(unlocked)
+        if unlocked:
+            self.developer_hint.setText(
+                "开发者模式已开启。网站反馈表只能从启动器这里的入口打开；"
+                "反馈内容由下载站读取 GitHub Issues 展示。"
+            )
+            self.developer_status.setText("")
+        else:
+            self.developer_hint.setText(
+                "开发者模式会显示 DEV 标记、解锁开发者台词，并允许从启动器打开网站反馈表。"
+                "输入开发者口令后开启，口令只在本机校验，不会上传。"
+            )
+
+    def _unlock_developer(self) -> None:
+        key = self.developer_key_edit.text().strip()
+        if not key:
+            self.developer_status.setText("先输入开发者口令。")
+            self.developer_status.setStyleSheet(f"color: {colors()['red']}; font-size: 11px;")
+            return
+        if not verify_developer_key(key):
+            self.developer_status.setText("口令不正确，开发者模式没有开启。")
+            self.developer_status.setStyleSheet(f"color: {colors()['red']}; font-size: 11px;")
+            self.developer_key_edit.selectAll()
+            self.developer_key_edit.setFocus()
+            return
+        unlock_developer(self.main.config, key)
+        self.main.config.save()
+        self.developer_key_edit.clear()
+        self.refresh_developer_state()
+        self.developer_status.setText("开发者模式已解锁。")
+        self.developer_status.setStyleSheet(f"color: {colors()['green']}; font-size: 11px;")
+        if hasattr(self.main, "_update_account"):
+            self.main._update_account()
+        try:
+            self.main.toast("开发者模式已解锁", "success")
+        except Exception:
+            pass
+
+    def _lock_developer(self) -> None:
+        lock_developer(self.main.config)
+        self.main.config.save()
+        self.refresh_developer_state()
+        self.developer_status.setText("已退出开发者模式。")
+        self.developer_status.setStyleSheet(f"color: {colors()['muted']}; font-size: 11px;")
+        if hasattr(self.main, "_update_account"):
+            self.main._update_account()
+        try:
+            self.main.toast("已退出开发者模式", "info")
+        except Exception:
+            pass
+
+    def _open_feedback_table(self) -> None:
+        if not bool(getattr(self.main.config, "developer_unlocked", False)):
+            return
+        QDesktopServices.openUrl(QUrl(feedback_table_url(self.main.config)))
 
     # ------------------------------------------------------------------
     def refresh_account(self) -> None:
@@ -1030,4 +1479,6 @@ class SettingsPage(QWidget):
         self._populate_java(self.main.java_installs)
         self.refresh_shortcut_state()
         self.refresh_update_state()
+        self._refresh_snapshot_hint()
+        self.refresh_developer_state()
         self.main.ensure_java_detected()

@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import http.client
 import io
+import json
 import os
 import re
 import ssl
@@ -405,6 +406,80 @@ def _remove_quietly(path: Path) -> None:
         pass
 
 
+def _part_meta_path(part: Path) -> Path:
+    return part.with_name(part.name + ".json")
+
+
+def _load_part_meta(part: Path) -> dict:
+    try:
+        data = json.loads(_part_meta_path(part).read_text(encoding="utf-8"))
+    except (OSError, ValueError, UnicodeDecodeError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def _write_part_meta(part: Path, payload: dict) -> None:
+    path = _part_meta_path(part)
+    try:
+        temp = path.with_name(path.name + ".tmp")
+        temp.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+        temp.replace(path)
+    except OSError:
+        pass
+
+
+def _remove_partial_state(part: Path) -> None:
+    _remove_quietly(part)
+    for index in range(16):
+        _remove_quietly(_segment_path(part, index))
+    _remove_quietly(_part_meta_path(part))
+
+
+@dataclass
+class _ResumePlan:
+    mode: str
+    total: int
+    ranges: list[tuple[int, int, int]]
+
+
+def _resume_plan(
+    meta: dict, url: str, total: int, sha1: str
+) -> _ResumePlan | None:
+    """校验上次留下的 .part.json，决定能否沿用旧分段。"""
+    if not meta:
+        return None
+    if str(meta.get("url") or "") != str(url):
+        return None
+    meta_total = int(meta.get("size") or 0)
+    if total and meta_total and total != meta_total:
+        return None
+    if not total:
+        total = meta_total
+    meta_sha1 = str(meta.get("sha1") or "").lower()
+    if sha1 and meta_sha1 and sha1.lower() != meta_sha1:
+        return None
+    mode = str(meta.get("mode") or "single")
+    if mode == "segments":
+        raw_ranges = meta.get("ranges")
+        if not isinstance(raw_ranges, list) or not raw_ranges:
+            return None
+        ranges: list[tuple[int, int, int]] = []
+        for item in raw_ranges:
+            try:
+                index, start, end = (int(value) for value in item)
+            except (TypeError, ValueError):
+                return None
+            if index < 0 or index >= 16 or start < 0 or end < start:
+                return None
+            if not total or end >= total:
+                return None
+            ranges.append((index, start, end))
+        if not ranges:
+            return None
+        return _ResumePlan("segments", total, ranges)
+    return _ResumePlan("single", total, [])
+
+
 def _download_segment(
     url: str,
     path: Path,
@@ -457,7 +532,7 @@ def _download_segment(
                 )
             return
         except DownloadCancelled:
-            _remove_quietly(path)
+            # 保留已写入的分段，下次可从这里继续。
             raise
         except RangeUnsupported:
             _remove_quietly(path)
@@ -474,7 +549,6 @@ def _download_segment(
             # 保留已写入的部分，下一次只补剩余字节，避免整段重下。
             if attempt + 1 < attempts:
                 time.sleep(0.4 * (attempt + 1))
-    _remove_quietly(path)
     raise TransferError(f"分段下载失败：{last_error}")
 
 
@@ -553,13 +627,12 @@ def _download_single(
                 )
             return digest.hexdigest(), written
         except DownloadCancelled:
-            _remove_quietly(part)
+            # 保留半截文件，配合 .part.json 在下次启动时继续下载。
             raise
         except Exception as exc:
             last_error = exc
             if attempt + 1 < attempts:
                 time.sleep(0.4 * (attempt + 1))
-    _remove_quietly(part)
     raise TransferError(f"下载失败：{last_error}")
 
 
@@ -574,12 +647,13 @@ def download_to_file(
     connections: int = 4,
     probe: bool | None = None,
 ) -> int:
-    """下载到目标文件，支持多连接分段、断点重试、取消与 SHA1 校验。
+    """下载到目标文件，支持多连接分段、跨会话续传、取消与 SHA1 校验。
 
     probe 为 None（默认）时只在文件大小未知的情况下做一次 Range 探测；
     调用方已给出 size 时直接开始分段，可少一个网络往返。
 
-    失败或取消时会删除所有临时分段，不会留下半截文件。
+    取消或网络失败时会保留 .part / .segN 和 .part.json，下次对同一
+    URL 再次调用会自动从断点继续；只有 SHA1 校验失败才清理损坏数据。
     """
     cancel_event = cancel_event or threading.Event()
     dest = Path(dest)
@@ -587,31 +661,90 @@ def download_to_file(
     part = dest.with_name(dest.name + ".part")
     _check_cancel(cancel_event)
 
-    for stale in [part] + [
-        _segment_path(part, index) for index in range(16)
-    ]:
-        _remove_quietly(stale)
-
     total = int(size or 0)
-    supports_range = False
-    should_probe = (
-        probe is True or (probe is None and total <= 0)
-    ) and connections > 1 and (not total or total >= MIN_SEGMENT_SIZE)
+    previous = _load_part_meta(part)
+    plan = _resume_plan(previous, url, total, sha1)
+    if plan is not None:
+        total = total or plan.total
+    elif previous:
+        # URL、文件大小或校验值已变化，旧断点不能安全复用。
+        _remove_partial_state(part)
 
-    if should_probe:
-        probed, supports_range = _probe(url, cancel_event)
-        total = total or probed
-        if not probed:
-            supports_range = False
-    elif total >= MIN_SEGMENT_SIZE and connections > 1:
-        # 大文件且已知大小：直接尝试分段。若服务器不支持 Range，
-        # 分段请求会立刻抛出 RangeUnsupported，再回退单流。
+    supports_range = False
+    ranges: list[tuple[int, int, int]] = []
+    segment_count = 1
+
+    if plan is not None and plan.mode == "segments" and plan.ranges:
+        # 沿用上次的分段布局，避免连接数变化导致断点作废。
         supports_range = True
-    _check_cancel(cancel_event)
+        ranges = plan.ranges
+        segment_count = len(ranges)
+        keep = {index for index, _start, _end in ranges}
+        for index in range(16):
+            if index not in keep:
+                _remove_quietly(_segment_path(part, index))
+    elif plan is not None:
+        segment_count = 1
+    else:
+        should_probe = (
+            probe is True or (probe is None and total <= 0)
+        ) and connections > 1 and (not total or total >= MIN_SEGMENT_SIZE)
+
+        if should_probe:
+            probed, supports_range = _probe(url, cancel_event)
+            total = total or probed
+            if not probed:
+                supports_range = False
+        elif total >= MIN_SEGMENT_SIZE and connections > 1:
+            # 大文件且已知大小：直接尝试分段。若服务器不支持 Range，
+            # 分段请求会立刻抛出 RangeUnsupported，再回退单流。
+            supports_range = True
+        _check_cancel(cancel_event)
+
+        if supports_range and total >= MIN_SEGMENT_SIZE and connections > 1:
+            count = min(
+                12,
+                max(2, min(int(connections), total // MIN_CONNECTION_SIZE)),
+            )
+            per_segment = (total + count - 1) // count
+            for index in range(count):
+                start = index * per_segment
+                end = min(total - 1, start + per_segment - 1)
+                if start > end:
+                    break
+                ranges.append((index, start, end))
+            segment_count = len(ranges) or 1
 
     lock = threading.Lock()
     downloaded = 0
     last_report = [0.0]
+
+    if segment_count > 1:
+        for index, start, end in ranges:
+            segment = _segment_path(part, index)
+            try:
+                written = segment.stat().st_size if segment.is_file() else 0
+            except OSError:
+                written = 0
+            downloaded += min(max(0, written), end - start + 1)
+    else:
+        try:
+            downloaded = part.stat().st_size if part.is_file() else 0
+        except OSError:
+            downloaded = 0
+        if total:
+            downloaded = min(downloaded, total)
+
+    _write_part_meta(
+        part,
+        {
+            "url": str(url),
+            "size": total,
+            "sha1": str(sha1 or "").lower(),
+            "mode": "segments" if segment_count > 1 else "single",
+            "ranges": [list(item) for item in ranges],
+        },
+    )
 
     def report(count: int) -> None:
         nonlocal downloaded
@@ -629,24 +762,11 @@ def download_to_file(
         if progress_cb is not None:
             progress_cb(current, total)
 
-    segment_count = 1
-    if supports_range and total >= MIN_SEGMENT_SIZE and connections > 1:
-        segment_count = max(
-            2, min(int(connections), total // MIN_CONNECTION_SIZE)
-        )
-        segment_count = min(segment_count, 12)
+    if progress_cb is not None and downloaded > 0:
+        progress_cb(downloaded, total)
 
     try:
         if segment_count > 1:
-            per_segment = (total + segment_count - 1) // segment_count
-            ranges = []
-            for index in range(segment_count):
-                start = index * per_segment
-                end = min(total - 1, start + per_segment - 1)
-                if start > end:
-                    break
-                ranges.append((index, start, end))
-
             try:
                 with ThreadPoolExecutor(max_workers=len(ranges)) as pool:
                     futures = [
@@ -667,15 +787,24 @@ def download_to_file(
                 for index, _start, _end in ranges:
                     _remove_quietly(_segment_path(part, index))
                 segment_count = 1
+                ranges = []
+                _write_part_meta(
+                    part,
+                    {
+                        "url": str(url),
+                        "size": total,
+                        "sha1": str(sha1 or "").lower(),
+                        "mode": "single",
+                        "ranges": [],
+                    },
+                )
                 with lock:
                     downloaded = 0
             except DownloadCancelled:
-                for index, _start, _end in ranges:
-                    _remove_quietly(_segment_path(part, index))
+                # 保留所有已写入的分段，供下次继续。
                 raise
             except Exception:
-                for index, _start, _end in ranges:
-                    _remove_quietly(_segment_path(part, index))
+                # 网络中断同样保留分段，避免几十 MB 的进度作废。
                 raise
 
         if segment_count > 1:
@@ -706,18 +835,16 @@ def download_to_file(
         if sha1 and hexdigest.lower() != sha1.lower():
             raise TransferError("SHA1 校验失败")
         os.replace(part, dest)
+        _remove_quietly(_part_meta_path(part))
         if progress_cb is not None:
             progress_cb(actual or total, actual or total)
         return actual
     except DownloadCancelled:
-        _remove_quietly(part)
-        for index in range(16):
-            _remove_quietly(_segment_path(part, index))
         raise
-    except Exception:
-        _remove_quietly(part)
-        for index in range(16):
-            _remove_quietly(_segment_path(part, index))
+    except Exception as exc:
+        if isinstance(exc, TransferError) and "SHA1" in str(exc):
+            # 校验失败说明断点数据已损坏，不能继续复用。
+            _remove_partial_state(part)
         raise
 
 
@@ -927,6 +1054,8 @@ def _looks_like_partial(path: Path) -> bool:
         or name.endswith(".part.part")
         or ".part.seg" in name
         or name.endswith(".part.tmp")
+        or name.endswith(".part.json")
+        or name.endswith(".part.json.tmp")
     )
 
 

@@ -27,6 +27,11 @@ class ModInfo:
     icon_bytes: bytes = b""
     project_url: str = ""
     source_label: str = ""
+    project_id: str = ""
+    source: str = ""
+    version_id: str = ""
+    file_id: str = ""
+    sha1: str = ""
 
     @property
     def filename(self) -> str:
@@ -295,6 +300,10 @@ def remember_downloaded_mod(
         "slug": str(info.get("slug") or ""),
         "source": str(info.get("source") or ""),
         "source_label": str(info.get("source_label") or ""),
+        "version_id": str(info.get("version_id") or ""),
+        "file_id": str(info.get("file_id") or ""),
+        "file_name": str(info.get("file_name") or jar_path.name),
+        "sha1": str(info.get("sha1") or ""),
         "content_type": str(info.get("content_type") or "mod"),
         "icon_url": str(info.get("icon_url") or ""),
         "author": str(info.get("author") or ""),
@@ -305,6 +314,8 @@ def remember_downloaded_mod(
         "description": str(info.get("description") or jar_info.description or ""),
         "description_zh": description_zh,
         "project_url": str(info.get("project_url") or ""),
+        "game_version": str(info.get("game_version") or ""),
+        "loader": str(info.get("loader") or ""),
     }
     write_mod_meta(Path(mods_dir), jar_path.name, payload, icon)
 
@@ -354,12 +365,22 @@ def read_mod(path: Path, with_meta: bool = True) -> ModInfo:
     description_zh = ""
     project_url = ""
     source_label = ""
+    project_id = ""
+    source = ""
+    version_id = ""
+    file_id = ""
+    sha1 = ""
     if with_meta:
         meta = load_mod_meta(path.parent, path.name)
         if meta:
             description_zh = str(meta.get("description_zh") or "")
             project_url = str(meta.get("project_url") or "")
             source_label = str(meta.get("source_label") or meta.get("source") or "")
+            project_id = str(meta.get("project_id") or "")
+            source = str(meta.get("source") or "")
+            version_id = str(meta.get("version_id") or "")
+            file_id = str(meta.get("file_id") or "")
+            sha1 = str(meta.get("sha1") or "")
             if not description:
                 description = str(meta.get("description") or "")
             if name == fallback_name:
@@ -380,6 +401,11 @@ def read_mod(path: Path, with_meta: bool = True) -> ModInfo:
         icon_bytes=icon_bytes,
         project_url=project_url,
         source_label=source_label,
+        project_id=project_id,
+        source=source,
+        version_id=version_id,
+        file_id=file_id,
+        sha1=sha1,
     )
 
 

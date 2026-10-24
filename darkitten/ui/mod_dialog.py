@@ -1980,13 +1980,15 @@ class ModBrowserDialog(StyledDialog):
         center.task_finished.connect(self._on_download_finished)
         self._download_bound = True
 
-    def _download_metadata(self) -> dict:
+    def _download_metadata(self, version: dict | None = None) -> dict:
         project = dict(self._project or {})
         hit = dict(self._hit or {})
         merged = {**hit, **{key: value for key, value in project.items() if value}}
         game_version = self.mc_combo.currentText().strip()
         loader = self.loader_tabs.current() if self._content_type == "mod" else ""
-        asset = primary_file(self.version_combo.currentData()) or {}
+        current_version = version if isinstance(version, dict) else {}
+        asset = primary_file(current_version) or {}
+        hashes = asset.get("hashes") if isinstance(asset.get("hashes"), dict) else {}
         return {
             "title": str(merged.get("title") or self.detail_title.text()),
             "project_id": str(
@@ -2015,7 +2017,10 @@ class ModBrowserDialog(StyledDialog):
             "project_url": str(merged.get("project_url") or ""),
             "game_version": game_version,
             "loader": loader,
+            "version_id": str(current_version.get("id") or ""),
+            "file_id": str(current_version.get("id") or ""),
             "file_name": str(asset.get("filename") or ""),
+            "sha1": str(hashes.get("sha1") or ""),
         }
 
     def _download(self) -> None:
@@ -2055,7 +2060,11 @@ class ModBrowserDialog(StyledDialog):
         self.progress_text.setText(progress_text)
         self.progress_box.setVisible(True)
         self.adjustSize()
-        metadata = self._download_metadata() if self._content_type == "mod" else None
+        metadata = (
+            self._download_metadata(version)
+            if self._content_type == "mod"
+            else None
+        )
         title = str(
             (metadata or {}).get("title")
             or self.detail_title.text()

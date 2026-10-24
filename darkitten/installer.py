@@ -19,6 +19,16 @@ from .downloader import (
     download_to_file,
     http_open as _http_open,
 )
+from .sources import (
+    BMCLAPI,
+    OFFICIAL,
+    SOURCE_LABELS,
+    is_source_usable,
+    order_sources,
+    refresh_sources,
+    report_failure,
+    report_success,
+)
 from .versions import (
     ResolvedVersion,
     active_library_artifacts,
@@ -120,17 +130,21 @@ def mirror_urls(url: str, source: str) -> list[str]:
     central = CENTRAL_MAVEN + relative if relative else ""
     candidates: list[str] = []
     if mirrored and is_mojang:
-        if source in ("auto", "bmclapi"):
-            candidates.extend([mirrored, url])
-        else:
-            candidates.extend([url, mirrored])
+        # auto 按测速结果排序；显式选择时尊重用户指定的线路。
+        urls_order = order_sources(source)
+        by_source = {OFFICIAL: url, BMCLAPI: mirrored}
+        candidates.extend(by_source[item] for item in urls_order)
     elif mirrored:
+        bmcl_ok = is_source_usable(BMCLAPI)
         if central and any(
             relative.startswith(prefix) for prefix in CENTRAL_FIRST_PREFIXES
         ):
             candidates.extend([central, mirrored, url])
-        else:
+        elif bmcl_ok:
             candidates.extend([mirrored, central, url])
+        else:
+            # 镜像被熔断时先走官方 Maven / Maven Central，避免反复超时。
+            candidates.extend([url, central, mirrored])
     else:
         candidates.append(url)
 
@@ -163,9 +177,11 @@ def get_manifest(
         except Exception:
             pass
 
-    urls = [MANIFEST_URL, BMCL_MANIFEST_URL]
-    if source == "bmclapi":
-        urls.reverse()
+    by_source = {OFFICIAL: MANIFEST_URL, BMCLAPI: BMCL_MANIFEST_URL}
+    urls = [
+        by_source[item]
+        for item in order_sources(source, allow_probe=True)
+    ]
 
     last_error: Exception | None = None
     for url in urls:
@@ -223,8 +239,6 @@ class Installer:
         self.game_dir = Path(game_dir)
         self.source = source
         self.effective_source = source
-        self._bmcl_checked = False
-        self._bmcl_ok = False
         self.progress_cb = progress_cb or (lambda p, m: None)
         self.log_cb = log_cb or (lambda m: None)
         self.cancel_event = cancel_event or threading.Event()
@@ -249,30 +263,26 @@ class Installer:
         if self.cancel_event.is_set():
             raise InstallCancelled()
 
-    def _bmcl_reachable(self) -> bool:
-        """短超时探测 BMCLAPI，避免镜像不可用时每个文件都等超时。"""
-        if self._bmcl_checked:
-            return self._bmcl_ok
-        self._bmcl_checked = True
-        try:
-            with _http_open(
-                BMCL_MANIFEST_URL, timeout=5, headers={"Range": "bytes=0-0"}
-            ) as resp:
-                resp.read(1)
-            self._bmcl_ok = True
-        except Exception:
-            self._bmcl_ok = False
-        return self._bmcl_ok
-
     def _resolve_source(self) -> None:
-        if self.source != "bmclapi":
-            self.effective_source = "official"
+        """auto 按测速结果选线，显式选择则尊重用户并保留兜底。"""
+        if self.source not in ("auto", OFFICIAL, BMCLAPI):
+            self.source = "auto"
+        if self.source == BMCLAPI:
+            refresh_sources(sources=(BMCLAPI,), allow_probe=True)
+            if is_source_usable(BMCLAPI):
+                self.effective_source = BMCLAPI
+                self.log("下载线路：BMCLAPI 镜像")
+            else:
+                self.effective_source = OFFICIAL
+                self.log("BMCLAPI 当前不可用，已自动切换为 Mojang 官方源")
             return
-        if self._bmcl_reachable():
-            self.effective_source = "bmclapi"
+        if self.source == OFFICIAL:
+            self.effective_source = OFFICIAL
+            self.log("下载线路：Mojang 官方")
             return
-        self.effective_source = "official"
-        self.log("BMCLAPI 当前不可用，已自动切换为 Mojang 官方源")
+        order = order_sources("auto", allow_probe=True)
+        self.effective_source = order[0]
+        self.log(f"下载线路：{SOURCE_LABELS[self.effective_source]}（自动测速）")
 
     def _set_progress(self, percent: int, message: str) -> None:
         with self._progress_lock:
@@ -364,10 +374,12 @@ class Installer:
                     progress_cb=on_bytes,
                     connections=self.segments,
                 )
+                report_success(candidate)
                 return True
             except DownloadCancelled:
                 raise InstallCancelled() from None
             except Exception as exc:
+                report_failure(candidate, exc)
                 errors.append(str(exc))
                 time.sleep(0.25)
                 continue
@@ -404,10 +416,12 @@ class Installer:
                 path.write_text(
                     json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8"
                 )
+                report_success(src)
                 return path
             except InstallCancelled:
                 raise
             except Exception as exc:
+                report_failure(src, exc)
                 last_error = exc
                 self._check_cancel()
         raise DownloadError(f"获取版本 {version_id} 的 JSON 失败：{last_error}")

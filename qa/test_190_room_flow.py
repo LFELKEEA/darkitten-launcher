@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import json
 import os
 import sys
+import tempfile
 from pathlib import Path
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
@@ -18,7 +20,23 @@ def main() -> None:
     from darkitten.config import Config
     from darkitten.ui.main_window import MainWindow
 
-    config = Config.load()
+    temp = tempfile.TemporaryDirectory()
+    game = Path(temp.name) / "game"
+    version_dir = game / "versions" / "1.21.1"
+    version_dir.mkdir(parents=True)
+    (version_dir / "1.21.1.json").write_text(
+        json.dumps(
+            {
+                "id": "1.21.1",
+                "type": "release",
+                "mainClass": "net.minecraft.client.main.Main",
+                "libraries": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+    Config.save = lambda self: None  # 使用临时目录，不覆盖真实配置
+    config = Config(game_dir=str(game), update_auto_check=False)
     window = MainWindow(config)
     store = window.social_store
     old_room = store.profile.room_code
@@ -52,6 +70,7 @@ def main() -> None:
         store.save()
         window.close()
         app.processEvents()
+        temp.cleanup()
     print("ROOM FLOW OK")
 
 

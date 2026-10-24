@@ -5,12 +5,19 @@ import os
 import sys
 import urllib.parse
 from ctypes import wintypes
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 from shiboken6 import isValid
 from PySide6.QtCore import QEvent, QPoint, QSize, Qt, QTimer, QUrl, Signal
-from PySide6.QtGui import QColor, QCloseEvent, QDesktopServices, QMouseEvent
+from PySide6.QtGui import (
+    QColor,
+    QCloseEvent,
+    QDesktopServices,
+    QKeySequence,
+    QMouseEvent,
+    QShortcut,
+)
 from PySide6.QtWidgets import (
     QApplication,
     QFrame,
@@ -34,13 +41,19 @@ from ..config import (
     LOG_DIR,
     Config,
 )
-from ..developer import is_developer, set_developer_mode
+from ..developer import developer_mode, feedback_table_url, set_developer_mode
+from ..feedback import FeedbackListWorker
 from ..updater import restart_executable, schedule_apply
 from ..java import pick_java
 from ..launch import (
     GameProcess,
     MissingFilesError,
     redacted_command_line,
+)
+from ..safe_mode import (
+    enable_safe_mode,
+    restore_pending,
+    restore_safe_mode,
 )
 from ..social import load_store
 from ..versions import (
@@ -61,6 +74,7 @@ from ..workers import (
 )
 from . import icons, theme
 from .animations import GameLoadingOverlay
+from .command_palette import CommandPalette
 from .dialogs import ConfirmDialog, NoticeDialog
 from .download_center import DownloadCenter, DownloadTasksDialog, TopDownloadChip
 from .feedback_dialog import FeedbackDialog
@@ -235,6 +249,7 @@ class MainWindow(QWidget):
         self._launch_profile_id = ""
         self._running_version = ""
         self._running_profile_id = ""
+        self._safe_mode_mods_dir: Path | None = None
         self.game_process: GameProcess | None = None
         self.game_running = False
         self._delete_worker: DeleteWorker | None = None
@@ -248,6 +263,8 @@ class MainWindow(QWidget):
         self.update_state_kind = "idle"
         self.download_center = DownloadCenter(self)
         self._download_tasks_dialog: DownloadTasksDialog | None = None
+        self._feedback_reminder_worker: FeedbackListWorker | None = None
+        self._feedback_checked = False
 
         self.setObjectName("Root")
         self.setAttribute(Qt.WA_StyledBackground, True)
@@ -258,6 +275,10 @@ class MainWindow(QWidget):
         self.setAcceptDrops(True)
 
         self._build_ui()
+        self._restore_safe_mode_on_startup()
+        self.command_shortcut = QShortcut(QKeySequence("Ctrl+K"), self)
+        self.command_shortcut.activated.connect(self.show_command_palette)
+        QTimer.singleShot(6000, self._check_feedback_reminder)
         QApplication.instance().installEventFilter(self)
         self._restore_geometry()
         self.ensure_java_detected()
@@ -378,11 +399,25 @@ class MainWindow(QWidget):
             layout.addSpacing(2)
 
         layout.addStretch(1)
+        self.command_btn = icon_button(
+            "search", "快捷命令 (Ctrl+K)", colors()["text2"], 32, 17
+        )
+        self.command_btn.clicked.connect(self.show_command_palette)
+        layout.addWidget(self.command_btn)
+        layout.addSpacing(4)
         self.feedback_btn = icon_button(
             "message", "Bug 反馈 / 改进建议", colors()["text2"], 32, 17
         )
         self.feedback_btn.clicked.connect(lambda: self.open_feedback_dialog("bug"))
         layout.addWidget(self.feedback_btn)
+        self.feedback_dot = QLabel(self.feedback_btn)
+        self.feedback_dot.setFixedSize(8, 8)
+        self.feedback_dot.setStyleSheet(
+            "background: #E5484D; border-radius: 4px;"
+        )
+        self.feedback_dot.move(23, 4)
+        self.feedback_dot.setAttribute(Qt.WA_TransparentForMouseEvents, True)
+        self.feedback_dot.hide()
         layout.addSpacing(4)
         self.download_chip = TopDownloadChip()
         self.download_chip.clicked.connect(self.open_download_tasks)
@@ -1176,7 +1211,7 @@ class MainWindow(QWidget):
 
     def _update_account(self) -> None:
         account = self.current_account()
-        dev_mode = is_developer(self.config, account)
+        dev_mode = bool(self.config.developer_unlocked)
         set_developer_mode(dev_mode)
         if hasattr(self, "account_chip"):
             self.account_chip.set_account(
@@ -1188,7 +1223,7 @@ class MainWindow(QWidget):
             self.account_chip.avatar.refresh()
         if hasattr(self, "feedback_btn"):
             self.feedback_btn.setToolTip(
-                "开发者收件箱 · Bug 反馈 / 改进建议"
+                "开发者反馈表 · 提交反馈 / 查看反馈"
                 if dev_mode
                 else "Bug 反馈 / 改进建议"
             )
@@ -1196,6 +1231,8 @@ class MainWindow(QWidget):
             self.home_page._refresh_status()
         if hasattr(self, "settings_page"):
             self.settings_page.refresh_account()
+            if hasattr(self.settings_page, "refresh_developer_state"):
+                self.settings_page.refresh_developer_state()
 
     # ------------------------------------------------------------------
     # 安装
@@ -1526,21 +1563,297 @@ class MainWindow(QWidget):
         dialog.join_requested.connect(self.join_friend_room)
         dialog.exec()
 
+    # ------------------------------------------------------------------
+    # 快捷命令 / 开发者反馈提醒
+
+    def _palette_commands(self) -> list[dict]:
+        commands = [
+            {
+                "id": "page-home",
+                "title": "打开首页",
+                "subtitle": "启动游戏与版本选择",
+                "keywords": "home start 启动 首页",
+            },
+            {
+                "id": "launch",
+                "title": "启动游戏",
+                "subtitle": "使用当前选中的版本",
+                "keywords": "launch play start 启动 运行",
+            },
+            {
+                "id": "launch-safe",
+                "title": "安全模式启动",
+                "subtitle": "临时禁用 Mod，退出后自动恢复",
+                "keywords": "safe mode 安全模式 排查 闪退",
+            },
+            {
+                "id": "close-game",
+                "title": "关闭游戏",
+                "subtitle": "请求游戏正常退出",
+                "keywords": "close stop 关闭 退出游戏",
+            },
+            {
+                "id": "page-download",
+                "title": "下载游戏版本",
+                "subtitle": "原版版本清单与安装",
+                "keywords": "download version 下载 版本 安装",
+            },
+            {
+                "id": "page-loaders",
+                "title": "管理加载器",
+                "subtitle": "Fabric / Forge / NeoForge / Quilt",
+                "keywords": "loader fabric forge neoforge quilt 加载器",
+            },
+            {
+                "id": "page-mods",
+                "title": "打开 Mod 管理",
+                "subtitle": "已安装 Mod、更新与环境检查",
+                "keywords": "mod 模组 管理 更新 冲突",
+            },
+            {
+                "id": "mod-download",
+                "title": "下载 Mod / 整合包 / 材质 / 光影",
+                "subtitle": "Modrinth 与 CurseForge",
+                "keywords": "mod modrinth curseforge 下载 整合包 材质 光影",
+            },
+            {
+                "id": "import-local",
+                "title": "导入本地内容",
+                "subtitle": "版本 ZIP、整合包、Mod、材质、光影",
+                "keywords": "import local 导入 本地 zip",
+            },
+            {
+                "id": "page-skin",
+                "title": "皮肤与 3D 预览",
+                "subtitle": "上传皮肤、查看角色模型",
+                "keywords": "skin 皮肤 3d 预览",
+            },
+            {
+                "id": "page-room",
+                "title": "联机房间",
+                "subtitle": "樱花穿透与好友房间",
+                "keywords": "room lan sakura 联机 房间",
+            },
+            {
+                "id": "page-server",
+                "title": "服务端",
+                "subtitle": "安装、启动与打包服务端",
+                "keywords": "server 服务端 开服",
+            },
+            {
+                "id": "page-settings",
+                "title": "打开设置",
+                "subtitle": "Java、内存、下载源与账户",
+                "keywords": "settings config 设置 配置",
+            },
+            {
+                "id": "download-center",
+                "title": "打开下载中心",
+                "subtitle": "查看进行中的下载任务",
+                "keywords": "download center task 下载中心 任务",
+            },
+            {
+                "id": "snapshot",
+                "title": "创建世界与配置快照",
+                "subtitle": "备份当前版本的世界和配置",
+                "keywords": "snapshot backup save 快照 备份 世界",
+            },
+            {
+                "id": "diagnostics-bundle",
+                "title": "生成诊断包",
+                "subtitle": "收集日志、系统和 Mod 信息",
+                "keywords": "diagnostics bug report 诊断 日志 反馈",
+            },
+            {
+                "id": "diagnostics-copy",
+                "title": "复制诊断信息",
+                "subtitle": "把摘要复制到剪贴板",
+                "keywords": "diagnostics copy 诊断 复制",
+            },
+            {
+                "id": "check-update",
+                "title": "检查启动器更新",
+                "subtitle": "从 GitHub Pages 获取最新版本",
+                "keywords": "update 更新 升级",
+            },
+            {
+                "id": "toggle-theme",
+                "title": "切换界面主题",
+                "subtitle": "浅色 / 深色",
+                "keywords": "theme dark light 主题 深色 浅色",
+            },
+            {
+                "id": "open-game-dir",
+                "title": "打开游戏目录",
+                "subtitle": "在资源管理器中查看",
+                "keywords": "folder game 目录 文件夹 打开",
+            },
+            {
+                "id": "toggle-log",
+                "title": "显示 / 收起运行日志",
+                "subtitle": "排查启动问题",
+                "keywords": "log 日志 运行",
+            },
+            {
+                "id": "feedback-bug",
+                "title": "提交 Bug 反馈",
+                "subtitle": "反馈启动失败、闪退或异常",
+                "keywords": "feedback bug report 反馈 bug 报错",
+            },
+            {
+                "id": "feedback-suggestion",
+                "title": "提交改进建议",
+                "subtitle": "告诉开发者想要什么功能",
+                "keywords": "feedback suggestion idea 建议 改进",
+            },
+        ]
+        if developer_mode():
+            commands.append(
+                {
+                    "id": "feedback-inbox",
+                    "title": "开发者反馈表",
+                    "subtitle": "在下载站查看所有反馈",
+                    "keywords": "developer inbox feedback 开发者 收件箱 反馈表 网站",
+                }
+            )
+        return commands
+
+    def show_command_palette(self) -> None:
+        if QApplication.activeModalWidget() is not None:
+            return
+        dialog = CommandPalette(self, self._palette_commands())
+        if dialog.exec() and dialog.chosen:
+            self._run_palette_command(dialog.chosen)
+
+    def _run_palette_command(self, command_id: str) -> None:
+        pages = {
+            "page-home": "home",
+            "page-download": "download",
+            "page-loaders": "loaders",
+            "page-mods": "mods",
+            "page-skin": "skin",
+            "page-room": "room",
+            "page-server": "server",
+            "page-settings": "settings",
+        }
+        if command_id in pages:
+            self.switch_page(pages[command_id])
+            return
+        if command_id == "launch":
+            self.launch_selected()
+        elif command_id == "launch-safe":
+            self.launch_safe_mode()
+        elif command_id == "close-game":
+            self.close_game()
+        elif command_id == "mod-download":
+            self.open_mod_download()
+        elif command_id == "import-local":
+            self.open_local_import()
+        elif command_id == "download-center":
+            self.open_download_tasks()
+        elif command_id == "snapshot":
+            self.switch_page("settings")
+            self.settings_page._create_snapshot()
+        elif command_id == "diagnostics-bundle":
+            self.switch_page("settings")
+            self.settings_page._create_diagnostics()
+        elif command_id == "diagnostics-copy":
+            self.switch_page("settings")
+            self.settings_page._copy_diagnostics()
+        elif command_id == "check-update":
+            self.check_for_updates(manual=True)
+        elif command_id == "toggle-theme":
+            self.toggle_theme()
+        elif command_id == "open-game-dir":
+            self.open_game_folder()
+        elif command_id == "toggle-log":
+            self.toggle_log()
+        elif command_id == "feedback-bug":
+            self.open_feedback_dialog("bug")
+        elif command_id == "feedback-suggestion":
+            self.open_feedback_dialog("suggestion")
+        elif command_id == "feedback-inbox":
+            self.open_feedback_inbox()
+
+    def toggle_theme(self) -> None:
+        target = "light" if self.config.theme == "dark" else "dark"
+        self.config.theme = target
+        self.config.save()
+        self.apply_theme(target)
+        if hasattr(self, "settings_page") and hasattr(
+            self.settings_page, "theme_seg"
+        ):
+            self.settings_page.theme_seg.set_value(target)
+
+    def open_game_folder(self) -> None:
+        path = self.config.game_path
+        try:
+            path.mkdir(parents=True, exist_ok=True)
+        except OSError as exc:
+            self.toast(f"无法打开游戏目录：{exc}", "error")
+            return
+        QDesktopServices.openUrl(QUrl.fromLocalFile(str(path)))
+
+    @staticmethod
+    def _utc_now_text() -> str:
+        return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+    def _check_feedback_reminder(self) -> None:
+        if self._feedback_checked or not developer_mode():
+            return
+        self._feedback_checked = True
+        worker = FeedbackListWorker(parent=self)
+        self._feedback_reminder_worker = worker
+        worker.finished.connect(self._on_feedback_reminder)
+        worker.start()
+
+    def _on_feedback_reminder(
+        self, items, _account, _source: str, _warning: str
+    ) -> None:
+        self._feedback_reminder_worker = None
+        if not isinstance(items, list):
+            return
+        last_seen = str(self.config.feedback_last_seen or "").strip()
+        if not last_seen:
+            self.config.feedback_last_seen = self._utc_now_text()
+            self.config.save()
+            return
+        unread = [
+            item
+            for item in items
+            if str(item.get("status") or "open") == "open"
+            and str(item.get("created_at") or "") > last_seen
+        ]
+        if not unread:
+            return
+        if hasattr(self, "feedback_dot"):
+            self.feedback_dot.show()
+            self.feedback_dot.raise_()
+        self.feedback_btn.setToolTip(
+            f"开发者反馈表 · {len(unread)} 条新反馈 / 建议"
+        )
+
+    def _mark_feedback_seen(self) -> None:
+        self.config.feedback_last_seen = self._utc_now_text()
+        self.config.save()
+        if hasattr(self, "feedback_dot"):
+            self.feedback_dot.hide()
+        if hasattr(self, "feedback_btn"):
+            self.feedback_btn.setToolTip("开发者反馈表 · 提交反馈 / 查看反馈")
+
     def open_feedback_dialog(self, kind: str = "bug") -> None:
-        """打开 Bug 反馈 / 改进建议；开发者会额外看到收件箱。"""
+        """打开 Bug 反馈 / 改进建议；开发者会额外看到反馈表入口。"""
         dialog = FeedbackDialog(self, kind=kind)
         dialog.exec()
         self._update_account()
 
     def open_feedback_inbox(self) -> None:
-        """开发者快捷入口：直接打开收件箱标签。"""
-        dialog = FeedbackDialog(self, kind="bug")
-        try:
-            dialog.tabs.set_value("inbox", emit=True)
-        except Exception:
-            pass
-        dialog.exec()
-        self._update_account()
+        """开发者快捷入口：在下载站打开反馈表。"""
+        if not developer_mode():
+            return
+        self._mark_feedback_seen()
+        QDesktopServices.openUrl(QUrl(feedback_table_url(self.config)))
+        self.toast("已在浏览器打开开发者反馈表", "info")
 
     def offer_shortcut_once(self) -> None:
         """第一次启动时询问是否创建桌面快捷方式，之后不再打扰。"""
@@ -1886,6 +2199,64 @@ class MainWindow(QWidget):
     # ------------------------------------------------------------------
     # 启动
 
+    def _restore_safe_mode_on_startup(self) -> None:
+        try:
+            handled = restore_pending(self.config.game_path)
+        except Exception as exc:
+            self.log(f"安全模式恢复检查失败：{exc}")
+            return
+        if handled:
+            self.log(f"已恢复上次安全模式临时禁用的 Mod（{len(handled)} 个目录）")
+
+    def launch_safe_mode(self) -> None:
+        """临时禁用当前版本的 Mod 后启动，游戏结束时自动恢复。"""
+        if self.game_running:
+            self.toast("游戏已经在运行了", "info")
+            return
+        if self.launch_active:
+            self.toast("游戏正在启动，请稍候", "info")
+            return
+        if self.install_active:
+            self.toast("文件仍在安装中，请稍候", "info")
+            return
+        if not self.selected_version:
+            self.toast("请先安装一个游戏版本", "info")
+            return
+        mods_dir = self.config.mods_path(self.selected_version)
+        try:
+            moved = enable_safe_mode(mods_dir)
+        except Exception as exc:
+            self.toast(f"无法进入安全模式：{exc}", "error")
+            return
+        self._safe_mode_mods_dir = mods_dir
+        if hasattr(self, "mods_page"):
+            self.mods_page.refresh_mods()
+        if moved:
+            self.log(
+                f"安全模式：临时禁用 {len(moved)} 个 Mod，游戏退出后自动恢复"
+            )
+            self.toast(f"安全模式 · 已临时禁用 {len(moved)} 个 Mod", "info")
+        else:
+            self.log("安全模式：当前版本没有可禁用的 Mod")
+            self.toast("安全模式 · 当前版本没有可禁用的 Mod", "info")
+        self.launch_selected()
+
+    def _restore_safe_mode_mods(self) -> None:
+        mods_dir = self._safe_mode_mods_dir
+        if not mods_dir:
+            return
+        self._safe_mode_mods_dir = None
+        try:
+            count = restore_safe_mode(mods_dir)
+        except Exception as exc:
+            self.log(f"安全模式恢复失败：{exc}")
+            return
+        if count:
+            self.log(f"安全模式结束，已恢复 {count} 个 Mod")
+            self.toast(f"已恢复 {count} 个被安全模式禁用的 Mod", "info")
+        if hasattr(self, "mods_page"):
+            self.mods_page.refresh_mods()
+
     def launch_selected(
         self,
         checked: bool = False,
@@ -1955,6 +2326,7 @@ class MainWindow(QWidget):
             self.home_page.set_launching(False)
             self._update_action_button()
             self.loading_overlay.abort()
+            self._restore_safe_mode_mods()
             self.set_status("已取消启动", "idle")
             self.log("已取消启动")
             self.toast("已取消启动", "info")
@@ -2007,6 +2379,7 @@ class MainWindow(QWidget):
         self.home_page.set_launching(False)
         self._update_action_button()
         self.loading_overlay.abort()
+        self._restore_safe_mode_mods()
         exc = MissingFilesError(list(missing or []))
         self._handle_missing_files(
             exc,
@@ -2020,6 +2393,7 @@ class MainWindow(QWidget):
         self.home_page.set_launching(False)
         self._update_action_button()
         self.loading_overlay.abort()
+        self._restore_safe_mode_mods()
         self._handle_launch_error(message)
 
     def _on_launch_cancelled(self) -> None:
@@ -2031,6 +2405,7 @@ class MainWindow(QWidget):
         self.home_page.set_launching(False)
         self._update_action_button()
         self.loading_overlay.abort()
+        self._restore_safe_mode_mods()
         self.set_status("已取消启动", "idle")
         self.log("已取消启动")
         self.toast("已取消启动", "info")
@@ -2169,6 +2544,7 @@ class MainWindow(QWidget):
 
     def _game_finished(self, code: int) -> None:
         was_closing = self._launch_closing
+        self._restore_safe_mode_mods()
         self.game_running = False
         self._launch_closing = False
         self._running_version = ""

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import platform
+import re
 import threading
 import urllib.error
 import urllib.parse
@@ -11,10 +12,10 @@ from typing import Any
 from PySide6.QtCore import QObject, Signal
 
 from .config import APP_VERSION
-from .microsoft_auth import MicrosoftAuthError, ensure_minecraft_token
 
-FEEDBACK_API = "https://dkl-feedback.lfelkeea.workers.dev"
 FEEDBACK_SITE = "https://lfelkeea.github.io/darkitten-launcher/#feedback"
+FEEDBACK_FORM_URL = "https://lfelkeea.github.io/darkitten-launcher/"
+FEEDBACK_TABLE_PAGE = "feedback.html"
 FEEDBACK_EMAIL = "lfel278623@outlook.com"
 GITHUB_REPO = "LFELKEEA/darkitten-launcher"
 GITHUB_ISSUES_PAGE = f"https://github.com/{GITHUB_REPO}/issues"
@@ -42,6 +43,7 @@ SOURCE_LABELS = {
     "github": "GitHub",
 }
 GITHUB_FEEDBACK_LABELS = {"bug", "enhancement"}
+TITLE_PREFIX = "[DKL"
 
 
 class FeedbackError(Exception):
@@ -52,53 +54,24 @@ def _clean(value: object, limit: int) -> str:
     return str(value or "").strip()[:limit]
 
 
-def _request_json(
-    url: str,
-    *,
-    method: str = "GET",
-    payload: dict[str, Any] | None = None,
-    token: str = "",
-    timeout: int = 15,
-) -> Any:
+def _request_json(url: str, *, timeout: int = 15) -> Any:
     headers = {
-        "Accept": "application/json",
+        "Accept": "application/vnd.github+json",
         "User-Agent": USER_AGENT,
     }
-    data = None
-    if payload is not None:
-        data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
-        headers["Content-Type"] = "application/json; charset=utf-8"
-    if token:
-        headers["Authorization"] = f"Bearer {token}"
-
-    request = urllib.request.Request(url, data=data, headers=headers, method=method)
+    request = urllib.request.Request(url, headers=headers, method="GET")
     try:
         with urllib.request.urlopen(request, timeout=timeout) as response:
             raw = response.read()
     except urllib.error.HTTPError as exc:
-        raw_error = b""
-        try:
-            raw_error = exc.read()
-        except Exception:
-            pass
-        detail = ""
-        try:
-            error_payload = json.loads(raw_error.decode("utf-8"))
-            if isinstance(error_payload, dict):
-                detail = str(
-                    error_payload.get("error")
-                    or error_payload.get("message")
-                    or ""
-                ).strip()
-        except Exception:
-            detail = ""
-        if not detail:
-            detail = f"服务器返回 HTTP {exc.code}。"
+        detail = f"GitHub 返回 HTTP {exc.code}。"
+        if exc.code == 403:
+            detail = "GitHub 接口访问次数已达上限，请稍后再试。"
         raise FeedbackError(detail) from None
     except urllib.error.URLError as exc:
-        raise FeedbackError(f"无法连接反馈服务：{exc.reason}") from None
+        raise FeedbackError(f"无法连接 GitHub：{exc.reason}") from None
     except TimeoutError:
-        raise FeedbackError("反馈服务响应超时，请稍后再试。") from None
+        raise FeedbackError("GitHub 响应超时，请稍后再试。") from None
     except OSError as exc:
         raise FeedbackError(f"网络请求失败：{exc}") from None
 
@@ -107,7 +80,7 @@ def _request_json(
     try:
         return json.loads(raw.decode("utf-8"))
     except (UnicodeDecodeError, json.JSONDecodeError):
-        raise FeedbackError("反馈服务返回了无法识别的数据。") from None
+        raise FeedbackError("GitHub 返回了无法识别的数据。") from None
 
 
 def build_feedback_payload(
@@ -135,119 +108,9 @@ def build_feedback_payload(
     }
 
 
-def submit_feedback(
-    payload: dict[str, Any],
-    *,
-    api_base: str = FEEDBACK_API,
-    timeout: int = 15,
-) -> str:
-    title = _clean(payload.get("title"), 80)
-    description = _clean(payload.get("description"), 4000)
-    if len(title) < 2:
-        raise FeedbackError("标题至少需要 2 个字。")
-    if len(description) < 10:
-        raise FeedbackError("描述至少需要 10 个字，写清楚操作步骤会更容易定位。")
-    data = dict(payload)
-    data["title"] = title
-    data["description"] = description
-    data.setdefault("source", "launcher")
-    data.setdefault("system", _clean(platform.platform(), 300))
-    data.setdefault("user_agent", USER_AGENT)
-    result = _request_json(
-        f"{api_base.rstrip('/')}/api/feedback",
-        method="POST",
-        payload=data,
-        timeout=timeout,
-    )
-    if not isinstance(result, dict) or not result.get("ok"):
-        message = result.get("error") if isinstance(result, dict) else ""
-        raise FeedbackError(str(message or "反馈没有成功保存。"))
-    return str(result.get("id") or "")
-
-
-def fetch_feedback(
-    token: str,
-    *,
-    limit: int = 100,
-    kind: str = "",
-    status: str = "",
-    api_base: str = FEEDBACK_API,
-    timeout: int = 15,
-) -> list[dict[str, Any]]:
-    if not token:
-        raise FeedbackError("没有可用的 Minecraft 访问令牌。")
-    params: dict[str, str] = {"limit": str(max(1, min(200, int(limit))))}
-    if kind:
-        params["kind"] = _clean(kind, 20).lower()
-    if status:
-        params["status"] = _clean(status, 20).lower()
-    url = f"{api_base.rstrip('/')}/api/feedback?{urllib.parse.urlencode(params)}"
-    result = _request_json(url, token=token, timeout=timeout)
-    if not isinstance(result, dict) or not result.get("ok"):
-        message = result.get("error") if isinstance(result, dict) else ""
-        raise FeedbackError(str(message or "读取反馈列表失败。"))
-    items = result.get("items")
-    if not isinstance(items, list):
-        return []
-    normalized: list[dict[str, Any]] = []
-    for item in items:
-        if not isinstance(item, dict):
-            continue
-        record = dict(item)
-        record["source"] = str(record.get("source") or "website")
-        record["kind"] = str(record.get("kind") or record.get("type") or "other")
-        record["status"] = str(record.get("status") or "open")
-        record["id"] = str(record.get("id") or "")
-        record["title"] = str(record.get("title") or "未命名反馈")
-        record["description"] = str(
-            record.get("description") or record.get("body") or ""
-        )
-        record["platform"] = "center"
-        normalized.append(record)
-    return normalized
-
-
-def update_feedback_status(
-    token: str,
-    feedback_id: str,
-    status: str,
-    *,
-    api_base: str = FEEDBACK_API,
-    timeout: int = 15,
-) -> dict[str, Any]:
-    if not token:
-        raise FeedbackError("没有可用的 Minecraft 访问令牌。")
-    if status not in ("open", "resolved", "archived"):
-        raise FeedbackError("不支持的处理状态。")
-    if not feedback_id:
-        raise FeedbackError("缺少反馈编号。")
-    url = (
-        f"{api_base.rstrip('/')}/api/feedback/"
-        f"{urllib.parse.quote(feedback_id, safe='')}"
-    )
-    result = _request_json(
-        url,
-        method="PATCH",
-        payload={"status": status},
-        token=token,
-        timeout=timeout,
-    )
-    if not isinstance(result, dict) or not result.get("ok"):
-        message = result.get("error") if isinstance(result, dict) else ""
-        raise FeedbackError(str(message or "更新反馈状态失败。"))
-    item = result.get("item")
-    return item if isinstance(item, dict) else {}
-
-
-def github_issue_label(kind: str) -> str:
-    return "enhancement" if _clean(kind, 20).lower() == "suggestion" else "bug"
-
-
-def build_github_issue_url(payload: dict[str, Any]) -> str:
+def _issue_body(payload: dict[str, Any]) -> str:
     kind = _clean(payload.get("type") or payload.get("kind"), 20).lower()
-    kind_label = KIND_LABELS.get(kind, "反馈")
-    title = _clean(payload.get("title"), 80) or "DKL 反馈"
-    description = _clean(payload.get("description"), 6000)
+    kind_label = KIND_LABELS.get(kind, "其他")
     metadata = [
         f"**来源**：{SOURCE_LABELS.get(str(payload.get('source') or 'launcher'), '启动器')}",
         f"**类型**：{kind_label}",
@@ -262,25 +125,47 @@ def build_github_issue_url(payload: dict[str, Any]) -> str:
     system = _clean(payload.get("system"), 300)
     if system:
         metadata.append(f"**系统**：{system}")
-    body = "\n".join(
+    return "\n".join(
         [
             *metadata,
             "",
             "---",
             "",
-            description,
+            _clean(payload.get("description"), 6000),
             "",
-            "> 这条反馈通过 Darkitten Launcher 的公开兜底入口提交。",
+            "> 这条反馈通过 DKL 下载站提交，开发者可在网站反馈表查看。",
         ]
     )
+
+
+def build_github_issue_url(payload: dict[str, Any]) -> str:
+    kind = _clean(payload.get("type") or payload.get("kind"), 20).lower()
+    kind_label = KIND_LABELS.get(kind, "反馈")
+    title = _clean(payload.get("title"), 80) or "DKL 反馈"
     query = urllib.parse.urlencode(
         {
-            "title": f"[DKL {kind_label}] {title}",
-            "body": body[:7500],
-            "labels": github_issue_label(kind),
+            "title": f"{TITLE_PREFIX} {kind_label}] {title}",
+            "body": _issue_body(payload)[:7500],
         }
     )
     return f"https://github.com/{GITHUB_REPO}/issues/new?{query}"
+
+
+def build_site_feedback_url(payload: dict[str, Any]) -> str:
+    """把启动器里写好的反馈带到下载站表单，最终由网站提交到 GitHub Issues。"""
+    kind = _clean(payload.get("type") or payload.get("kind"), 20).lower()
+    if kind not in KIND_LABELS:
+        kind = "other"
+    params = {
+        "type": kind,
+        "version": _clean(payload.get("version") or APP_VERSION, 40),
+        "title": _clean(payload.get("title"), 80),
+        "description": _clean(payload.get("description"), 4000),
+        "contact": _clean(payload.get("contact"), 120),
+    }
+    query = urllib.parse.urlencode({key: value for key, value in params.items() if value})
+    fragment = "#feedback-suggestion" if kind == "suggestion" else "#feedback-bug"
+    return f"{FEEDBACK_FORM_URL}?{query}{fragment}"
 
 
 def feedback_payload_text(payload: dict[str, Any]) -> str:
@@ -337,16 +222,45 @@ def feedback_as_text(item: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
-def _github_issue_text(body: str) -> str:
+def _issue_field(body: str, name: str) -> str:
+    match = re.search(
+        r"^\*\*" + re.escape(name) + r"\*\*：(.*)$", body, re.MULTILINE
+    )
+    return match.group(1).strip() if match else ""
+
+
+def _issue_description(body: str) -> str:
     text = str(body or "").replace("\r\n", "\n").strip()
     if not text:
         return "（提交者没有填写描述。）"
-    return text[:8000]
+    lines: list[str] = []
+    for line in text.splitlines():
+        stripped = line.strip()
+        if re.match(r"^\*\*[^*]+\*\*：", stripped):
+            continue
+        if stripped == "---" and not lines:
+            continue
+        if stripped.startswith("> 这条反馈通过 DKL 下载站提交"):
+            continue
+        lines.append(line)
+    cleaned = "\n".join(lines).strip()
+    return cleaned[:8000] if cleaned else "（提交者没有填写描述。）"
+
+
+def _kind_from_body(body: str, title: str, labels: set[str]) -> str:
+    type_label = _issue_field(body, "类型")
+    for key, label in KIND_LABELS.items():
+        if type_label == label:
+            return key
+    if "enhancement" in labels or "建议" in title:
+        return "suggestion"
+    return "bug"
 
 
 def normalize_github_issue(issue: dict[str, Any]) -> dict[str, Any] | None:
     if not isinstance(issue, dict) or issue.get("pull_request"):
         return None
+    title = str(issue.get("title") or "").strip()
     labels: list[str] = []
     raw_labels = issue.get("labels")
     if isinstance(raw_labels, list):
@@ -358,28 +272,35 @@ def normalize_github_issue(issue: dict[str, Any]) -> dict[str, Any] | None:
             if name:
                 labels.append(name)
     lowered = {label.casefold() for label in labels}
-    if not (lowered & GITHUB_FEEDBACK_LABELS):
+    if not title.startswith(TITLE_PREFIX) and not (lowered & GITHUB_FEEDBACK_LABELS):
         return None
-    kind = "suggestion" if "enhancement" in lowered else "bug"
+    body = str(issue.get("body") or "")
+    kind = _kind_from_body(body, title, lowered)
     state = str(issue.get("state") or "open").lower()
     status = "resolved" if state == "closed" else "open"
     number = issue.get("number")
+    source_label = _issue_field(body, "来源")
+    source_key = "github"
+    for key, label in SOURCE_LABELS.items():
+        if source_label == label:
+            source_key = key
+            break
     return {
         "id": f"gh-{number}",
         "number": number,
-        "title": str(issue.get("title") or "未命名反馈"),
-        "description": _github_issue_text(str(issue.get("body") or "")),
+        "title": title or "未命名反馈",
+        "description": _issue_description(body),
         "kind": kind,
         "status": status,
-        "source": "github",
+        "source": source_key,
         "platform": "github",
         "created_at": str(issue.get("created_at") or ""),
         "updated_at": str(issue.get("updated_at") or ""),
         "html_url": str(issue.get("html_url") or ""),
-        "version": "",
-        "contact": "",
-        "page": "",
-        "system": "",
+        "version": _issue_field(body, "启动器版本"),
+        "contact": _issue_field(body, "联系方式"),
+        "page": _issue_field(body, "页面"),
+        "system": _issue_field(body, "系统"),
         "labels": labels,
         "comments": int(issue.get("comments") or 0),
     }
@@ -423,41 +344,13 @@ def merge_feedback_items(*groups: list[dict[str, Any]]) -> list[dict[str, Any]]:
     )
 
 
-class FeedbackSubmitWorker(QObject):
-    finished = Signal(bool, str, str)
-
-    def __init__(self, payload: dict[str, Any], parent: QObject | None = None) -> None:
-        super().__init__(parent)
-        self.payload = dict(payload)
-        self._thread: threading.Thread | None = None
-
-    def start(self) -> None:
-        if self._thread is not None:
-            return
-        self._thread = threading.Thread(target=self._run, daemon=True)
-        self._thread.start()
-
-    def _run(self) -> None:
-        try:
-            feedback_id = submit_feedback(self.payload)
-        except Exception as exc:
-            self.finished.emit(False, str(exc), "")
-            return
-        self.finished.emit(True, "反馈已提交。", feedback_id)
-
-
 class FeedbackListWorker(QObject):
+    """读取网站反馈表背后的 GitHub Issues，用于开发者未读提醒。"""
+
     finished = Signal(object, object, str, str)
 
-    def __init__(
-        self,
-        account,
-        client_id: str,
-        parent: QObject | None = None,
-    ) -> None:
+    def __init__(self, parent: QObject | None = None) -> None:
         super().__init__(parent)
-        self.account = account
-        self.client_id = str(client_id or "")
         self._thread: threading.Thread | None = None
 
     def start(self) -> None:
@@ -467,80 +360,9 @@ class FeedbackListWorker(QObject):
         self._thread.start()
 
     def _run(self) -> None:
-        updated_account = self.account
-        token = ""
-        center_items: list[dict[str, Any]] = []
-        errors: list[str] = []
         try:
-            updated_account = ensure_minecraft_token(self.account, self.client_id)
-            token = str(updated_account.mc_access_token or "")
-            if token:
-                center_items = fetch_feedback(token, limit=100)
-            else:
-                errors.append("没有可用的正版访问令牌。")
-        except (FeedbackError, MicrosoftAuthError) as exc:
-            errors.append(str(exc))
+            items = fetch_github_feedback(limit=100)
         except Exception as exc:
-            errors.append(f"读取反馈中心失败：{exc}")
-
-        github_items: list[dict[str, Any]] = []
-        github_error = ""
-        try:
-            github_items = fetch_github_feedback(limit=100)
-        except Exception as exc:
-            github_error = str(exc)
-
-        items = merge_feedback_items(center_items, github_items)
-        if center_items and github_items:
-            warning = ""
-            source = "center+github"
-        elif center_items:
-            warning = ""
-            source = "center"
-        elif github_items:
-            warning = errors[0] if errors else "反馈中心暂时离线，已切换到公开反馈。"
-            source = "github"
-        else:
-            warning = "；".join(errors) if errors else ""
-            if github_error:
-                warning = f"{warning}；GitHub 反馈读取失败：{github_error}".strip("；")
-            if not warning:
-                warning = "暂时没有读取到反馈。"
-            source = ""
-        self.finished.emit(items, updated_account, source, warning)
-
-
-class FeedbackUpdateWorker(QObject):
-    finished = Signal(bool, str, object, object)
-
-    def __init__(
-        self,
-        account,
-        client_id: str,
-        feedback_id: str,
-        status: str,
-        parent: QObject | None = None,
-    ) -> None:
-        super().__init__(parent)
-        self.account = account
-        self.client_id = str(client_id or "")
-        self.feedback_id = str(feedback_id or "")
-        self.status = str(status or "")
-        self._thread: threading.Thread | None = None
-
-    def start(self) -> None:
-        if self._thread is not None:
+            self.finished.emit([], None, "", f"读取反馈表失败：{exc}")
             return
-        self._thread = threading.Thread(target=self._run, daemon=True)
-        self._thread.start()
-
-    def _run(self) -> None:
-        updated_account = self.account
-        try:
-            updated_account = ensure_minecraft_token(self.account, self.client_id)
-            token = str(updated_account.mc_access_token or "")
-            item = update_feedback_status(token, self.feedback_id, self.status)
-        except Exception as exc:
-            self.finished.emit(False, str(exc), updated_account, None)
-            return
-        self.finished.emit(True, "反馈状态已更新。", updated_account, item)
+        self.finished.emit(items, None, "github", "")

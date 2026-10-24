@@ -158,8 +158,16 @@
   }
 
   const FEEDBACK_EMAIL = "lfel278623@outlook.com";
-  const FEEDBACK_API = "https://dkl-feedback.lfelkeea.workers.dev";
   const GITHUB_NEW_ISSUE = "https://github.com/LFELKEEA/darkitten-launcher/issues/new";
+  const FEEDBACK_VERSION_FALLBACK = "1.9.22";
+  const KIND_LABELS = {
+    bug: "Bug",
+    suggestion: "改进建议",
+    ui: "界面显示",
+    download: "下载安装",
+    update: "更新启动",
+    other: "其他",
+  };
 
   const FEEDBACK_COPY = {
     bug: {
@@ -197,12 +205,12 @@
   }
 
   function feedbackVersion() {
-    return (manifest && manifest.version) || "1.9.21";
+    return (manifest && manifest.version) || FEEDBACK_VERSION_FALLBACK;
   }
 
   function applyFeedbackKind(kind) {
-    feedbackKind = kind === "suggestion" ? "suggestion" : "bug";
-    const copy = FEEDBACK_COPY[feedbackKind];
+    feedbackKind = KIND_LABELS[kind] ? kind : "bug";
+    const copy = FEEDBACK_COPY[feedbackKind] || FEEDBACK_COPY.bug;
     setText("#feedbackKicker", copy.kicker);
     setText("#feedbackTitle", copy.title);
     setText("#feedbackLede", copy.lede);
@@ -256,14 +264,14 @@
   }
 
   function feedbackKindLabel(type) {
-    return type === "suggestion" ? "改进建议" : "Bug";
+    return KIND_LABELS[type] || "其他";
   }
 
   function feedbackText(payload) {
     return [
       "Darkitten Launcher " + feedbackKindLabel(payload.type) + "反馈",
       "版本: " + payload.version,
-      "类型: " + payload.type,
+      "类型: " + feedbackKindLabel(payload.type),
       "标题: " + payload.title,
       "联系方式: " + (payload.contact || "未填写"),
       "页面: " + payload.page,
@@ -276,7 +284,6 @@
   }
 
   function githubIssueUrl(payload) {
-    const label = payload.type === "suggestion" ? "enhancement" : "bug";
     const body = [
       "**来源**：网站",
       "**类型**：" + feedbackKindLabel(payload.type),
@@ -288,12 +295,11 @@
       "",
       payload.description,
       "",
-      "> 这条反馈通过 Darkitten Launcher 下载站的公开兜底入口提交。",
+      "> 这条反馈通过 DKL 下载站提交，开发者可在网站反馈表查看。",
     ].filter((line) => line !== "").join("\n").slice(0, 7000);
     const params = new URLSearchParams({
       title: "[DKL " + feedbackKindLabel(payload.type) + "] " + payload.title,
       body: body,
-      labels: label,
     });
     return GITHUB_NEW_ISSUE + "?" + params.toString();
   }
@@ -335,44 +341,7 @@
     fallback.hidden = false;
   }
 
-  async function postFeedback(url, payload, timeoutMs) {
-    const controller = new AbortController();
-    const timer = window.setTimeout(() => controller.abort(), timeoutMs || 6000);
-    try {
-      const response = await fetch(url, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-        signal: controller.signal,
-      });
-      let data = {};
-      try { data = await response.json(); } catch (error) { data = {}; }
-      if (response.ok && data.ok) {
-        return { ok: true, id: String(data.id || "") };
-      }
-      if ([400, 413, 422, 429].includes(response.status)) {
-        return { ok: false, retryable: false, error: data.error || "提交失败，请检查填写内容。" };
-      }
-      return { ok: false, retryable: true, error: data.error || "HTTP " + response.status };
-    } catch (error) {
-      return {
-        ok: false,
-        retryable: true,
-        error: error && error.name === "AbortError" ? "反馈服务响应超时" : "无法连接反馈服务",
-      };
-    } finally {
-      window.clearTimeout(timer);
-    }
-  }
-
-  function feedbackEndpoints() {
-    const local = ["127.0.0.1", "localhost", "::1"].includes(window.location.hostname);
-    return local
-      ? ["api/bug-report", FEEDBACK_API + "/api/feedback"]
-      : [FEEDBACK_API + "/api/feedback", "api/bug-report"];
-  }
-
-  async function submitFeedback(event) {
+  function submitFeedback(event) {
     event.preventDefault();
     const form = event.currentTarget;
     const button = $("#feedbackSubmit");
@@ -391,50 +360,43 @@
       return;
     }
 
-    feedbackLastPayload = payload;
-    if (button) {
-      button.disabled = true;
-      button.dataset.busy = "1";
-      button.textContent = "正在提交…";
-    }
-    setFeedbackStatus("正在把反馈送进猫猫的收件箱…", "");
-
-    let result = { ok: false, retryable: true, error: "" };
-    for (const endpoint of feedbackEndpoints()) {
-      result = await postFeedback(endpoint, payload, 6000);
-      if (result.ok || !result.retryable) break;
-    }
-
-    if (button) {
-      button.disabled = false;
-      delete button.dataset.busy;
-      button.textContent = FEEDBACK_COPY[feedbackKind].button;
-    }
-
-    if (result.ok) {
-      setFeedbackStatus("猫猫已收到反馈，编号 " + (result.id || "已记录") + "。", "ok");
-      form.reset();
-      applyFeedbackKind(feedbackKind);
-      setFeedbackStatus("猫猫已收到反馈，编号 " + (result.id || "已记录") + "。", "ok");
-      if (button) {
-        button.textContent = "已提交";
-        window.setTimeout(() => {
-          if (button.dataset.busy !== "1") button.textContent = FEEDBACK_COPY[feedbackKind].button;
-        }, 2200);
-      }
-      return;
-    }
-
-    if (!result.retryable && result.error) {
-      setFeedbackStatus(result.error, "err");
-      return;
-    }
-
     prepareFallback(payload);
+    const url = githubIssueUrl(payload);
+    window.open(url, "_blank", "noopener");
     setFeedbackStatus(
-      "反馈中心暂时没有响应。可以公开提交到 GitHub，或直接发邮件给开发者；完整内容也会在你点击复制后进入剪贴板。",
-      "err"
+      "已打开 GitHub 新建 Issue 页面，登录后点击 Submit new issue 即可提交。"
+      + "如果浏览器拦截了弹窗，请点下面的 GitHub 按钮，或改用邮件发送。",
+      "ok"
     );
+    if (button) {
+      button.textContent = "已打开 GitHub";
+      window.setTimeout(() => {
+        button.textContent = (FEEDBACK_COPY[feedbackKind] || FEEDBACK_COPY.bug).button;
+      }, 2400);
+    }
+  }
+
+  function prefillFeedbackFromQuery() {
+    const params = new URLSearchParams(window.location.search);
+    const type = String(params.get("type") || "").toLowerCase();
+    const title = String(params.get("title") || "");
+    const description = String(params.get("description") || "");
+    if (!type && !title && !description) return false;
+    openFeedback(KIND_LABELS[type] ? type : "bug");
+    const form = feedbackForm();
+    if (!form.elements) return true;
+    if (form.elements.type && KIND_LABELS[type]) {
+      form.elements.type.value = type;
+      applyFeedbackKind(type);
+    }
+    if (form.elements.version && params.get("version")) {
+      form.elements.version.value = String(params.get("version") || "");
+      form.elements.version.dataset.touched = "1";
+    }
+    if (form.elements.title) form.elements.title.value = title;
+    if (form.elements.description) form.elements.description.value = description;
+    if (form.elements.contact) form.elements.contact.value = String(params.get("contact") || "");
+    return true;
   }
 
   function bindFeedback() {
@@ -489,7 +451,7 @@
     bindParallax();
     bindFeedback();
     loadManifest();
-    openFeedbackFromHash();
+    if (!prefillFeedbackFromQuery()) openFeedbackFromHash();
     window.addEventListener("hashchange", openFeedbackFromHash);
   });
 })();

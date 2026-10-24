@@ -2,56 +2,35 @@ from __future__ import annotations
 
 import argparse
 import functools
-import json
 import os
 import posixpath
-import secrets
 import socket
 import threading
-import time
 import webbrowser
-from datetime import datetime, timezone
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import unquote, urlsplit
 
 BASE = Path(__file__).resolve().parent
 ROOT = BASE / "public"
-REPORTS = Path(os.environ.get("DKL_REPORTS_DIR") or (BASE / "reports"))
-MAX_BODY = 16 * 1024
-RATE_LIMIT = 5
-RATE_WINDOW = 10 * 60
-REPORT_TYPES = {"bug", "ui", "download", "update", "suggestion", "other"}
-STATIC_FILES = {"/", "/index.html", "/style.css", "/app.js", "/update.json", "/robots.txt"}
+STATIC_FILES = {
+    "/",
+    "/index.html",
+    "/feedback.html",
+    "/style.css",
+    "/app.js",
+    "/feedback-admin.css",
+    "/feedback-admin.js",
+    "/update.json",
+    "/robots.txt",
+}
 ASSET_SUFFIXES = {".png", ".jpg", ".jpeg", ".webp", ".gif", ".svg", ".ico"}
 DOWNLOAD_SUFFIXES = {".zip", ".txt"}
 CSP = (
     "default-src 'self'; img-src 'self' data:; style-src 'self'; "
-    "script-src 'self'; connect-src 'self' https://dkl-feedback.lfelkeea.workers.dev; "
+    "script-src 'self'; connect-src 'self' https://api.github.com; "
     "base-uri 'none'; form-action 'self' mailto:; frame-ancestors 'none'"
 )
-
-_rate_lock = threading.Lock()
-_rate_hits: dict[str, list[float]] = {}
-
-
-def _rate_allowed(address: str) -> bool:
-    now = time.time()
-    with _rate_lock:
-        hits = [stamp for stamp in _rate_hits.get(address, []) if now - stamp < RATE_WINDOW]
-        if len(hits) >= RATE_LIMIT:
-            _rate_hits[address] = hits
-            return False
-        hits.append(now)
-        _rate_hits[address] = hits
-        if len(_rate_hits) > 512:
-            for key in [key for key, value in _rate_hits.items() if not value or now - value[-1] > RATE_WINDOW]:
-                _rate_hits.pop(key, None)
-    return True
-
-
-def _clean(value: object, limit: int) -> str:
-    return str(value or "").strip()[:limit]
 
 
 def _allowed_path(raw_path: str) -> bool:
@@ -100,89 +79,6 @@ class DownloadHandler(SimpleHTTPRequestHandler):
         self.send_error(404)
         return None
 
-    def _json(self, status: int, payload: dict) -> None:
-        body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
-        self.send_response(status)
-        self.send_header("Content-Type", "application/json; charset=utf-8")
-        self.send_header("Content-Length", str(len(body)))
-        self.end_headers()
-        self.wfile.write(body)
-
-    def do_POST(self) -> None:
-        if urlsplit(self.path).path != "/api/bug-report":
-            self.send_error(404)
-            return
-
-        content_type = self.headers.get("Content-Type", "")
-        if not content_type.lower().startswith("application/json"):
-            self._json(415, {"ok": False, "error": "请使用 application/json 提交反馈。"})
-            return
-
-        try:
-            length = int(self.headers.get("Content-Length", ""))
-        except ValueError:
-            self._json(411, {"ok": False, "error": "缺少有效的 Content-Length。"})
-            return
-        if length <= 0 or length > MAX_BODY:
-            self._json(413, {"ok": False, "error": "反馈内容过长，请精简到 16 KB 以内。"})
-            return
-
-        address = self.client_address[0]
-        if not _rate_allowed(address):
-            self._json(429, {"ok": False, "error": "提交太频繁了，请十分钟后再试。"})
-            return
-
-        try:
-            payload = json.loads(self.rfile.read(length).decode("utf-8"))
-        except (UnicodeDecodeError, json.JSONDecodeError):
-            self._json(400, {"ok": False, "error": "反馈内容不是有效的 JSON。"})
-            return
-        if not isinstance(payload, dict):
-            self._json(400, {"ok": False, "error": "反馈内容格式不正确。"})
-            return
-
-        if _clean(payload.get("website"), 200):
-            self._json(201, {"ok": True, "id": "ignored"})
-            return
-
-        title = _clean(payload.get("title"), 80)
-        description = _clean(payload.get("description"), 4000)
-        if len(title) < 2 or len(description) < 10:
-            self._json(400, {"ok": False, "error": "请填写至少 2 个字的标题和 10 个字的描述。"})
-            return
-
-        kind = _clean(payload.get("type"), 20).lower()
-        if kind not in REPORT_TYPES:
-            kind = "other"
-
-        now = datetime.now(timezone.utc)
-        report_id = now.strftime("%Y%m%d-%H%M%S") + "-" + secrets.token_hex(3)
-        record = {
-            "id": report_id,
-            "received_at": now.isoformat(timespec="seconds"),
-            "type": kind,
-            "version": _clean(payload.get("version"), 40),
-            "title": title,
-            "description": description,
-            "contact": _clean(payload.get("contact"), 120),
-            "source": _clean(payload.get("source"), 20) or "website",
-            "page": _clean(payload.get("page"), 300),
-            "user_agent": _clean(self.headers.get("User-Agent") or payload.get("user_agent"), 300),
-            "remote_address": address,
-        }
-
-        try:
-            REPORTS.mkdir(parents=True, exist_ok=True)
-            target = REPORTS / f"report-{report_id}.json"
-            target.write_text(json.dumps(record, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-        except OSError as exc:
-            print(f"[site] 反馈保存失败：{exc}")
-            self._json(500, {"ok": False, "error": "反馈暂时无法保存，请改用邮件联系。"})
-            return
-
-        print(f"[site] 收到反馈 {report_id}，类型 {kind}")
-        self._json(201, {"ok": True, "id": report_id})
-
 
 def lan_ip() -> str:
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -218,7 +114,7 @@ def main() -> int:
     print("=" * 58)
     print("Darkitten Launcher 下载站已启动")
     print(f"本机地址：{local_url}")
-    print(f"反馈保存目录：{REPORTS}")
+    print("反馈入口：GitHub Issues；开发者反馈表需从启动器打开")
     if args.lan:
         print(f"局域网地址：http://{lan_ip()}:{args.port}/")
     print("按 Ctrl+C 停止服务")

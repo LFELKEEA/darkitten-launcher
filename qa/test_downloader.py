@@ -104,9 +104,17 @@ def main() -> None:
                     connections=4,
                 )
             except DownloadCancelled:
-                cancelled_ok = not slow_dest.exists() and not partial_files(root)
-                print("cancel_cleanup:", "OK" if cancelled_ok else "FAIL")
+                # 取消后保留断点，供下次同一下载继续。
+                kept = partial_files(root)
+                cancelled_ok = not slow_dest.exists() and bool(kept)
+                print("cancel_keep_partial:", "OK" if cancelled_ok else "FAIL")
                 ok &= cancelled_ok
+                removed_after_cancel, _ = cleanup_partial_files(root)
+                manual_ok = (
+                    removed_after_cancel == len(kept) and not partial_files(root)
+                )
+                print("manual_cleanup_after_cancel:", "OK" if manual_ok else "FAIL")
+                ok &= manual_ok
             else:
                 print("cancel_cleanup: FAIL (not cancelled)")
                 ok = False

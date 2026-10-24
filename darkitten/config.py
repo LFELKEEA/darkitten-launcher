@@ -13,7 +13,7 @@ APP_SHORT_NAME = "DKL"
 APP_TAGLINE = "恶魔小猫的秘密基地"
 APP_AUTHOR = "LFELKEEA"
 APP_EMAIL = "lfel278623@outlook.com"
-APP_VERSION = "1.9.21"
+APP_VERSION = "1.9.22"
 APP_ID = "DarkittenLauncher"
 DEFAULT_UPDATE_URL = "https://lfelkeea.github.io/darkitten-launcher/update.json"
 
@@ -61,6 +61,9 @@ class Config:
     update_auto_check: bool = True
     update_skipped_version: str = ""
     update_last_check: str = ""
+    feedback_last_seen: str = ""
+    developer_unlocked: bool = False
+    developer_page_token: str = ""
     # 游戏版本 -> 纯加载器配置。没有条目表示原版启动。
     version_loaders: dict[str, str] = field(default_factory=dict)
     # 1.9.14 之前加载器版本直接出现在首页。首次运行时把旧选择迁移成绑定，
@@ -164,6 +167,11 @@ class Config:
             cfg.update_skipped_version or ""
         ).strip()
         cfg.update_last_check = str(cfg.update_last_check or "").strip()
+        cfg.feedback_last_seen = str(cfg.feedback_last_seen or "").strip()
+        cfg.developer_unlocked = bool(cfg.developer_unlocked)
+        cfg.developer_page_token = str(
+            cfg.developer_page_token or ""
+        ).strip()
         if not isinstance(cfg.version_loaders, dict):
             cfg.version_loaders = {}
         cfg.version_loaders = {

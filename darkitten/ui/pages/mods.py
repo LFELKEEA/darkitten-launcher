@@ -17,8 +17,16 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from ...mod_updates import ModUpdate
 from ...mods import ModInfo, forget_mod_meta, list_mods, toggle_mod
-from ...workers import DeleteWorker
+from ...workers import (
+    DeleteWorker,
+    ModConflictCheckWorker,
+    ModUpdateApplyWorker,
+    ModUpdateCheckWorker,
+)
+from ..mod_health_dialog import ModHealthDialog
+from ..mod_update_dialog import ModUpdatesDialog
 from .. import icons
 from ..dialogs import ConfirmDialog
 from ..widgets import (
@@ -29,6 +37,7 @@ from ..widgets import (
     badge,
     colors,
     icon_button,
+    repolish,
     transparent_children,
 )
 
@@ -92,8 +101,11 @@ def _icon_pixmap(data: bytes, size: int = 38, radius: int = 9) -> QPixmap:
 class ModRow(QFrame):
     toggled = Signal(object, bool)
     delete_requested = Signal(object)
+    update_requested = Signal(object, object)
 
-    def __init__(self, mod: ModInfo, parent=None) -> None:
+    def __init__(
+        self, mod: ModInfo, parent=None, update: ModUpdate | None = None
+    ) -> None:
         super().__init__(parent)
         self.mod = mod
         self.setObjectName("SelectRow")
@@ -140,6 +152,8 @@ class ModRow(QFrame):
             )
         if not mod.enabled:
             top.addWidget(badge("已禁用", "gray"))
+        if update is not None:
+            top.addWidget(badge("可更新", "green"))
         top.addStretch(1)
         info.addLayout(top)
 
@@ -159,6 +173,19 @@ class ModRow(QFrame):
         meta.setToolTip(f"{mod.filename} · {mod.size_text}")
         info.addWidget(meta)
 
+        update_btn = None
+        if update is not None:
+            update_btn = QPushButton("更新")
+            update_btn.setObjectName("Soft")
+            update_btn.setCursor(Qt.PointingHandCursor)
+            update_btn.setToolTip(
+                f"{mod.filename} → {update.file_name}\n"
+                f"来源：{update.source_label}"
+            )
+            update_btn.clicked.connect(
+                lambda _=False: self.update_requested.emit(self.mod, update)
+            )
+
         switch = Switch()
         switch.setChecked(mod.enabled)
         switch.setToolTip("启用或禁用此 Mod")
@@ -169,11 +196,15 @@ class ModRow(QFrame):
 
         layout.addWidget(icon_box)
         layout.addLayout(info, 1)
+        if update_btn is not None:
+            layout.addWidget(update_btn)
         layout.addWidget(switch)
         layout.addWidget(delete_btn)
         transparent_children(self)
         switch.setAttribute(Qt.WA_TransparentForMouseEvents, False)
         delete_btn.setAttribute(Qt.WA_TransparentForMouseEvents, False)
+        if update_btn is not None:
+            update_btn.setAttribute(Qt.WA_TransparentForMouseEvents, False)
 
 
 class ModsPage(QWidget):
@@ -182,6 +213,12 @@ class ModsPage(QWidget):
         self.main = main
         self._mods: list[ModInfo] = []
         self._delete_worker: DeleteWorker | None = None
+        self._update_worker: ModUpdateCheckWorker | None = None
+        self._updates: dict[str, ModUpdate] = {}
+        self._health_worker: ModConflictCheckWorker | None = None
+        self._health_issues = []
+        self._health_descriptors = []
+        self._health_auto = False
         self._filter = "all"
         self._build()
         self.main.versions_changed.connect(self._update_version_label)
@@ -209,6 +246,9 @@ class ModsPage(QWidget):
         header.addWidget(ChibiCompanion(60, "mods"), 0, Qt.AlignTop)
         self.version_label = badge("未选择版本", "blue")
         header.addWidget(self.version_label)
+        self.health_badge = badge("环境待检查", "gray")
+        self.health_badge.setToolTip("检查加载器混装、重复 modId、缺失前置和版本冲突")
+        header.addWidget(self.health_badge)
         loader_btn = QPushButton("管理加载器")
         loader_btn.setObjectName("Ghost")
         loader_btn.setCursor(Qt.PointingHandCursor)
@@ -243,6 +283,30 @@ class ModsPage(QWidget):
         self.count_label = QLabel("")
         self.count_label.setObjectName("Tiny")
         toolbar_layout.addWidget(self.count_label)
+
+        self.check_btn = QPushButton("检查更新")
+        self.check_btn.setObjectName("Ghost")
+        self.check_btn.setCursor(Qt.PointingHandCursor)
+        self.check_btn.setIcon(icons.icon("refresh", colors()["text2"], 14))
+        self.check_btn.setToolTip(
+            "通过 Modrinth / CurseForge 检查当前版本已安装 Mod 的新版本"
+        )
+        self.check_btn.clicked.connect(self._check_updates)
+        toolbar_layout.addWidget(self.check_btn)
+
+        self.health_btn = QPushButton("环境检查")
+        self.health_btn.setObjectName("Ghost")
+        self.health_btn.setCursor(Qt.PointingHandCursor)
+        self.health_btn.setToolTip("检查 Mod 冲突、缺失前置和加载器混装")
+        self.health_btn.clicked.connect(self._show_health)
+        toolbar_layout.addWidget(self.health_btn)
+
+        self.update_all_btn = QPushButton("全部更新")
+        self.update_all_btn.setObjectName("Primary")
+        self.update_all_btn.setCursor(Qt.PointingHandCursor)
+        self.update_all_btn.setVisible(False)
+        self.update_all_btn.clicked.connect(self._update_all)
+        toolbar_layout.addWidget(self.update_all_btn)
 
         download_btn = QPushButton("下载内容")
         download_btn.setObjectName("Primary")
@@ -356,8 +420,10 @@ class ModsPage(QWidget):
         )
 
     def _on_selection_changed(self, _version_id: str = "") -> None:
+        self._updates.clear()
         self._update_version_label()
         self.refresh_mods()
+        self._check_health(auto=True)
 
     def _on_filter(self, value: str) -> None:
         self._filter = value
@@ -403,10 +469,193 @@ class ModsPage(QWidget):
             return
 
         for mod in visible:
-            row = ModRow(mod)
+            update = self._updates.get(mod.filename)
+            row = ModRow(mod, update=update)
             row.toggled.connect(self._toggle_mod)
             row.delete_requested.connect(self._delete_mod)
+            row.update_requested.connect(self._update_one)
             self.list_layout.insertWidget(self.list_layout.count() - 1, row)
+        self.update_all_btn.setVisible(bool(self._updates))
+        if self._updates:
+            self.update_all_btn.setText(f"全部更新 ({len(self._updates)})")
+
+    def _game_context(self) -> tuple[str, str]:
+        version_id = self.main.selected_version or ""
+        summary = next(
+            (v for v in self.main.versions if v.id == version_id),
+            None,
+        )
+        game_version = (
+            (summary.base_id or summary.id) if summary else version_id
+        )
+        profile = (
+            self.main.loader_profile_for(version_id) if version_id else None
+        )
+        loader = profile.loader if profile else (
+            summary.loader if summary else ""
+        )
+        return game_version, loader
+
+    def _check_updates(self) -> None:
+        if self._update_worker is not None:
+            self.main.toast("正在检查 Mod 更新，请稍候", "info")
+            return
+        mods = list_mods(self._mods_dir())
+        if not mods:
+            self.main.toast("当前版本还没有安装 Mod", "info")
+            return
+        game_version, loader = self._game_context()
+        self.check_btn.setEnabled(False)
+        self.check_btn.setText("检查中…")
+        self.count_label.setText("正在读取项目版本…")
+        worker = ModUpdateCheckWorker(mods, game_version, loader, self)
+        self._update_worker = worker
+        worker.progress.connect(self._on_update_check_progress)
+        worker.finished.connect(self._on_update_checked)
+        worker.start()
+
+    def _on_update_check_progress(self, done: int, total: int, name: str) -> None:
+        self.check_btn.setText(f"检查中 {done}/{total}")
+        self.count_label.setText(f"正在检查 {name}…")
+
+    def _on_update_checked(self, updates, errors) -> None:
+        self._update_worker = None
+        self.check_btn.setEnabled(True)
+        self.check_btn.setText("检查更新")
+        self.count_label.setText(f"{len(self._mods)} 个 Mod")
+        found = list(updates or [])
+        self._updates = {
+            update.mod.filename: update for update in found
+        }
+        self.refresh_mods()
+        if errors:
+            detail = "；".join(str(item) for item in list(errors)[:2])
+            self.main.toast(f"{len(found)} 个可更新，部分检查失败：{detail}", "info")
+        if not found:
+            self.main.toast("所有 Mod 都是最新版本，或没有找到可用项目来源", "success")
+            return
+        dialog = ModUpdatesDialog(self, found)
+        if dialog.exec():
+            self._apply_updates(dialog.selected)
+
+    def _update_all(self) -> None:
+        updates = list(self._updates.values())
+        if not updates:
+            self.main.toast("还没有可更新的 Mod，请先检查更新", "info")
+            return
+        dialog = ModUpdatesDialog(self, updates)
+        if dialog.exec():
+            self._apply_updates(dialog.selected)
+
+    def _update_one(self, _mod: ModInfo, update: ModUpdate) -> None:
+        if not isinstance(update, ModUpdate):
+            return
+        self._apply_updates([update])
+
+    def _apply_updates(self, updates: list[ModUpdate]) -> None:
+        if not updates:
+            return
+        if (
+            self.main.game_running
+            and self.main._running_version == self.main.selected_version
+        ):
+            self.main.toast("游戏正在运行，请先关闭游戏再更新 Mod", "error")
+            return
+        worker = ModUpdateApplyWorker(
+            updates,
+            self._mods_dir(),
+            threads=self.main.config.download_threads,
+            parent=self,
+        )
+        worker.finished.connect(self._on_updates_applied)
+        title = (
+            f"更新 {len(updates)} 个 Mod"
+            if len(updates) > 1
+            else f"更新 Mod：{updates[0].mod.name}"
+        )
+        self.main.download_center.start_worker(
+            worker,
+            title=title,
+            content_type="mod-update",
+            target=self._mods_dir(),
+            source="mixed",
+        )
+        self.main.toast("更新已加入下载中心，关闭页面也会继续", "info")
+
+    def _on_updates_applied(self, success: bool, message: str, _filename: str) -> None:
+        self._updates.clear()
+        self.refresh_mods()
+        self._check_health(auto=True)
+        self.main.toast(message, "success" if success else "error")
+        if success:
+            self.main.set_status(message, "success")
+
+    def _check_health(self, auto: bool = False) -> None:
+        if self._health_worker is not None:
+            if not auto:
+                self._health_auto = False
+            return
+        if not self._mods:
+            self._health_issues = []
+            self._health_descriptors = []
+            self.health_badge.setText("无 Mod")
+            self.health_badge.setProperty("badge", "gray")
+            repolish(self.health_badge)
+            if not auto:
+                self.main.toast("当前版本还没有安装 Mod", "info")
+            return
+        self._health_auto = bool(auto)
+        self.health_badge.setText("检查中…")
+        self.health_badge.setProperty("badge", "blue")
+        repolish(self.health_badge)
+        _game_version, loader = self._game_context()
+        worker = ModConflictCheckWorker(self._mods_dir(), loader, self)
+        self._health_worker = worker
+        worker.finished.connect(self._on_health_checked)
+        worker.start()
+
+    def _on_health_checked(self, issues, descriptors, error: str) -> None:
+        self._health_worker = None
+        self._health_issues = list(issues or [])
+        self._health_descriptors = list(descriptors or [])
+        errors = sum(
+            1 for item in self._health_issues if item.severity == "error"
+        )
+        warnings = sum(
+            1 for item in self._health_issues if item.severity == "warning"
+        )
+        if error:
+            self.health_badge.setText("检查失败")
+            self.health_badge.setProperty("badge", "red")
+        elif errors:
+            self.health_badge.setText(f"{errors} 个错误")
+            self.health_badge.setProperty("badge", "red")
+        elif warnings:
+            self.health_badge.setText(f"{warnings} 个警告")
+            self.health_badge.setProperty("badge", "orange")
+        else:
+            self.health_badge.setText("环境正常")
+            self.health_badge.setProperty("badge", "green")
+        repolish(self.health_badge)
+        if error:
+            self.main.toast(f"环境检查失败：{error}", "error")
+            return
+        if not self._health_auto:
+            ModHealthDialog(
+                self, self._health_issues, self._health_descriptors
+            ).exec()
+
+    def _show_health(self) -> None:
+        if self._health_worker is not None:
+            self._health_auto = False
+            self.main.toast("正在检查 Mod 环境，稍等一下", "info")
+            return
+        if self._health_issues or not self._mods:
+            ModHealthDialog(
+                self, self._health_issues, self._health_descriptors
+            ).exec()
+            return
+        self._check_health(auto=False)
 
     def _delete_mod(self, mod: ModInfo) -> None:
         if self._delete_worker is not None:
@@ -447,7 +696,9 @@ class ModsPage(QWidget):
         self.main.set_status(f"已删除 {mod.filename}", "success")
         self.main.toast(f"{mod.name} 已移入回收站", "success")
         forget_mod_meta(mod.path.parent, mod.filename)
+        self._updates.pop(mod.filename, None)
         self.refresh_mods()
+        self._check_health(auto=True)
 
     def _toggle_mod(self, mod: ModInfo, enabled: bool) -> None:
         if enabled == mod.enabled:
@@ -460,7 +711,9 @@ class ModsPage(QWidget):
             return
         action = "已启用" if new_path.name.endswith(".jar") else "已禁用"
         self.main.toast(f"{action} {mod.name}", "success")
+        self._updates.clear()
         self.refresh_mods()
+        self._check_health(auto=True)
 
     def open_folder(self) -> None:
         mods_dir = self._mods_dir()
@@ -488,3 +741,4 @@ class ModsPage(QWidget):
     def on_show(self) -> None:
         self._update_version_label()
         self.refresh_mods()  # 版本或隔离设置可能在其他页面变化
+        self._check_health(auto=True)
