@@ -13,16 +13,17 @@
     "新增“同步房主 Mod”窗口，也可以单独粘贴 Mod 清单到任意已安装版本；加载器或游戏版本不一致时会明确提示。",
     "下载速度进一步优化：分块提升到 1 MiB，扩大连接复用池，启用 TCP_NODELAY，提高分段并发上限；Mod 与 CurseForge 下载使用更多连接，整合包安装的分段数随线程数提升。",
     "修复房间号输入框最多只能输入 40 个字符的问题：好友邀请卡现在可以完整粘贴并解析，携带大量 Mod 的邀请卡也不会被截断；同时修正联机 Mod 数量提示重复与顶栏标题被裁切。",
-    "修复断点续传在“文件刚好下载完、但尚未收尾”时可能出现的 HTTP 416：现在会直接校验并完成文件，不再反复重试失败。"
+    "修复断点续传在“文件刚好下载完、但尚未收尾”时可能出现的 HTTP 416：现在会直接校验并完成文件，不再反复重试失败。",
+    "源码包与源码 TXT 只保留启动器运行所需的代码和资源，不再附带网站源码与构建脚本；网站源码仍保留在 GitHub 仓库。"
   ],
   "download_url": "downloads/DKL-1.10.0-update.zip",
   "page_url": "index.html",
   "source_url": "downloads/DarkittenLauncher-1.10.0-source.zip",
   "source_txt_url": "downloads/DarkittenLauncher-1.10.0-source.txt",
-  "sha256": "56c9c429e8c3ccbf0bdb8c8324b14c74708429759c870d6564bbec6a545f745c",
+  "sha256": "ba409be1d0b55f8711324f81ea8f5fb0bf081a31455018410e4323c88628ee6b",
   "size": 878457,
-  "source_sha256": "c61c2e4fc708d590b49c398711d573f1bedae01bc9fa2c1af7656ee9e46cc4e1",
-  "source_size": 1547297,
-  "source_txt_sha256": "5caaabf3cc6cd7b25eabbb7bf10d49e85a5658aa1c06fda59b93cf2630249f32",
-  "source_txt_size": 2082276
+  "source_sha256": "80cb5355c89e92e318c562df7ce069ee1a3fb5be7556a251d7b99ddcc24eaeee",
+  "source_size": 881087,
+  "source_txt_sha256": "74672422890575009d533e75ee57bb8963f6d1284d01e97518126c3444fd6509",
+  "source_txt_size": 1924750
 }
