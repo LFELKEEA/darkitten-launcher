@@ -1,23 +1,19 @@
 {
-  "version": "1.10.3",
-  "released": "2026-10-24",
+  "version": "1.10.4",
+  "released": "2026-10-25",
   "notes": [
-    "修复潜行与奔跑时身体倾斜方向错误：上半身现在朝前进方向前倾，头部保持视线水平，不再向后或侧向歪斜。",
-    "修复坐下动作双腿完全重合的问题：两条腿会自然向两侧分开，坐姿更容易辨认。",
-    "小窗口皮肤页重新排版：“资源与社区”移到 3D 预览下方并保持同宽，左下角不再留出大片空白。",
-    "“资源与社区”新增“打开 LittleSkin”按钮，可以直接前往皮肤站挑选或上传皮肤。",
-    "新增 LittleSkin 账号登录：使用 LittleSkin 邮箱或密码完成 Yggdrasil 登录，登录令牌在本机加密保存，密码不会写入配置。",
-    "登录 LittleSkin 后会自动读取角色皮肤，加入皮肤库并立即启用；也可以在资源卡中随时“同步皮肤”或退出登录。",
-    "LittleSkin 登录负责皮肤同步，游戏启动仍使用启动器当前选择的账户；离线模式下同步的皮肤会随游戏自动加载。"
+    "启动页 OC 对话气泡字号从 12px 调大到 16px，文字更清晰；气泡仍会按内容自动换行，长台词不会溢出或被裁切。",
+    "移除 3D 预览中表现不稳定的奔跑、潜行、挥手与坐下动作，只保留待机、行走、转圈三个动作，切换后姿态更稳定。",
+    "皮肤预览仍支持拖动旋转、滚轮缩放与双击复位，原有皮肤库、LittleSkin 同步与离线皮肤功能不受影响。"
   ],
-  "download_url": "downloads/DKL-1.10.3-update.zip",
+  "download_url": "downloads/DKL-1.10.4-update.zip",
   "page_url": "index.html",
-  "source_url": "downloads/DarkittenLauncher-1.10.3-source.zip",
-  "source_txt_url": "downloads/DarkittenLauncher-1.10.3-source.txt",
-  "sha256": "6fd366953be55877dd18dffb63711eeebe733c1a6390278a0eb6586ff664cfe9",
-  "size": 898561,
-  "source_sha256": "d386b70fb0c34921d184430b5585bddf7100c22260f22eb678c31b9f5ec882d1",
-  "source_size": 901317,
-  "source_txt_sha256": "a8e49bed716cd7d573e9354711c93fe155c6a2703d3f62157b992b9a2651d66c",
-  "source_txt_size": 2005559
+  "source_url": "downloads/DarkittenLauncher-1.10.4-source.zip",
+  "source_txt_url": "downloads/DarkittenLauncher-1.10.4-source.txt",
+  "sha256": "8369fa5f30162fb0d78c02351a001597e1aaabf444472142117cf876af71b18f",
+  "size": 898162,
+  "source_sha256": "c5a77e0c85cd75c6addd1d0fd8519577ecceee436efdf8a3a70288b7d62150ef",
+  "source_size": 900918,
+  "source_txt_sha256": "e27e1aaacfdc406525f383d9a31af7080fbe572c4c9d02d795ef4aad4675a8e7",
+  "source_txt_size": 2003599
 }
