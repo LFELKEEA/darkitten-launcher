@@ -105,6 +105,18 @@ def source_files(source: Path) -> list[Path]:
     )
 
 
+PACKAGE_EXCLUDED_PARTS = {"qa", "tools"}
+
+
+def package_files(source: Path) -> list[Path]:
+    """发布包只带运行代码、资源和网站源码，不带测试与开发工具。"""
+    return [
+        relative
+        for relative in source_files(source)
+        if not (relative.parts and relative.parts[0] in PACKAGE_EXCLUDED_PARTS)
+    ]
+
+
 def website_files() -> list[Path]:
     return sorted(
         path.relative_to(SITE)
@@ -125,7 +137,7 @@ def decode_text(path: Path) -> str:
 
 def text_entries(source: Path) -> list[tuple[str, Path]]:
     entries: list[tuple[str, Path]] = []
-    for relative in source_files(source):
+    for relative in package_files(source):
         if relative.suffix.lower() in TEXT_SUFFIXES:
             entries.append((relative.as_posix(), source / relative))
     for relative in website_files():
@@ -445,7 +457,7 @@ def build(source: Path, version: str, deploy: bool, repo: str) -> int:
     sync_site_version(version)
     source_entries: list[tuple[Path, str]] = []
     root = f"DarkittenLauncher-{version}-source"
-    for relative in source_files(source):
+    for relative in package_files(source):
         source_entries.append((source / relative, f"{root}/{relative.as_posix()}"))
 
     for relative in website_files():
