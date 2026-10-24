@@ -40,7 +40,11 @@ for font_path in (
 app.setFont(QFont("Microsoft YaHei UI", 10))
 
 hero = HeroArt()
-hero.resize(410, 260)
+# 首页 Hero 内容区实际高度：218 - 上下 24px 边距 = 170。
+hero.resize(410, 170)
+
+font = hero._bubble_font()
+check("hero-bubble-font-size", font.pixelSize() == 16, f"{font.pixelSize()}px")
 
 
 def check_hero_phrase(group: str, phrase: str) -> None:
@@ -80,8 +84,15 @@ for phrase in HeroArt.DEVELOPER_PHRASES:
 
 hero._phrase = "开发者大人，今天也要修 bug 吗"
 bubble, text_rect, font = hero._bubble_layout()
-check("hero-long-wraps", bubble.height() > 37, f"{bubble.width():.0f}x{bubble.height():.0f}")
-check("hero-long-two-lines", text_rect.height() >= 21, f"text h={text_rect.height():.0f}")
+_layout, long_lines, _total_h, _max_w = hero._bubble_text_lines(
+    font, hero._phrase, text_rect.width()
+)
+check(
+    "hero-long-wraps",
+    len(long_lines) >= 2,
+    f"lines={len(long_lines)} bubble={bubble.width():.0f}x{bubble.height():.0f}",
+)
+check("hero-long-fits", text_rect.height() >= 2 * 20, f"text h={text_rect.height():.0f}")
 
 host = QWidget()
 host.resize(980, 640)

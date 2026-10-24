@@ -10,11 +10,7 @@ sys.path.insert(0, str(ROOT))
 
 from PySide6.QtWidgets import QApplication  # noqa: E402
 
-from darkitten.ui.skin_preview import (  # noqa: E402
-    SkinPreviewWidget,
-    _rotate_about_x,
-    _rotate_about_y,
-)
+from darkitten.ui.skin_preview import SkinPreviewWidget  # noqa: E402
 
 CHECKS: list[str] = []
 
@@ -34,9 +30,11 @@ def main() -> None:
     app.processEvents()
 
     keys = [key for key, _label in SkinPreviewWidget.ACTIONS]
-    check("actions-count", len(keys) >= 7, str(keys))
-    for expected in ("idle", "walk", "run", "sneak", "wave", "sit", "spin"):
+    check("actions-count", len(keys) == 3, str(keys))
+    for expected in ("idle", "walk", "spin"):
         check(f"actions-has-{expected}", expected in keys, str(keys))
+    for removed in ("run", "sneak", "wave", "sit"):
+        check(f"actions-removed-{removed}", removed not in keys, str(keys))
     check(
         "minimum-size",
         widget.minimumWidth() <= 240 and widget.minimumHeight() <= 260,
@@ -54,36 +52,16 @@ def main() -> None:
             f"{image.width()}x{image.height()}",
         )
 
-    widget.set_action("not-a-real-action")
-    check("action-invalid-kept", widget.action() in keys, widget.action())
+    for removed in ("run", "sneak", "wave", "sit", "not-a-real-action"):
+        widget.set_action(removed)
+        check(
+            f"action-{removed}-falls-back-to-idle",
+            widget.action() == "idle",
+            widget.action(),
+        )
 
-    widget.set_action("run")
-    run_pose = widget._pose()
-    check("run-leans-forward", run_pose["body_x"] > 0, str(run_pose))
-    check("run-head-compensates", run_pose["head_x"] < 0, str(run_pose))
-
-    widget.set_action("sneak")
-    sneak_pose = widget._pose()
-    check("sneak-leans-forward", sneak_pose["body_x"] > 0, str(sneak_pose))
-    check("sneak-head-compensates", sneak_pose["head_x"] < 0, str(sneak_pose))
-
-    widget.set_action("sit")
-    sit_pose = widget._pose()
-    check("sit-left-leg-splayed", sit_pose["leg_l_y"] > 0, str(sit_pose))
-    check("sit-right-leg-splayed", sit_pose["leg_r_y"] < 0, str(sit_pose))
-    # 脚底中心从髋部旋转：先前伸，再向两侧外展。
-    left_foot = _rotate_about_y(
-        _rotate_about_x((2.0, 0.0, 0.0), (2.0, 12.0, 0.0), sit_pose["leg_l"]),
-        (2.0, 12.0, 0.0),
-        sit_pose["leg_l_y"],
-    )
-    right_foot = _rotate_about_y(
-        _rotate_about_x((-2.0, 0.0, 0.0), (-2.0, 12.0, 0.0), sit_pose["leg_r"]),
-        (-2.0, 12.0, 0.0),
-        sit_pose["leg_r_y"],
-    )
-    gap = left_foot[0] - right_foot[0]
-    check("sit-feet-separated", gap >= 6.0, f"{left_foot} / {right_foot} gap={gap:.2f}")
+    widget.set_action("walk")
+    check("walk-keeps-upright-body", widget._pose()["body_x"] == 0.0, str(widget._pose()))
 
     widget.close()
     print(f"\n{len(CHECKS)} checks passed")

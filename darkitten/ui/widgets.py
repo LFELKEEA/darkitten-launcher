@@ -834,7 +834,7 @@ class HeroArt(QWidget):
     def _bubble_font() -> QFont:
         # 用像素字号而不是磅值，避免不同 DPI 下字被放大后挤出气泡。
         font = QFont("Microsoft YaHei UI")
-        font.setPixelSize(12)
+        font.setPixelSize(16)
         font.setBold(True)
         return font
 
