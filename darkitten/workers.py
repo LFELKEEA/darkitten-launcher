@@ -80,6 +80,7 @@ from .sakura import (
     remove_tunnel_config,
 )
 from .skins import change_skin, fetch_account_skin, reset_skin
+from .littleskin import LittleSkinAccount, fetch_skin, login as littleskin_login
 
 
 class InstallWorker(QObject):
@@ -1986,6 +1987,62 @@ class SkinResetWorker(QObject):
             self.finished.emit(False, str(exc), account)
         else:
             self.finished.emit(True, "已恢复默认皮肤", account)
+
+
+class LittleSkinLoginWorker(QObject):
+    """在后台完成 LittleSkin 登录并下载角色皮肤。"""
+
+    finished = Signal(object, object, str)
+
+    def __init__(
+        self,
+        username: str,
+        password: str,
+        client_token: str = "",
+        parent=None,
+    ) -> None:
+        super().__init__(parent)
+        self.username = str(username or "")
+        self._password = str(password or "")
+        self.client_token = str(client_token or "")
+
+    def start(self) -> None:
+        threading.Thread(target=self._run, daemon=True).start()
+
+    def _run(self) -> None:
+        try:
+            account, skin = littleskin_login(
+                self.username,
+                self._password,
+                client_token=self.client_token,
+            )
+        except Exception as exc:
+            self.finished.emit(None, None, str(exc))
+        else:
+            self.finished.emit(account, skin, "")
+        finally:
+            self._password = ""
+
+
+class LittleSkinSyncWorker(QObject):
+    """刷新 LittleSkin 角色资料并重新下载皮肤。"""
+
+    finished = Signal(object, object, str)
+
+    def __init__(self, account: LittleSkinAccount, parent=None) -> None:
+        super().__init__(parent)
+        self.account = copy.deepcopy(account)
+
+    def start(self) -> None:
+        threading.Thread(target=self._run, daemon=True).start()
+
+    def _run(self) -> None:
+        try:
+            skin = fetch_skin(self.account)
+        except Exception as exc:
+            self.finished.emit(self.account, None, str(exc))
+        else:
+            self.finished.emit(self.account, skin, "")
 
 
 class SakuraLoginWorker(QObject):

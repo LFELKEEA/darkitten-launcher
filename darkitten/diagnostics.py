@@ -22,7 +22,7 @@ def redact(text: str) -> str:
     """移除常见令牌与密钥，诊断包可以安全地发给开发者。"""
     patterns = (
         (
-            r"(?i)(access_token|refresh_token|id_token|client_secret|sakura_token)"
+            r"(?i)(access_token|refresh_token|id_token|client_secret|client_?token|sakura_token)"
             r"([\"']?\s*[:=]\s*[\"']?)[^\s\"',}]+",
             r"\1\2<已隐藏>",
         ),
@@ -175,7 +175,7 @@ def build_summary(
     lines.extend(
         [
             "",
-            "隐私说明：诊断包已隐藏访问令牌、刷新令牌、樱花 Token 等敏感信息；",
+            "隐私说明：诊断包已隐藏访问令牌、刷新令牌、LittleSkin 登录令牌、樱花 Token 等敏感信息；",
             "不包含账户密码、皮肤文件、世界存档和 Mod 本体。",
         ]
     )

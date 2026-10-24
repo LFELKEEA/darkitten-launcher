@@ -13,7 +13,7 @@ APP_SHORT_NAME = "DKL"
 APP_TAGLINE = "恶魔小猫的秘密基地"
 APP_AUTHOR = "LFELKEEA"
 APP_EMAIL = "lfel278623@outlook.com"
-APP_VERSION = "1.10.2"
+APP_VERSION = "1.10.3"
 APP_ID = "DarkittenLauncher"
 DEFAULT_UPDATE_URL = "https://lfelkeea.github.io/darkitten-launcher/update.json"
 
@@ -54,6 +54,8 @@ class Config:
     microsoft_client_id: str = ""
     microsoft_email: str = ""
     account: dict[str, Any] = field(default_factory=dict)
+    # LittleSkin 皮肤账号（只保存令牌，不保存密码）。与游戏登录账户分离。
+    littleskin_account: dict[str, Any] = field(default_factory=dict)
     skin_path: str = ""
     skin_variant: str = "classic"
     sakura_token: str = ""
@@ -162,6 +164,8 @@ class Config:
         cfg.microsoft_email = str(cfg.microsoft_email or "").strip()
         if not isinstance(cfg.account, dict):
             cfg.account = {}
+        if not isinstance(cfg.littleskin_account, dict):
+            cfg.littleskin_account = {}
         cfg.skin_path = str(cfg.skin_path or "").strip()
         cfg.skin_variant = (
             "slim" if str(cfg.skin_variant or "").lower() == "slim" else "classic"

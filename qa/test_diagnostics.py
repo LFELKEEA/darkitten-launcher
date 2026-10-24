@@ -63,7 +63,7 @@ def main() -> None:
     diagnostics.LOG_FILE = log_file
     log_file.write_text(
         "启动器日志\naccess_token=SECRET-LAUNCHER\nsakura_token: SECRET-SAKURA\n"
-        "正常内容\n",
+        'clientToken="SECRET-CLIENT"\n正常内容\n',
         encoding="utf-8",
     )
 
@@ -106,6 +106,7 @@ def main() -> None:
     check("bundle-crash", "crash report" in crash)
     check("bundle-redacts-launcher", "SECRET-LAUNCHER" not in launcher_log, launcher_log)
     check("bundle-redacts-sakura", "SECRET-SAKURA" not in launcher_log, launcher_log)
+    check("bundle-redacts-client-token", "SECRET-CLIENT" not in launcher_log, launcher_log)
     check("bundle-redacts-game", "SECRET-GAME-TOKEN" not in game_log, game_log)
     check("bundle-redacts-crash", "SECRET-CRASH" not in crash, crash)
     check("bundle-no-account", "access_token" not in config_safe)

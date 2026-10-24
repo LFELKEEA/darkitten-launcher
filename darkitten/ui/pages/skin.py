@@ -12,6 +12,7 @@ from PySide6.QtGui import (
     QPixmap,
 )
 from PySide6.QtWidgets import (
+    QDialog,
     QFileDialog,
     QFrame,
     QGridLayout,
@@ -27,6 +28,12 @@ from PySide6.QtWidgets import (
 )
 
 from ...accounts import offline_uuid
+from ...littleskin import (
+    LittleSkinAccount,
+    clear_account as clear_littleskin_account,
+    load_account as load_littleskin_account,
+    save_account as save_littleskin_account,
+)
 from ...skin_library import (
     LibrarySkin,
     SkinLibraryError,
@@ -52,9 +59,15 @@ from ...skins import (
     local_skin_path,
     variant_text,
 )
-from ...workers import SkinFetchWorker, SkinResetWorker, SkinUploadWorker
+from ...workers import (
+    LittleSkinSyncWorker,
+    SkinFetchWorker,
+    SkinResetWorker,
+    SkinUploadWorker,
+)
 from .. import icons
 from ..dialogs import ConfirmDialog
+from ..littleskin_dialog import LittleSkinLoginDialog
 from ..skin_preview import SkinPreviewWidget
 from ..widgets import (
     Card,
@@ -213,6 +226,8 @@ class SkinPage(QWidget):
         self._fetch_worker: SkinFetchWorker | None = None
         self._upload_worker: SkinUploadWorker | None = None
         self._reset_worker: SkinResetWorker | None = None
+        self._littleskin = load_littleskin_account(self.main.config)
+        self._littleskin_worker: LittleSkinSyncWorker | None = None
         self._busy = False
         self._auto_fetch_done: set[str] = set()
         self._syncing_variant = False
@@ -258,31 +273,22 @@ class SkinPage(QWidget):
 
         self.account_badge = badge("离线预览", "gray")
         header.addWidget(self.account_badge, 0, Qt.AlignTop)
-        littleskin_btn = QPushButton("LittleSkin 皮肤站")
-        littleskin_btn.setObjectName("Ghost")
-        littleskin_btn.setCursor(Qt.PointingHandCursor)
-        littleskin_btn.setToolTip("打开 LittleSkin 皮肤站，挑选或上传皮肤")
-        littleskin_btn.setIcon(icons.icon("globe", colors()["text2"], 15))
-        littleskin_btn.clicked.connect(lambda: self._open_url(LITTLESKIN_URL))
-        header.addWidget(littleskin_btn, 0, Qt.AlignTop)
-        forum_btn = QPushButton("苦力怕论坛 · 皮肤版块")
-        forum_btn.setObjectName("Ghost")
-        forum_btn.setCursor(Qt.PointingHandCursor)
-        forum_btn.setIcon(icons.icon("globe", colors()["text2"], 15))
-        forum_btn.clicked.connect(lambda: self._open_url(SKIN_FORUM_URL))
-        header.addWidget(forum_btn, 0, Qt.AlignTop)
         layout.addLayout(header)
 
         content = QHBoxLayout()
         content.setSpacing(14)
-        content.addWidget(self._build_preview_card(), 0, Qt.AlignTop)
+        left = QVBoxLayout()
+        left.setSpacing(12)
+        left.addWidget(self._build_preview_card(), 0, Qt.AlignTop)
+        left.addWidget(self._build_community_card(), 0, Qt.AlignTop)
+        left.addStretch(1)
+        content.addLayout(left, 0)
 
         right = QVBoxLayout()
         right.setSpacing(12)
         right.addWidget(self._build_account_card())
         right.addWidget(self._build_library_card())
         right.addWidget(self._build_upload_card())
-        right.addWidget(self._build_community_card())
         right.addStretch(1)
         content.addLayout(right, 1)
         layout.addLayout(content, 1)
@@ -357,6 +363,11 @@ class SkinPage(QWidget):
         card_width = int(max(300, min(438, width * 0.47)))
         if self._preview_card.width() != card_width:
             self._preview_card.setFixedWidth(card_width)
+        if (
+            hasattr(self, "_community_card")
+            and self._community_card.width() != card_width
+        ):
+            self._community_card.setFixedWidth(card_width)
 
     def resizeEvent(self, event) -> None:
         super().resizeEvent(event)
@@ -544,37 +555,93 @@ class SkinPage(QWidget):
 
     def _build_community_card(self) -> QWidget:
         card = Card()
+        self._community_card = card
+        card.setFixedWidth(438)
         layout = QVBoxLayout(card)
         layout.setContentsMargins(18, 13, 18, 13)
-        layout.setSpacing(7)
+        layout.setSpacing(8)
 
         title = QLabel("资源与社区")
         title.setObjectName("H2")
         layout.addWidget(title)
         desc = QLabel(
-            "苦力怕论坛（KLBBS）有大量玩家分享的皮肤、Mod 与整合包。"
-            "可以前往皮肤版块挑选作品，再回到这里预览和上传。"
+            "登录 LittleSkin 后会自动读取角色皮肤并加入皮肤库；"
+            "也可以打开皮肤站挑选或上传作品，再去苦力怕论坛找资源。"
         )
         desc.setObjectName("Tiny")
         desc.setWordWrap(True)
         layout.addWidget(desc)
 
+        account_row = QHBoxLayout()
+        account_row.setSpacing(9)
+        self.ls_avatar = QLabel()
+        self.ls_avatar.setFixedSize(38, 38)
+        self.ls_avatar.setPixmap(_rounded_face(default_skin(), 38))
+        account_row.addWidget(self.ls_avatar)
+        texts = QVBoxLayout()
+        texts.setSpacing(1)
+        self.ls_title = QLabel("未登录 LittleSkin")
+        self.ls_title.setStyleSheet("font-weight: 700; font-size: 12px;")
+        self.ls_sub = QLabel("登录后自动同步角色皮肤，密码不会保存。")
+        self.ls_sub.setObjectName("Tiny")
+        self.ls_sub.setWordWrap(True)
+        texts.addWidget(self.ls_title)
+        texts.addWidget(self.ls_sub)
+        account_row.addLayout(texts, 1)
+        layout.addLayout(account_row)
+
         buttons = QHBoxLayout()
         buttons.setSpacing(8)
-        skin_forum = QPushButton("皮肤分享版块")
-        skin_forum.setObjectName("Soft")
+        self.ls_login_btn = QPushButton("登录 LittleSkin")
+        self.ls_login_btn.setObjectName("Soft")
+        self.ls_login_btn.setCursor(Qt.PointingHandCursor)
+        self.ls_login_btn.setIcon(icons.icon("user", colors()["accent"], 15))
+        self.ls_login_btn.clicked.connect(self._littleskin_login)
+
+        self.ls_sync_btn = QPushButton("同步皮肤")
+        self.ls_sync_btn.setObjectName("Soft")
+        self.ls_sync_btn.setCursor(Qt.PointingHandCursor)
+        self.ls_sync_btn.setIcon(icons.icon("refresh", colors()["accent"], 15))
+        self.ls_sync_btn.clicked.connect(self._littleskin_sync)
+
+        self.ls_open_btn = QPushButton("打开 LittleSkin")
+        self.ls_open_btn.setObjectName("Ghost")
+        self.ls_open_btn.setCursor(Qt.PointingHandCursor)
+        self.ls_open_btn.setIcon(icons.icon("globe", colors()["text2"], 15))
+        self.ls_open_btn.clicked.connect(lambda: self._open_url(LITTLESKIN_URL))
+
+        self.ls_logout_btn = QPushButton("退出")
+        self.ls_logout_btn.setObjectName("Ghost")
+        self.ls_logout_btn.setCursor(Qt.PointingHandCursor)
+        self.ls_logout_btn.setToolTip("清除 LittleSkin 登录令牌，保留已同步的皮肤")
+        self.ls_logout_btn.clicked.connect(self._littleskin_logout)
+
+        buttons.addWidget(self.ls_login_btn)
+        buttons.addWidget(self.ls_sync_btn)
+        buttons.addWidget(self.ls_open_btn)
+        buttons.addWidget(self.ls_logout_btn)
+        buttons.addStretch(1)
+        layout.addLayout(buttons)
+        layout.addWidget(hline())
+
+        forum_row = QHBoxLayout()
+        forum_row.setSpacing(8)
+        skin_forum = QPushButton("苦力怕皮肤版块")
+        skin_forum.setObjectName("Ghost")
         skin_forum.setCursor(Qt.PointingHandCursor)
-        skin_forum.setIcon(icons.icon("shirt", colors()["accent"], 15))
+        skin_forum.setIcon(icons.icon("shirt", colors()["text2"], 15))
         skin_forum.clicked.connect(lambda: self._open_url(SKIN_FORUM_URL))
-        home = QPushButton("苦力怕论坛首页")
+        home = QPushButton("论坛首页")
         home.setObjectName("Ghost")
         home.setCursor(Qt.PointingHandCursor)
         home.setIcon(icons.icon("external", colors()["text2"], 15))
         home.clicked.connect(lambda: self._open_url(FORUM_URL))
-        buttons.addWidget(skin_forum)
-        buttons.addWidget(home)
-        buttons.addStretch(1)
-        layout.addLayout(buttons)
+        forum_row.addWidget(skin_forum)
+        forum_row.addWidget(home)
+        forum_row.addStretch(1)
+        layout.addLayout(forum_row)
+
+        self._refresh_littleskin()
         return card
 
     # ------------------------------------------------------------------
@@ -925,6 +992,7 @@ class SkinPage(QWidget):
         if text:
             self._set_status(text, "busy")
         self._update_buttons()
+        self._refresh_littleskin()
 
     def _save_account(self, account) -> None:
         self.main.config.account = account.to_config()
@@ -1034,6 +1102,154 @@ class SkinPage(QWidget):
             self._skin_file,
             original=self.file_edit.text().strip() or str(entry.path),
         )
+
+    # ------------------------------------------------------------------
+    def _refresh_littleskin(self) -> None:
+        if not hasattr(self, "ls_title"):
+            return
+        account = self._littleskin
+        logged = account.is_logged_in
+        self.ls_login_btn.setVisible(not logged)
+        self.ls_sync_btn.setVisible(logged)
+        self.ls_logout_btn.setVisible(logged)
+        available = not self._busy
+        self.ls_login_btn.setEnabled(available)
+        self.ls_sync_btn.setEnabled(available)
+        self.ls_logout_btn.setEnabled(available)
+        image = self._skin_file.image if self._skin_file is not None else default_skin()
+        self.ls_avatar.setPixmap(_rounded_face(image, 38))
+        if logged:
+            self.ls_title.setText(f"LittleSkin · {account.name}")
+            if account.last_sync:
+                try:
+                    stamp = datetime.fromtimestamp(account.last_sync).strftime(
+                        "%m-%d %H:%M"
+                    )
+                except (OSError, ValueError, OverflowError):
+                    stamp = ""
+                synced = f"上次同步 {stamp}" if stamp else "已同步角色皮肤"
+            else:
+                synced = "尚未同步角色皮肤"
+            self.ls_sub.setText(
+                f"角色 UUID {account.short_uuid} · {synced}"
+            )
+            self.ls_title.setToolTip(
+                f"LittleSkin 账号：{account.username or '已登录'}"
+            )
+        else:
+            self.ls_title.setText("未登录 LittleSkin")
+            self.ls_sub.setText("登录后自动同步角色皮肤，密码不会保存。")
+            self.ls_title.setToolTip("")
+
+    def _littleskin_login(self) -> None:
+        if self._busy:
+            return
+        dialog = LittleSkinLoginDialog(
+            self.main,
+            self._littleskin.username,
+            self._littleskin.client_token,
+        )
+        if dialog.exec() != QDialog.Accepted or dialog.account is None:
+            return
+        account = dialog.account
+        skin = dialog.skin
+        self._littleskin = account
+        save_littleskin_account(self.main.config, account)
+        self._refresh_littleskin()
+        if skin is None:
+            message = (
+                f"已登录 LittleSkin：{account.name}，"
+                "但这个角色还没有设置皮肤。"
+            )
+            self._set_status(message, "info")
+            self.main.toast(message, "info")
+            return
+        self._apply_littleskin_skin(account, skin)
+
+    def _littleskin_sync(self) -> None:
+        if self._busy or not self._littleskin.is_logged_in:
+            return
+        self._set_busy(True, "正在同步 LittleSkin 角色皮肤…")
+        worker = LittleSkinSyncWorker(self._littleskin, self)
+        self._littleskin_worker = worker
+        worker.finished.connect(self._on_littleskin_synced)
+        worker.start()
+
+    def _on_littleskin_synced(self, account, skin, error: str) -> None:
+        self._littleskin_worker = None
+        self._set_busy(False)
+        if error:
+            message = f"同步 LittleSkin 皮肤失败：{error}"
+            self._set_status(message, "error")
+            self.main.toast(message, "error")
+            return
+        self._littleskin = account
+        save_littleskin_account(self.main.config, account)
+        if skin is None:
+            self._refresh_littleskin()
+            message = "LittleSkin 角色当前没有自定义皮肤。"
+            self._set_status(message, "info")
+            self.main.toast(message, "info")
+            return
+        self._apply_littleskin_skin(account, skin)
+
+    def _apply_littleskin_skin(self, account, skin) -> None:
+        value = "slim" if account.variant == "slim" and not skin.legacy else "classic"
+        self._set_variant_silently(value)
+        self.main.config.skin_variant = value
+        try:
+            entry = add_skin(
+                skin,
+                name=f"LittleSkin · {account.name}",
+                variant=value,
+                source=f"LittleSkin · {account.name}",
+            )
+        except (SkinError, SkinLibraryError) as exc:
+            message = f"无法保存 LittleSkin 皮肤：{exc}"
+            self._set_status(message, "error")
+            self.main.toast(message, "error")
+            return
+        self._activate_entry(
+            entry,
+            skin,
+            original=str(entry.path),
+            announce=False,
+        )
+        save_littleskin_account(self.main.config, account)
+        self._refresh_littleskin()
+        if self.main.current_account().is_msa:
+            note = (
+                f"LittleSkin 角色「{account.name}」的皮肤已同步并设为预览。"
+                "微软正版启动仍使用 Mojang 账户皮肤，需要时可在上方上传。"
+            )
+        else:
+            note = (
+                f"LittleSkin 角色「{account.name}」的皮肤已启用。"
+                "离线启动游戏时会自动加载这套皮肤。"
+            )
+        self.current_label.setText(note)
+        self._set_status(note, "success")
+        self.main.toast(f"已同步 LittleSkin 皮肤：{account.name}", "success")
+
+    def _littleskin_logout(self) -> None:
+        if not self._littleskin.is_logged_in or self._busy:
+            return
+        dialog = ConfirmDialog(
+            self.main,
+            "退出 LittleSkin 登录",
+            f"将清除 LittleSkin 账号「{self._littleskin.name}」保存在本机的登录令牌。",
+            primary_text="退出登录",
+            secondary_text="取消",
+            icon_name="user",
+            details="皮肤库中已经同步的皮肤会保留，不会删除本地图片。",
+        )
+        if not dialog.exec():
+            return
+        clear_littleskin_account(self.main.config)
+        self._littleskin = LittleSkinAccount()
+        self._refresh_littleskin()
+        self._set_status("已退出 LittleSkin 登录，已同步的皮肤仍保留在皮肤库。", "info")
+        self.main.toast("已退出 LittleSkin 登录", "info")
 
     def _upload_skin(self) -> None:
         account = self.main.current_account()
@@ -1204,6 +1420,7 @@ class SkinPage(QWidget):
             else:
                 self._set_status("可以点击“读取正版皮肤”查看账户当前效果。", "info")
         self._update_buttons()
+        self._refresh_littleskin()
         self.preview.update()
 
     def on_show(self) -> None:
@@ -1226,6 +1443,7 @@ class SkinPage(QWidget):
             self.face_label.setPixmap(_rounded_face(self._current_skin.image, 48))
         else:
             self.face_label.setPixmap(_rounded_face(default_skin(), 48))
+        self._refresh_littleskin()
 
     # ------------------------------------------------------------------
     def _open_skin_folder(self) -> None:

@@ -301,6 +301,9 @@ class SkinPreviewWidget(QWidget):
             "arm_r_z": 0.0,
             "leg_l": 0.0,
             "leg_r": 0.0,
+            # 坐下时双腿朝前，必须再绕 Y 轴外展才不会叠在一起。
+            "leg_l_y": 0.0,
+            "leg_r_y": 0.0,
             "bob": 0.0,
             "shift": 0.0,
             "yaw": 0.0,
@@ -319,12 +322,13 @@ class SkinPreviewWidget(QWidget):
             pose["arm_r"] = 48.0 * stride
             pose["leg_l"] = 42.0 * stride
             pose["leg_r"] = -42.0 * stride
-            pose["body_x"] = -8.0
-            pose["head_x"] = 4.0
+            # 正角度让上半身朝镜头方向前倾；头部反向补偿保持视线水平。
+            pose["body_x"] = 12.0
+            pose["head_x"] = -6.0
             pose["bob"] = abs(math.sin(elapsed * 8.4)) * 1.2
         elif self._action == "sneak":
-            pose["body_x"] = -16.0
-            pose["head_x"] = 12.0
+            pose["body_x"] = 20.0
+            pose["head_x"] = -15.0
             pose["arm_l"] = -10.0
             pose["arm_r"] = -10.0
             pose["leg_l"] = -8.0
@@ -339,6 +343,8 @@ class SkinPreviewWidget(QWidget):
         elif self._action == "sit":
             pose["leg_l"] = -84.0
             pose["leg_r"] = -88.0
+            pose["leg_l_y"] = 9.0
+            pose["leg_r_y"] = -9.0
             pose["arm_l"] = -16.0
             pose["arm_r"] = -16.0
             pose["shift"] = -4.0
@@ -493,6 +499,11 @@ class SkinPreviewWidget(QWidget):
                 if swing:
                     point = _rotate_about_x(
                         point, (side * 2.0, 12.0, 0.0), swing
+                    )
+                splay = pose["leg_r_y"] if name == "right_leg" else pose["leg_l_y"]
+                if splay:
+                    point = _rotate_about_y(
+                        point, (side * 2.0, 12.0, 0.0), splay
                     )
             if pose["shift"]:
                 point = (point[0], point[1] + pose["shift"], point[2])
