@@ -1494,12 +1494,14 @@ class ModDownloadWorker(QObject):
         threads: int = 8,
         parent=None,
         source: str = "",
+        metadata: dict | None = None,
     ) -> None:
         super().__init__(parent)
         self.version = version
         self.mods_dir = Path(mods_dir)
         self.threads = max(1, min(16, int(threads)))
         self.cancel_event = threading.Event()
+        self.metadata = dict(metadata or {})
         self.source = str(
             source or version.get("source") or "modrinth"
         ).lower()
@@ -1526,6 +1528,13 @@ class ModDownloadWorker(QObject):
         except Exception as exc:
             self.finished.emit(False, str(exc), "")
         else:
+            if self.metadata:
+                try:
+                    from .mods import remember_downloaded_mod
+
+                    remember_downloaded_mod(self.mods_dir, path, self.metadata)
+                except Exception:
+                    pass
             self.finished.emit(True, "下载完成", path.name)
 
     def cancel(self) -> None:

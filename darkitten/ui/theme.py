@@ -530,6 +530,31 @@ QPushButton#Segment:checked {{
     border-color: {c['accent_border']};
     background: {c['accent_soft']};
 }}
+#DownloadChip {{
+    background: {c['card2']};
+    border: 1px solid {c['border']};
+    border-radius: 10px;
+}}
+#DownloadChip:hover {{
+    border-color: {c['accent_border']};
+    background: {c['accent_soft']};
+}}
+#DownloadChip[state="success"] {{
+    border-color: {c['green']};
+}}
+#DownloadChip[state="error"], #DownloadChip[state="cancelled"] {{
+    border-color: {c['orange']};
+}}
+QProgressBar#ChipProgress {{
+    background: {c['border']};
+    border: none;
+    border-radius: 2px;
+    height: 3px;
+}}
+QProgressBar#ChipProgress::chunk {{
+    background: {c['accent']};
+    border-radius: 2px;
+}}
 #DialogCard {{
     background: {c['card']};
     border: 1px solid {c['border_strong']};

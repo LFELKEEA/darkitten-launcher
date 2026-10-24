@@ -61,6 +61,7 @@ from ..workers import (
 from . import icons, theme
 from .animations import GameLoadingOverlay
 from .dialogs import ConfirmDialog, NoticeDialog
+from .download_center import DownloadCenter, DownloadTasksDialog, TopDownloadChip
 from .update_dialog import UpdateDialog
 from .pages.download import DownloadPage
 from .pages.home import HomePage
@@ -230,6 +231,8 @@ class MainWindow(QWidget):
         self.last_update_release = None
         self.update_state_text = "尚未检查更新"
         self.update_state_kind = "idle"
+        self.download_center = DownloadCenter(self)
+        self._download_tasks_dialog: DownloadTasksDialog | None = None
 
         self.setObjectName("Root")
         self.setAttribute(Qt.WA_StyledBackground, True)
@@ -309,6 +312,8 @@ class MainWindow(QWidget):
         self.drop_hint.hide()
         self.account_changed.connect(self._update_account)
         self.account_changed.connect(self.home_page._refresh_status)
+        self.download_center.tasks_changed.connect(self._refresh_download_chip)
+        self.download_center.task_finished.connect(self._on_download_task_finished)
 
         self.speed_timer = QTimer(self)
         self.speed_timer.setInterval(600)
@@ -358,6 +363,10 @@ class MainWindow(QWidget):
             layout.addSpacing(2)
 
         layout.addStretch(1)
+        self.download_chip = TopDownloadChip()
+        self.download_chip.clicked.connect(self.open_download_tasks)
+        layout.addWidget(self.download_chip)
+        layout.addSpacing(8)
         self.account_chip = AccountChip()
         self.account_chip.clicked.connect(self.open_social_dialog)
         layout.addWidget(self.account_chip)
@@ -486,6 +495,8 @@ class MainWindow(QWidget):
             self.server_page.refresh_theme()
         if hasattr(self, "account_chip"):
             self.account_chip.avatar.refresh()
+        if hasattr(self, "download_chip"):
+            self.download_chip.sync(self.download_center)
         for widget in QApplication.allWidgets():
             widget.update()
         self._apply_dwm()
@@ -829,6 +840,21 @@ class MainWindow(QWidget):
                 event.ignore()
                 return
             self.install_worker.cancel()
+        if self.download_center.has_running():
+            dialog = ConfirmDialog(
+                self,
+                "下载仍在进行",
+                "现在退出会中断正在下载的文件，已经完成的部分会保留。确定要退出吗？",
+                primary_text="退出",
+                secondary_text="继续下载",
+                icon_name="download",
+                icon_color=colors()["orange"],
+            )
+            if not dialog.exec():
+                event.ignore()
+                return
+            for task in self.download_center.active_tasks():
+                self.download_center.cancel(task.id)
         if hasattr(self, "server_page"):
             running = self.server_page.running_server_names()
             if running:
@@ -1321,6 +1347,51 @@ class MainWindow(QWidget):
         from .mod_dialog import ModBrowserDialog
 
         ModBrowserDialog(self).exec()
+        self._refresh_download_chip()
+
+    def _refresh_download_chip(self) -> None:
+        if hasattr(self, "download_chip"):
+            self.download_chip.sync(self.download_center)
+
+    def _on_download_task_finished(self, task) -> None:
+        filename = str(getattr(task, "filename", "") or task.title)
+        content_type = str(getattr(task, "content_type", ""))
+        status = str(getattr(task, "status", ""))
+        if status == "success":
+            if content_type == "mod" and hasattr(self, "mods_page"):
+                self.mods_page.refresh_mods()
+            self.set_status(f"下载完成：{filename}", "success")
+            if content_type == "modpack":
+                self.toast(
+                    "整合包下载完成，可在顶栏下载任务中导入",
+                    "success",
+                )
+            else:
+                self.toast(f"已下载 {filename}", "success")
+        elif status == "cancelled":
+            self.set_status("下载已取消", "idle")
+            self.toast("下载已取消，临时文件已清理", "info")
+        else:
+            message = str(getattr(task, "error", "") or getattr(task, "message", ""))
+            self.set_status(f"下载失败：{message}", "error")
+            self.toast(f"下载失败：{message}", "error")
+
+    def open_download_tasks(self) -> None:
+        if self._download_tasks_dialog is not None:
+            self._download_tasks_dialog.refresh()
+            self._download_tasks_dialog.raise_()
+            self._download_tasks_dialog.activateWindow()
+            return
+        dialog = DownloadTasksDialog(self)
+        self._download_tasks_dialog = dialog
+        dialog.finished.connect(self._on_download_tasks_closed)
+        dialog.show()
+
+    def _on_download_tasks_closed(self, _result: int = 0) -> None:
+        dialog = self._download_tasks_dialog
+        self._download_tasks_dialog = None
+        if dialog is not None:
+            dialog.deleteLater()
 
     def open_migration_dialog(self, source_id: str = "") -> None:
         if self.install_active or self.launch_active:

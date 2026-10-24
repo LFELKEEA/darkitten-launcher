@@ -29,11 +29,15 @@ from PySide6.QtWidgets import (
 )
 
 from ..config import APP_DIR
+from ..descriptions import (
+    category_labels,
+    project_zh_intro,
+    project_title,
+)
 from ..modrinth import primary_file, required_dependencies
 from ..versions import resolve_version
 from ..workers import (
     ImageFetchWorker,
-    ModDownloadWorker,
     ModProjectWorker,
     ModProjectsWorker,
     ModSearchWorker,
@@ -41,6 +45,7 @@ from ..workers import (
 )
 from . import icons
 from .dialogs import StyledDialog
+from .download_center import TASK_CANCELLED, TASK_SUCCESS, DownloadTask
 from .loader_dialog import LoaderDialog
 from .widgets import (
     DependencyBar,
@@ -268,11 +273,15 @@ class ModResultRow(QFrame):
         loader: str,
         parent=None,
         source_label: str = "Modrinth",
+        content_type: str = "mod",
     ) -> None:
         super().__init__(parent)
         self.hit = hit
         self.project_id = str(hit.get("project_id") or hit.get("slug") or "")
         self.source_label = source_label
+        intro_text = project_zh_intro(
+            hit, content_type=content_type, loader=loader
+        )
         self.setObjectName("SelectRow")
         self.setAttribute(Qt.WA_StyledBackground, True)
         self.setCursor(Qt.PointingHandCursor)
@@ -306,12 +315,13 @@ class ModResultRow(QFrame):
         title_row.addWidget(self.download_badge, 0)
         info.addLayout(title_row)
 
-        self.desc_label = _ElidedLabel(str(hit.get("description") or ""))
+        self.desc_label = _ElidedLabel(intro_text)
         self.desc_label.setObjectName("Tiny")
+        self.desc_label.setToolTip(str(hit.get("description") or intro_text))
         info.addWidget(self.desc_label)
 
         author = str(hit.get("author") or "")
-        categories = ", ".join((hit.get("categories") or [])[:2])
+        categories = "、".join(category_labels(hit.get("categories"), 2))
         meta_text = " · ".join(item for item in (author, categories) if item) or source_label
         self.meta_label = _ElidedLabel(meta_text)
         self.meta_label.setObjectName("Tiny")
@@ -348,7 +358,8 @@ class ModBrowserDialog(StyledDialog):
         self._search_worker: ModSearchWorker | None = None
         self._project_worker: ModProjectWorker | None = None
         self._versions_worker: ModVersionsWorker | None = None
-        self._download_worker: ModDownloadWorker | None = None
+        self._download_task: DownloadTask | None = None
+        self._download_bound = False
         self._image_workers: dict[str, ImageFetchWorker] = {}
         self._image_waiters: dict[str, list] = {}
         self._hits: list[dict] = []
@@ -388,16 +399,32 @@ class ModBrowserDialog(StyledDialog):
         self._apply_content_mode()
         QTimer.singleShot(0, lambda: self._search(0))
 
+    def _downloading(self) -> bool:
+        return self._download_task is not None and self._download_task.running
+
     def reject(self) -> None:
-        worker = self._download_worker
-        if worker is not None:
-            self._download_worker = None
+        task = self._download_task
+        self._detach_download_ui()
+        if task is not None and task.running:
+            self.main.toast(
+                "下载已转到顶栏，可以继续操作启动器；点击顶栏进度可查看任务",
+                "info",
+            )
+        super().reject()
+
+    def _detach_download_ui(self) -> None:
+        if self._download_bound:
             try:
-                worker.finished.disconnect(self._on_download_finished)
+                self.main.download_center.task_progress.disconnect(
+                    self._on_download_progress
+                )
+                self.main.download_center.task_finished.disconnect(
+                    self._on_download_finished
+                )
             except (RuntimeError, TypeError):
                 pass
-            worker.cancel()
-        super().reject()
+            self._download_bound = False
+        self._download_task = None
 
     # ------------------------------------------------------------------
     # 界面构建
@@ -549,7 +576,7 @@ class ModBrowserDialog(StyledDialog):
             self._folder_btn.setText(
                 f"打开 {CONTENT_FOLDERS.get(self._content_type, 'mods')} 文件夹"
             )
-        if self._download_worker is None:
+        if not self._downloading():
             self.download_btn.setText(self._download_button_text())
         self._sync_download_button()
         self._update_context()
@@ -770,7 +797,7 @@ class ModBrowserDialog(StyledDialog):
         self.detail_desc = QLabel("")
         self.detail_desc.setObjectName("Tiny")
         self.detail_desc.setWordWrap(True)
-        self.detail_desc.setMaximumHeight(42)
+        self.detail_desc.setMaximumHeight(58)
         self.detail_layout.addWidget(self.detail_desc)
 
         gallery_header = QHBoxLayout()
@@ -1053,7 +1080,7 @@ class ModBrowserDialog(StyledDialog):
         self._reload_bases()
 
     def _can_download(self) -> bool:
-        if self._download_worker is not None:
+        if self._downloading():
             return False
         version = self.version_combo.currentData()
         if not isinstance(version, dict):
@@ -1068,7 +1095,7 @@ class ModBrowserDialog(StyledDialog):
 
     def _sync_download_button(self) -> None:
         """下载中始终允许点“取消下载”，不被切换项目等刷新流程重新禁用。"""
-        if self._download_worker is not None:
+        if self._downloading():
             self.download_btn.setEnabled(True)
         else:
             self.download_btn.setEnabled(self._can_download())
@@ -1226,7 +1253,10 @@ class ModBrowserDialog(StyledDialog):
             loader = self.loader_tabs.current()
             for hit in self._hits:
                 row = ModResultRow(
-                    hit, loader, source_label=self._source_name()
+                    hit,
+                    loader,
+                    source_label=self._source_name(),
+                    content_type=self._content_type,
                 )
                 row.clicked.connect(
                     lambda project_id, h=hit: self._select_project(project_id, h)
@@ -1296,14 +1326,24 @@ class ModBrowserDialog(StyledDialog):
             str(hit.get("title") or hit.get("slug") or self._content_label())
         )
         author = str(hit.get("author") or "")
-        categories = ", ".join((hit.get("categories") or [])[:3])
+        raw_categories = [str(item) for item in hit.get("categories") or [] if item]
+        categories = "、".join(
+            category_labels(raw_categories, 3) or raw_categories[:3]
+        )
         meta_parts = []
         if author:
             meta_parts.append(f"作者：{author}")
         if categories:
             meta_parts.append(f"分类：{categories}")
         self.detail_author.setText(" · ".join(meta_parts) or self._source_name())
-        self.detail_desc.setText(str(hit.get("description") or ""))
+        intro = project_zh_intro(
+            hit,
+            content_type=self._content_type,
+            loader=self.loader_tabs.current() if self._content_type == "mod" else "",
+            game_version=self.mc_combo.currentText().strip(),
+        )
+        self.detail_desc.setText(intro)
+        self.detail_desc.setToolTip(str(hit.get("description") or intro))
         self.downloads_badge.setText(f"{_human_number(hit.get('downloads'))} 下载")
         self.followers_badge.setText(
             "0 收藏" if self._source == "curseforge" else "0 关注"
@@ -1401,16 +1441,26 @@ class ModBrowserDialog(StyledDialog):
         self.detail_note.setText("")
         title = str(data.get("title") or self.detail_title.text())
         self.detail_title.setText(title)
-        description = str(data.get("description") or "")
-        if description:
-            self.detail_desc.setText(description)
+        merged = {**(self._hit or {}), **data}
+        intro = project_zh_intro(
+            merged,
+            content_type=self._content_type,
+            loader=self.loader_tabs.current() if self._content_type == "mod" else "",
+            game_version=self.mc_combo.currentText().strip(),
+        )
+        self.detail_desc.setText(intro)
+        self.detail_desc.setToolTip(
+            str(data.get("description") or (self._hit or {}).get("description") or intro)
+        )
         author = str((self._hit or {}).get("author") or "")
         categories = [str(c) for c in data.get("categories") or [] if c]
         meta_parts = []
         if author:
             meta_parts.append(f"作者：{author}")
         if categories:
-            meta_parts.append(f"分类：{', '.join(categories[:3])}")
+            meta_parts.append(
+                f"分类：{'、'.join(category_labels(categories, 3) or categories[:3])}"
+            )
         if meta_parts:
             self.detail_author.setText(" · ".join(meta_parts))
         downloads = data.get("downloads")
@@ -1425,7 +1475,9 @@ class ModBrowserDialog(StyledDialog):
         self.updated_label.setText(f"更新于 {updated}" if updated else "")
         self._update_badges()
 
-        self.meta_categories.setText(" / ".join(categories[:5]) or "—")
+        self.meta_categories.setText(
+            " / ".join(category_labels(categories, 5) or categories[:5]) or "—"
+        )
         loaders = [str(item) for item in data.get("loaders") or [] if item]
         self.meta_loaders.setText(" / ".join(loaders[:4]) or "—")
         versions = [str(item) for item in data.get("game_versions") or [] if item]
@@ -1440,7 +1492,7 @@ class ModBrowserDialog(StyledDialog):
             license_text = str(license_data or "")
         self.meta_license.setText(license_text or "—")
         excerpt = _plain_excerpt(str(data.get("body") or ""), 280)
-        self.body_excerpt.setText(excerpt)
+        self.body_excerpt.setText(f"原文简介：{excerpt}" if excerpt else "")
         self.body_excerpt.setVisible(bool(excerpt))
 
         icon_url = str(data.get("icon_url") or (self._hit or {}).get("icon_url") or "")
@@ -1529,6 +1581,7 @@ class ModBrowserDialog(StyledDialog):
         self.detail_title.setText(f"选择一个{label}查看详细信息")
         self.detail_author.setText("从左侧搜索结果中选择项目。")
         self.detail_desc.setText(message)
+        self.detail_desc.setToolTip("")
         self.downloads_badge.setText("0 下载")
         self.followers_badge.setText(
             "0 收藏" if self._source == "curseforge" else "0 关注"
@@ -1863,7 +1916,7 @@ class ModBrowserDialog(StyledDialog):
         project_id = str(project_id or "")
         if not project_id:
             return
-        if self._download_worker is not None:
+        if self._downloading():
             self.main.toast("请先等待当前下载结束，再查看前置 Mod", "info")
             return
         project = self._dep_projects.get(project_id) or {}
@@ -1886,7 +1939,7 @@ class ModBrowserDialog(StyledDialog):
     def _go_back_dependency(self) -> None:
         if not self._nav_stack:
             return
-        if self._download_worker is not None:
+        if self._downloading():
             self.main.toast("请先等待当前下载结束，再返回", "info")
             return
         project_id, hit, version_id = self._nav_stack.pop()
@@ -1919,9 +1972,57 @@ class ModBrowserDialog(StyledDialog):
         repolish(self.download_btn)
         self.adjustSize()
 
+    def _bind_download_center(self) -> None:
+        if self._download_bound:
+            return
+        center = self.main.download_center
+        center.task_progress.connect(self._on_download_progress)
+        center.task_finished.connect(self._on_download_finished)
+        self._download_bound = True
+
+    def _download_metadata(self) -> dict:
+        project = dict(self._project or {})
+        hit = dict(self._hit or {})
+        merged = {**hit, **{key: value for key, value in project.items() if value}}
+        game_version = self.mc_combo.currentText().strip()
+        loader = self.loader_tabs.current() if self._content_type == "mod" else ""
+        asset = primary_file(self.version_combo.currentData()) or {}
+        return {
+            "title": str(merged.get("title") or self.detail_title.text()),
+            "project_id": str(
+                merged.get("project_id")
+                or merged.get("id")
+                or self._selected_project
+            ),
+            "slug": str(merged.get("slug") or ""),
+            "source": self._source,
+            "source_label": self._source_name(),
+            "content_type": self._content_type,
+            "icon_url": str(merged.get("icon_url") or ""),
+            "author": str(merged.get("author") or ""),
+            "categories": merged.get("categories") or [],
+            "loaders": merged.get("loaders") or ([loader] if loader else []),
+            "game_versions": merged.get("game_versions")
+            or ([game_version] if game_version else []),
+            "downloads": merged.get("downloads") or 0,
+            "description": str(merged.get("description") or ""),
+            "description_zh": project_zh_intro(
+                merged,
+                content_type=self._content_type,
+                loader=loader,
+                game_version=game_version,
+            ),
+            "project_url": str(merged.get("project_url") or ""),
+            "game_version": game_version,
+            "loader": loader,
+            "file_name": str(asset.get("filename") or ""),
+        }
+
     def _download(self) -> None:
-        if self._download_worker is not None:
-            self._download_worker.cancel()
+        if self._downloading():
+            task = self._download_task
+            if task is not None:
+                self.main.download_center.cancel(task.id)
             self.download_btn.setText("正在取消…")
             self.download_btn.setEnabled(False)
             return
@@ -1934,9 +2035,9 @@ class ModBrowserDialog(StyledDialog):
                 "error",
             )
             return
-        if self._content_type == "modpack":
+        pack_mode = self._content_type == "modpack"
+        if pack_mode:
             target_dir = APP_DIR / "cache" / "packs"
-            self._pack_download_dir = target_dir
             progress_text = "准备下载整合包…"
         else:
             if self.main.config.version_isolation and not self._target_version_id:
@@ -1947,7 +2048,6 @@ class ModBrowserDialog(StyledDialog):
                 )
                 return
             target_dir = self._target_dir()
-            self._pack_download_dir = None
             progress_text = (
                 f"准备下载到 {target_dir.parent.name}/{target_dir.name}…"
             )
@@ -1955,42 +2055,62 @@ class ModBrowserDialog(StyledDialog):
         self.progress_text.setText(progress_text)
         self.progress_box.setVisible(True)
         self.adjustSize()
-        worker = ModDownloadWorker(
+        metadata = self._download_metadata() if self._content_type == "mod" else None
+        title = str(
+            (metadata or {}).get("title")
+            or self.detail_title.text()
+            or self._content_label()
+        )
+        self._bind_download_center()
+        task = self.main.download_center.start_mod_download(
             version,
             target_dir,
             threads=self.main.config.download_threads,
-            parent=self.main,
+            title=title,
+            content_type=self._content_type,
+            source=self._source,
+            metadata=metadata,
+            pack_mode=pack_mode,
         )
-        self._download_worker = worker
-        worker.progress.connect(self._on_progress)
-        worker.finished.connect(self._on_download_finished)
+        self._download_task = task
+        self._pack_download_dir = target_dir if pack_mode else None
         self._set_download_button(True)
-        worker.start()
+        self.progress_text.setText(
+            "下载中，关闭本窗口后会转到顶栏继续下载"
+            if not pack_mode
+            else "下载中，可以关闭本窗口，进度会显示在顶栏"
+        )
 
-    def _on_progress(self, percent: int, message: str) -> None:
+    def _on_download_progress(self, task_id: int, percent: int, message: str) -> None:
+        task = self._download_task
+        if task is None or task.id != int(task_id):
+            return
         self.progress.setValue(max(0, min(100, percent)))
         self.progress_text.setText(message)
 
-    def _on_download_finished(self, success: bool, message: str, filename: str) -> None:
-        self._download_worker = None
-        pack_dir = self._pack_download_dir
+    def _on_download_finished(self, task: DownloadTask) -> None:
+        current = self._download_task
+        if current is None or current.id != task.id:
+            return
+        self._download_task = task
         self._pack_download_dir = None
         self._set_download_button(False)
-        if success:
+        filename = task.filename
+        if task.status == TASK_SUCCESS:
             self.progress.setValue(100)
             self.progress_text.setText(f"已保存 {filename}")
             self.main.toast(f"已下载 {filename}", "success")
-            if pack_dir is not None:
-                self._open_pack_import(pack_dir / filename)
+            if task.pack_mode:
+                self._open_pack_import(task.target / filename)
                 return
             if hasattr(self.main, "mods_page"):
                 self.main.mods_page.refresh_mods()
-        elif "取消" in str(message):
+        elif task.status == TASK_CANCELLED:
             self.progress_text.setText("下载已取消")
             self.main.toast("已取消下载，临时文件已清理", "info")
         else:
-            self.progress_text.setText(message)
-            self.main.toast(f"下载失败：{message}", "error")
+            self.progress_text.setText(task.error or task.message)
+            self.main.toast(f"下载失败：{task.error or task.message}", "error")
 
     def _open_pack_import(self, path: Path) -> None:
         if not path.is_file():

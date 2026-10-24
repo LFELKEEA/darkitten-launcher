@@ -364,14 +364,24 @@ def upload_tree(
 
     # 不传 base_tree，整棵树按本次文件列表重建，旧版本文件不会残留。
     tree = gh_api(gh, f"repos/{full}/git/trees", "POST", {"tree": entries})
-    commit = gh_api(
-        gh, f"repos/{full}/git/commits", "POST",
-        {
-            "message": message,
-            "tree": tree["sha"],
-            "parents": [parent] if parent else [],
-        },
-    )
+    print(f"upload {branch}: {len(entries)} files, tree {tree['sha']}", flush=True)
+    # 新建 tree 后立刻提交偶尔会触发 GitHub 的复制延迟（Tree SHA does not exist），短暂等待后重试。
+    commit: dict = {}
+    for attempt in range(4):
+        try:
+            commit = gh_api(
+                gh, f"repos/{full}/git/commits", "POST",
+                {
+                    "message": message,
+                    "tree": tree["sha"],
+                    "parents": [parent] if parent else [],
+                },
+            )
+            break
+        except SystemExit:
+            if attempt == 3:
+                raise
+            time.sleep(2 * (attempt + 1))
     if parent:
         gh_api(
             gh, f"repos/{full}/git/refs/heads/{branch}", "PATCH",

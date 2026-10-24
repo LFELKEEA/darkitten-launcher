@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from PySide6.QtCore import Qt, Signal
+from PySide6.QtGui import QImage, QPainter, QPainterPath, QPixmap
 from PySide6.QtWidgets import (
     QFileDialog,
     QFrame,
@@ -11,11 +12,12 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QPushButton,
     QScrollArea,
+    QSizePolicy,
     QVBoxLayout,
     QWidget,
 )
 
-from ...mods import ModInfo, list_mods, toggle_mod
+from ...mods import ModInfo, forget_mod_meta, list_mods, toggle_mod
 from ...workers import DeleteWorker
 from .. import icons
 from ..dialogs import ConfirmDialog
@@ -31,6 +33,62 @@ from ..widgets import (
 )
 
 
+class _ElidedLabel(QLabel):
+    def __init__(self, text: str = "", parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self._full_text = ""
+        self.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Preferred)
+        self.setText(text)
+
+    def setText(self, text: str) -> None:
+        self._full_text = " ".join(str(text or "").split())
+        self._refresh()
+
+    def full_text(self) -> str:
+        return self._full_text
+
+    def resizeEvent(self, event) -> None:
+        super().resizeEvent(event)
+        self._refresh()
+
+    def _refresh(self) -> None:
+        width = self.contentsRect().width()
+        if width <= 0:
+            QLabel.setText(self, self._full_text)
+            return
+        elided = self.fontMetrics().elidedText(
+            self._full_text, Qt.ElideRight, width
+        )
+        if QLabel.text(self) != elided:
+            QLabel.setText(self, elided)
+
+
+def _icon_pixmap(data: bytes, size: int = 38, radius: int = 9) -> QPixmap:
+    image = QImage()
+    if data:
+        image.loadFromData(data)
+    canvas = QImage(size, size, QImage.Format_ARGB32)
+    canvas.fill(Qt.transparent)
+    painter = QPainter(canvas)
+    painter.setRenderHint(QPainter.Antialiasing, True)
+    painter.setRenderHint(QPainter.SmoothPixmapTransform, True)
+    path = QPainterPath()
+    path.addRoundedRect(0.5, 0.5, size - 1, size - 1, radius, radius)
+    painter.setClipPath(path)
+    if not image.isNull():
+        scaled = image.scaled(
+            size,
+            size,
+            Qt.KeepAspectRatioByExpanding,
+            Qt.SmoothTransformation,
+        )
+        painter.drawImage(
+            (size - scaled.width()) // 2, (size - scaled.height()) // 2, scaled
+        )
+    painter.end()
+    return QPixmap.fromImage(canvas)
+
+
 class ModRow(QFrame):
     toggled = Signal(object, bool)
     delete_requested = Signal(object)
@@ -40,19 +98,25 @@ class ModRow(QFrame):
         self.mod = mod
         self.setObjectName("SelectRow")
         self.setAttribute(Qt.WA_StyledBackground, True)
-        self.setFixedHeight(64)
+        self.setFixedHeight(82)
 
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(13, 8, 13, 8)
+        layout.setContentsMargins(13, 7, 13, 7)
         layout.setSpacing(11)
 
         icon_box = QLabel()
-        icon_box.setFixedSize(36, 36)
+        icon_box.setFixedSize(40, 40)
         icon_box.setAlignment(Qt.AlignCenter)
-        icon_box.setPixmap(icons.pixmap("cube", colors()["purple"], 21))
-        icon_box.setStyleSheet(
-            f"background: {colors()['purple_soft']}; border-radius: 9px;"
-        )
+        pixmap = _icon_pixmap(mod.icon_bytes, 40, 10)
+        if pixmap.isNull() or not mod.icon_bytes:
+            icon_box.setPixmap(icons.pixmap("cube", colors()["purple"], 22))
+            icon_box.setStyleSheet(
+                f"background: {colors()['purple_soft']}; border-radius: 9px;"
+            )
+        else:
+            icon_box.setPixmap(pixmap)
+            icon_box.setStyleSheet("background: transparent;")
+        self.icon_box = icon_box
 
         info = QVBoxLayout()
         info.setSpacing(2)
@@ -60,20 +124,39 @@ class ModRow(QFrame):
         top.setSpacing(6)
         name = QLabel(mod.name)
         name.setStyleSheet("font-weight: 700; font-size: 12px;")
+        name.setToolTip(mod.name)
         top.addWidget(name)
         if mod.version:
             version = QLabel(mod.version)
             version.setObjectName("Tiny")
+            version.setToolTip(mod.version)
             top.addWidget(version)
         if mod.loader:
-            top.addWidget(badge(mod.loader, "purple" if mod.loader == "Fabric" else "orange"))
+            top.addWidget(
+                badge(
+                    mod.loader,
+                    "purple" if mod.loader == "Fabric" else "orange",
+                )
+            )
         if not mod.enabled:
             top.addWidget(badge("已禁用", "gray"))
         top.addStretch(1)
         info.addLayout(top)
 
-        meta = QLabel(f"{mod.filename} · {mod.size_text}")
+        intro = _ElidedLabel(mod.intro)
+        intro.setObjectName("Tiny")
+        tip = mod.intro
+        if mod.description and mod.description != mod.intro:
+            tip += "\n\n原版简介：" + mod.description
+        if mod.project_url:
+            tip += "\n项目地址：" + mod.project_url
+        intro.setToolTip(tip)
+        self.intro_label = intro
+        info.addWidget(intro)
+
+        meta = _ElidedLabel(f"{mod.filename} · {mod.size_text}")
         meta.setObjectName("Tiny")
+        meta.setToolTip(f"{mod.filename} · {mod.size_text}")
         info.addWidget(meta)
 
         switch = Switch()
@@ -289,7 +372,12 @@ class ModsPage(QWidget):
                 continue
             if self._filter == "disabled" and mod.enabled:
                 continue
-            if query and query not in mod.name.lower() and query not in mod.filename.lower():
+            if (
+                query
+                and query not in mod.name.lower()
+                and query not in mod.filename.lower()
+                and query not in mod.intro.lower()
+            ):
                 continue
             visible.append(mod)
 
@@ -358,6 +446,7 @@ class ModsPage(QWidget):
             return
         self.main.set_status(f"已删除 {mod.filename}", "success")
         self.main.toast(f"{mod.name} 已移入回收站", "success")
+        forget_mod_meta(mod.path.parent, mod.filename)
         self.refresh_mods()
 
     def _toggle_mod(self, mod: ModInfo, enabled: bool) -> None:

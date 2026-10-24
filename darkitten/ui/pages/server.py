@@ -5,7 +5,13 @@ from datetime import datetime
 from pathlib import Path
 
 from PySide6.QtCore import Qt, QTimer, QUrl, Signal
-from PySide6.QtGui import QDesktopServices
+from PySide6.QtGui import (
+    QDesktopServices,
+    QImage,
+    QPainter,
+    QPainterPath,
+    QPixmap,
+)
 from PySide6.QtWidgets import (
     QApplication,
     QComboBox,
@@ -109,6 +115,47 @@ class _ElidedLabel(QLabel):
             QLabel.setText(self, elided)
 
 
+SERVER_ICON_NAMES = ("server-icon.png", "icon.png")
+
+
+def _server_icon_pixmap(
+    info: ServerInfo, size: int, radius: int
+) -> QPixmap | None:
+    """读取服务端根目录的图标；没有图标时返回 None，由调用方使用通用图标。"""
+    path = None
+    for name in SERVER_ICON_NAMES:
+        candidate = info.path / name
+        if candidate.is_file():
+            path = candidate
+            break
+    if path is None:
+        return None
+    image = QImage(str(path))
+    if image.isNull():
+        return None
+    canvas = QImage(size, size, QImage.Format_ARGB32)
+    canvas.fill(Qt.transparent)
+    painter = QPainter(canvas)
+    painter.setRenderHint(QPainter.Antialiasing, True)
+    painter.setRenderHint(QPainter.SmoothPixmapTransform, True)
+    clip = QPainterPath()
+    clip.addRoundedRect(0.5, 0.5, size - 1, size - 1, radius, radius)
+    painter.setClipPath(clip)
+    scaled = image.scaled(
+        size,
+        size,
+        Qt.KeepAspectRatioByExpanding,
+        Qt.SmoothTransformation,
+    )
+    painter.drawImage(
+        (size - scaled.width()) // 2,
+        (size - scaled.height()) // 2,
+        scaled,
+    )
+    painter.end()
+    return QPixmap.fromImage(canvas)
+
+
 class ServerRow(QFrame):
     clicked = Signal(str)
 
@@ -170,7 +217,8 @@ class ServerRow(QFrame):
 
     def refresh_theme(self) -> None:
         color = KIND_COLORS.get(self.info.kind, colors()["accent"])
-        self.icon_label.setPixmap(icons.pixmap("server", color, 22))
+        icon = _server_icon_pixmap(self.info, 38, 9)
+        self.icon_label.setPixmap(icon or icons.pixmap("server", color, 22))
         self.icon_label.setStyleSheet(
             f"background: {colors()['card2']}; border-radius: 9px;"
         )
@@ -849,6 +897,15 @@ class ServerPage(QWidget):
         self.tab_stack.setCurrentIndex(0)
         self.tabs.set_value("console")
 
+    def _apply_detail_icon(self, info: ServerInfo) -> None:
+        icon = _server_icon_pixmap(info, 46, 11)
+        self.detail_icon.setPixmap(
+            icon
+            or icons.pixmap(
+                "server", KIND_COLORS.get(info.kind, colors()["accent"]), 26
+            )
+        )
+
     def _show_detail(self, info: ServerInfo) -> None:
         self.detail_name.setText(info.name)
         self.type_badge.setText(info.type_name)
@@ -856,11 +913,7 @@ class ServerPage(QWidget):
         repolish(self.type_badge)
         self.version_badge.setText(info.display_version)
         self.path_label.setText(str(info.path))
-        self.detail_icon.setPixmap(
-            icons.pixmap(
-                "server", KIND_COLORS.get(info.kind, colors()["accent"]), 26
-            )
-        )
+        self._apply_detail_icon(info)
         self.detail_icon.setStyleSheet(
             f"background: {colors()['accent_soft']}; border-radius: 11px;"
         )
@@ -1604,6 +1657,7 @@ class ServerPage(QWidget):
                 repolish(label)
         info = self._current_info()
         if info is not None:
+            self._apply_detail_icon(info)
             self.detail_icon.setStyleSheet(
                 f"background: {colors()['accent_soft']}; border-radius: 11px;"
             )
