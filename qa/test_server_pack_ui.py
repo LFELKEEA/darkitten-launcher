@@ -171,13 +171,33 @@ def main() -> None:
             def open_version_import(self, path=None) -> None:
                 self.versions.append(Path(path))
 
+            def open_local_import(self, paths=None) -> None:
+                # 1.9.17 起拖拽统一走本地导入入口，这里保留真实的类型识别。
+                from darkitten.local_import import detect_local_import
+
+                raw = paths if isinstance(paths, (list, tuple)) else [paths]
+                for item in raw:
+                    info = detect_local_import(Path(item))
+                    if info.kind == "server":
+                        self.open_server_import(info.path)
+                    elif info.kind == "version_zip":
+                        self.open_version_import(info.path)
+
         router = Router()
         MainWindow._handle_dropped_archives(router, [source_path])
         MainWindow._handle_dropped_archives(router, [export_zip])
         version_zip = root / "version.zip"
+        version_json = {
+            "id": "1.21.1",
+            "type": "release",
+            "mainClass": "net.minecraft.client.main.Main",
+            "assets": "1.21",
+            "assetIndex": {"id": "1.21", "url": "http://example.invalid/a.json"},
+            "javaVersion": {"majorVersion": 21},
+        }
         with zipfile.ZipFile(version_zip, "w") as zf:
-            zf.writestr("versions/1.21.1/1.21.1.json", "{}")
-            zf.writestr("1.21.1.jar", "jar")
+            zf.writestr("versions/1.21.1/1.21.1.json", json.dumps(version_json))
+            zf.writestr("versions/1.21.1/1.21.1.jar", "jar")
         MainWindow._handle_dropped_archives(router, [version_zip])
         ok &= check(
             "drag_server_folder",

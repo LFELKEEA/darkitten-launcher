@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import shutil
 from pathlib import Path
 
 from PySide6.QtCore import Qt, Signal
@@ -170,10 +169,11 @@ class ModsPage(QWidget):
         download_btn.clicked.connect(self.main.open_mod_download)
         toolbar_layout.addWidget(download_btn)
 
-        add_btn = QPushButton("添加 Mod")
+        add_btn = QPushButton("添加内容")
         add_btn.setObjectName("Secondary")
         add_btn.setIcon(icons.icon("plus", colors()["text2"], 15))
         add_btn.setCursor(Qt.PointingHandCursor)
+        add_btn.setToolTip("导入 Mod、材质包、光影包或内容合集")
         add_btn.clicked.connect(self.add_mods)
         toolbar_layout.addWidget(add_btn)
 
@@ -215,7 +215,10 @@ class ModsPage(QWidget):
         self.empty_title = QLabel("抽屉里还没有 Mod")
         self.empty_title.setAlignment(Qt.AlignCenter)
         self.empty_title.setStyleSheet("font-size: 15px; font-weight: 700;")
-        empty_sub = QLabel("右上角可以在线叼回 Mod，也可以把 .jar 直接拖进来。")
+        empty_sub = QLabel(
+            "右上角可以在线叼回内容，也可以把 Mod .jar、材质 / 光影 ZIP "
+            "或内容合集直接拖进来。"
+        )
         empty_sub.setAlignment(Qt.AlignCenter)
         empty_sub.setObjectName("Muted")
         empty_btn = QPushButton("打开 mods 文件夹")
@@ -380,39 +383,18 @@ class ModsPage(QWidget):
         self.main.open_path(mods_dir)
 
     def add_mods(self) -> None:
-        mods_dir = self._mods_dir()
         files, _ = QFileDialog.getOpenFileNames(
             self,
-            "选择 Mod 文件",
-            str(mods_dir),
-            "Mod 文件 (*.jar *.jar.disabled)",
+            "选择要导入的本地内容",
+            str(self._mods_dir()),
+            (
+                "Mod / 材质 / 光影 (*.jar *.litemod *.zip "
+                "*.jar.disabled *.litemod.disabled);;所有文件 (*)"
+            ),
         )
         if not files:
             return
-        try:
-            mods_dir.mkdir(parents=True, exist_ok=True)
-        except OSError as exc:
-            self.main.toast(f"无法创建 mods 文件夹：{exc}", "error")
-            return
-
-        added = 0
-        skipped = 0
-        for raw in files:
-            src = Path(raw)
-            dest = mods_dir / src.name
-            if dest.exists():
-                skipped += 1
-                continue
-            try:
-                shutil.copy2(src, dest)
-                added += 1
-            except OSError:
-                skipped += 1
-        if added:
-            self.main.toast(f"已添加 {added} 个 Mod" + (f"，跳过 {skipped} 个" if skipped else ""), "success")
-        else:
-            self.main.toast("没有添加新的 Mod（同名文件已存在）", "info")
-        self.refresh_mods()
+        self.main.open_local_import([Path(item) for item in files])
 
     def on_show(self) -> None:
         self._update_version_label()

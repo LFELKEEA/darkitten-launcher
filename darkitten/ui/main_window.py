@@ -292,14 +292,14 @@ class MainWindow(QWidget):
 
         self.toast_widget = Toast(self)
         self.drop_hint = QLabel(
-            "松开猫爪，把包放进猫窝\n"
-            "版本包 .zip / .dklpack / .mrpack\n"
-            "服务端 ZIP 或文件夹", self
+            "松开猫爪，把文件放进猫窝\n"
+            "版本 ZIP / 版本文件夹 · 整合包 · 服务端\n"
+            "Mod .jar · 材质 / 光影 ZIP（可多选）", self
         )
         self.drop_hint.setAlignment(Qt.AlignCenter)
         self.drop_hint.setWordWrap(True)
         self.drop_hint.setAttribute(Qt.WA_TransparentForMouseEvents, True)
-        self.drop_hint.setFixedSize(400, 100)
+        self.drop_hint.setFixedSize(420, 108)
         self.drop_hint.setStyleSheet(
             "background: rgba(20, 12, 18, 238);"
             f" border: 2px dashed {colors()['accent']};"
@@ -342,7 +342,7 @@ class MainWindow(QWidget):
         self.nav_buttons: dict[str, NavButton] = {}
         nav_specs = [
             ("home", "启动", "play", "#E23A5E"),
-            ("download", "下载", "download", "#E8683F"),
+            ("download", "游戏版本", "download", "#E8683F"),
             ("loaders", "加载器", "package", "#D99A3D"),
             ("mods", "模组", "cube", "#B15BE0"),
             ("skin", "皮肤", "shirt", "#F06292"),
@@ -620,19 +620,7 @@ class MainWindow(QWidget):
         if self.install_active or self.launch_active:
             self.toast("有任务正在进行，稍等一下喵", "info")
             return
-        if len(paths) > 1:
-            self.toast(f"一次只处理一个包，先处理 {paths[0].name}", "info")
-        source = paths[0]
-        from ..server_pack import looks_like_server_pack
-
-        if source.is_dir() or source.suffix.lower() == ".zip":
-            if looks_like_server_pack(source):
-                self.open_server_import(source)
-                return
-            if source.is_dir():
-                self.toast("这个文件夹不像服务端文件夹，猫猫没找到服务端文件", "error")
-                return
-        self.open_version_import(source)
+        self.open_local_import(paths)
 
     def nativeEvent(self, eventType, message):
         if sys.platform == "win32" and eventType == b"windows_generic_MSG":
@@ -1430,6 +1418,57 @@ class MainWindow(QWidget):
         from .pack_dialog import PackImportDialog
 
         dialog = PackImportDialog(self, initial_path=path)
+        dialog.exec()
+        if dialog.imported_version:
+            self.select_version(dialog.imported_version)
+
+    def open_local_import(
+        self,
+        path: str | Path | list[str | Path] | None = None,
+        *,
+        initial_paths: list[str | Path] | None = None,
+    ) -> None:
+        """统一识别本地文件，再转到版本、整合包、服务端或内容导入。"""
+        if self.install_active or self.launch_active:
+            self.toast("有任务正在进行，稍等一下喵", "info")
+            return
+        from ..local_import import LocalImportError, detect_local_import
+        from .local_import_dialog import LocalImportDialog
+
+        raw: list[str | Path] = []
+        if isinstance(path, (list, tuple)):
+            raw.extend(path)
+        elif path is not None:
+            raw.append(path)
+        if initial_paths:
+            raw.extend(initial_paths)
+        sources = [Path(item) for item in raw if str(item or "").strip()]
+        if not sources:
+            dialog = LocalImportDialog(self)
+            dialog.exec()
+            return
+        try:
+            infos = [detect_local_import(item) for item in sources]
+        except LocalImportError as exc:
+            self.toast(str(exc), "error")
+            return
+
+        if len(infos) == 1:
+            info = infos[0]
+            if info.kind == "server":
+                self.open_server_import(info.path)
+                return
+            if info.kind == "modpack":
+                self.open_pack_import(info.path)
+                return
+            if info.kind == "version_zip":
+                self.open_version_import(info.path)
+                return
+        elif any(info.kind != "content" for info in infos):
+            self.toast("一次可以导入多个 Mod / 材质 / 光影，但版本包和服务端要单独导入", "info")
+            return
+
+        dialog = LocalImportDialog(self, initial_paths=sources)
         dialog.exec()
         if dialog.imported_version:
             self.select_version(dialog.imported_version)

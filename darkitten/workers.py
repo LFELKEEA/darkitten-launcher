@@ -35,6 +35,7 @@ from .packs import (
 from .modrinth_pack import import_modrinth_pack
 from .curseforge_pack import import_curseforge_pack
 from .version_zip import import_version_zip
+from .local_import import import_version_folder, install_local_contents
 from .migration import (
     MigrationCancelled,
     MigrationError,
@@ -768,6 +769,127 @@ class VersionZipImportWorker(QObject):
                 f"已导入 {result.imported_files} 个文件"
                 + (
                     f"，跳过 {result.skipped_files} 个已存在文件"
+                    if result.skipped_files
+                    else ""
+                ),
+                result.version_id,
+            )
+
+
+class LocalContentImportWorker(QObject):
+    progress = Signal(int, str)
+    log_line = Signal(str)
+    finished = Signal(bool, str, object)
+
+    def __init__(
+        self,
+        sources: list[Path],
+        game_dir: Path,
+        version_id: str,
+        isolated: bool = True,
+        parent: QObject | None = None,
+    ) -> None:
+        super().__init__(parent)
+        self.sources = [Path(item) for item in sources]
+        self.game_dir = Path(game_dir)
+        self.version_id = version_id
+        self.isolated = bool(isolated)
+        self.cancel_event = threading.Event()
+
+    def start(self) -> None:
+        threading.Thread(target=self._run, daemon=True).start()
+
+    def cancel(self) -> None:
+        self.cancel_event.set()
+
+    def _run(self) -> None:
+        try:
+            result = install_local_contents(
+                self.sources,
+                self.game_dir,
+                self.version_id,
+                isolated=self.isolated,
+                progress_cb=lambda p, m: self.progress.emit(p, m),
+                log_cb=lambda m: self.log_line.emit(m),
+                cancel_event=self.cancel_event,
+            )
+        except Exception as exc:
+            if self.cancel_event.is_set():
+                self.finished.emit(False, "导入已取消", None)
+            else:
+                self.finished.emit(False, str(exc), None)
+        else:
+            self.finished.emit(
+                True,
+                f"已导入 {result.imported_files} 个文件"
+                + (
+                    f"，跳过 {result.skipped_files} 个同名文件"
+                    if result.skipped_files
+                    else ""
+                ),
+                result,
+            )
+
+
+class VersionFolderImportWorker(QObject):
+    progress = Signal(int, str)
+    log_line = Signal(str)
+    finished = Signal(bool, str, str)
+
+    def __init__(
+        self,
+        folder: Path,
+        game_dir: Path,
+        version_id: str = "",
+        candidate_json: str | Path = "",
+        complete: bool = True,
+        isolated: bool = True,
+        source: str = "official",
+        threads: int = 8,
+        parent: QObject | None = None,
+    ) -> None:
+        super().__init__(parent)
+        self.folder = Path(folder)
+        self.game_dir = Path(game_dir)
+        self.version_id = version_id
+        self.candidate_json = str(candidate_json or "")
+        self.complete = bool(complete)
+        self.isolated = bool(isolated)
+        self.source = source
+        self.threads = max(1, min(16, int(threads)))
+        self.cancel_event = threading.Event()
+
+    def start(self) -> None:
+        threading.Thread(target=self._run, daemon=True).start()
+
+    def cancel(self) -> None:
+        self.cancel_event.set()
+
+    def _run(self) -> None:
+        try:
+            result = import_version_folder(
+                self.folder,
+                self.game_dir,
+                self.version_id,
+                candidate_json=self.candidate_json,
+                complete=self.complete,
+                source=self.source,
+                threads=self.threads,
+                progress_cb=lambda p, m: self.progress.emit(p, m),
+                log_cb=lambda m: self.log_line.emit(m),
+                cancel_event=self.cancel_event,
+            )
+        except Exception as exc:
+            if self.cancel_event.is_set():
+                self.finished.emit(False, "导入已取消", "")
+            else:
+                self.finished.emit(False, str(exc), "")
+        else:
+            self.finished.emit(
+                True,
+                f"已直接复制 {result.imported_files} 个文件"
+                + (
+                    f"，跳过 {result.skipped_files} 个已有依赖文件"
                     if result.skipped_files
                     else ""
                 ),

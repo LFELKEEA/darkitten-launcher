@@ -47,22 +47,24 @@ from . import icons, theme
 
 
 def local_transfer_paths(mime) -> list[Path]:
-    """从拖拽数据里取出本地压缩包与服务端文件夹。"""
+    """从拖拽数据里取出可导入的本地文件与文件夹。"""
     if mime is None or not mime.hasUrls():
         return []
+    accepted_suffixes = (".zip", ".dklpack", ".mrpack", ".jar", ".litemod")
+    accepted_disabled = (".jar.disabled", ".litemod.disabled")
     paths: list[Path] = []
     seen: set[str] = set()
     for url in mime.urls():
         if not url.isLocalFile():
             continue
         path = Path(url.toLocalFile())
+        lowered = path.name.lower()
         try:
             if path.is_dir():
                 pass
-            elif path.is_file() and path.suffix.lower() in (
-                ".zip",
-                ".dklpack",
-                ".mrpack",
+            elif path.is_file() and (
+                path.suffix.lower() in accepted_suffixes
+                or lowered.endswith(accepted_disabled)
             ):
                 pass
             else:

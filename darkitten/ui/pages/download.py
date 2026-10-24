@@ -137,11 +137,11 @@ class DownloadPage(QWidget):
         header = QHBoxLayout()
         titles = QVBoxLayout()
         titles.setSpacing(2)
-        title = QLabel("猫猫的版本仓库")
+        title = QLabel("猫猫的游戏版本仓库")
         title.setObjectName("PageTitle")
         sub = QLabel(
-            "把 Mojang 原版 Minecraft 叼回来；缺的依赖和资源，本喵顺手补齐。"
-            "ZIP 版本包和 Modrinth 整合包也可以直接拖进窗口。"
+            "在线安装 Mojang 原版，或把版本 ZIP / 版本文件夹直接拖进来。"
+            "本地文件会直接落进对应目录，不再绕临时文件夹。"
         )
         sub.setObjectName("Muted")
         sub.setWordWrap(True)
@@ -149,6 +149,15 @@ class DownloadPage(QWidget):
         titles.addWidget(sub)
         header.addLayout(titles, 1)
         header.addWidget(ChibiCompanion(60, "download"), 0, Qt.AlignTop)
+        local_btn = QPushButton("本地导入")
+        local_btn.setObjectName("Secondary")
+        local_btn.setIcon(icons.icon("folder", colors()["accent"], 15))
+        local_btn.setCursor(Qt.PointingHandCursor)
+        local_btn.setToolTip(
+            "导入版本文件夹、版本 ZIP、Mod、材质、光影、整合包或服务端"
+        )
+        local_btn.clicked.connect(lambda: self.main.open_local_import())
+        header.addWidget(local_btn)
         pack_btn = QPushButton("导入 ZIP / 整合包")
         pack_btn.setObjectName("Secondary")
         pack_btn.setIcon(icons.icon("package", colors()["accent"], 15))

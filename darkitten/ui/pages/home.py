@@ -31,6 +31,7 @@ from ..widgets import (
     Avatar,
     Card,
     HeroArt,
+    SegmentedControl,
     VersionRow,
     badge,
     colors,
@@ -39,6 +40,69 @@ from ..widgets import (
     repolish,
     transparent_children,
 )
+
+
+class LoaderOverviewRow(QFrame):
+    clicked = Signal(str)
+
+    def __init__(self, profile, bound_count: int, parent=None) -> None:
+        super().__init__(parent)
+        self.profile = profile
+        self.setObjectName("SelectRow")
+        self.setAttribute(Qt.WA_StyledBackground, True)
+        self.setCursor(Qt.PointingHandCursor)
+        self.setFixedHeight(60)
+        self.setToolTip("打开加载器工坊，分配游戏版本或升级加载器")
+
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(12, 8, 12, 8)
+        layout.setSpacing(11)
+        accent = LOADER_COLORS.get(profile.loader or "", colors()["orange"])
+        if profile.error:
+            accent = colors()["red"]
+        mark = QLabel()
+        mark.setFixedSize(34, 34)
+        mark.setAlignment(Qt.AlignCenter)
+        mark.setPixmap(icons.pixmap("package", accent, 22))
+
+        info = QVBoxLayout()
+        info.setSpacing(2)
+        top = QHBoxLayout()
+        top.setSpacing(6)
+        name = QLabel(profile.id)
+        name.setStyleSheet("font-weight: 700; font-size: 13px;")
+        top.addWidget(name)
+        top.addWidget(badge(profile.loader or "加载器", "purple"))
+        if profile.loader_version:
+            top.addWidget(badge(f"v{profile.loader_version}", "blue"))
+        if profile.error:
+            top.addWidget(badge("损坏", "red"))
+        top.addStretch(1)
+        info.addLayout(top)
+        bits = [f"基础版本 {profile.base_id or '未知'}"]
+        if profile.java_major:
+            bits.append(f"Java {profile.java_major}+")
+        bits.append(f"{bound_count} 个版本已绑定")
+        meta = QLabel(" · ".join(bits))
+        meta.setObjectName("Tiny")
+        info.addWidget(meta)
+
+        layout.addWidget(mark)
+        layout.addLayout(info, 1)
+        count_badge = badge(
+            f"{bound_count} 个绑定" if bound_count else "未分配",
+            "green" if bound_count else "gray",
+        )
+        layout.addWidget(count_badge)
+        chevron = QLabel()
+        chevron.setPixmap(icons.pixmap("chevron-right", colors()["muted"], 15))
+        layout.addWidget(chevron)
+        transparent_children(self)
+
+    def mouseReleaseEvent(self, event) -> None:
+        if event.button() == Qt.LeftButton:
+            self.clicked.emit(self.profile.id)
+        super().mouseReleaseEvent(event)
 
 
 class QuickAction(QFrame):
@@ -95,6 +159,8 @@ class HomePage(QWidget):
         self.main = main
         self._selected = ""
         self._closing = False
+        self._view = "games"
+        self._game_versions: list[VersionSummary] = []
         self._version_rows: dict[str, VersionRow] = {}
         self._build()
         self.main.versions_changed.connect(self.refresh_versions)
@@ -194,34 +260,48 @@ class HomePage(QWidget):
 
         header = QHBoxLayout()
         header.setSpacing(8)
-        title = QLabel("猫窝里的版本")
+        title = QLabel("猫窝档案")
         title.setObjectName("H2")
         self.version_count = badge("0 个版本", "blue")
+        self.version_tabs = SegmentedControl()
+        self.version_tabs.add_item("游戏版本", "games")
+        self.version_tabs.add_item("加载器", "loaders")
+        self.version_tabs.changed.connect(self._on_view_changed)
         header.addWidget(title)
         header.addWidget(self.version_count)
+        header.addSpacing(4)
+        header.addWidget(self.version_tabs)
         header.addStretch(1)
-        import_btn = icon_button("import", "导入版本包 / 整合包（.zip / .dklpack / .mrpack）")
-        import_btn.clicked.connect(self.main.open_version_import)
-        migrate_btn = icon_button("migrate", "迁移版本 / 升级加载器")
-        migrate_btn.clicked.connect(
+
+        self.import_btn = icon_button(
+            "import", "导入本地文件（版本包 / 版本文件夹 / Mod / 材质 / 光影 / 整合包）"
+        )
+        self.import_btn.clicked.connect(lambda: self.main.open_local_import())
+        self.loader_install_btn = icon_button("download", "安装一个加载器")
+        self.loader_install_btn.clicked.connect(self.main.open_loader_dialog)
+        self.loader_install_btn.setVisible(False)
+        self.migrate_btn = icon_button("migrate", "迁移版本 / 升级加载器")
+        self.migrate_btn.clicked.connect(
             lambda: self.main.open_migration_dialog(self._selected)
         )
-        refresh_btn = icon_button("refresh", "刷新版本列表")
-        refresh_btn.clicked.connect(self.main.refresh_versions)
+        self.refresh_btn = icon_button("refresh", "刷新列表")
+        self.refresh_btn.clicked.connect(self.main.refresh_versions)
         folder_btn = icon_button("folder", "打开游戏目录")
         folder_btn.clicked.connect(self.main.open_game_dir)
-        header.addWidget(import_btn)
-        header.addWidget(migrate_btn)
-        header.addWidget(refresh_btn)
+        header.addWidget(self.import_btn)
+        header.addWidget(self.loader_install_btn)
+        header.addWidget(self.migrate_btn)
+        header.addWidget(self.refresh_btn)
         header.addWidget(folder_btn)
         layout.addLayout(header)
 
-        tip = QLabel(
+        self.tip_label = QLabel(
             "双击启动 · 齿轮选择原版/加载器 · 交换箭头迁移存档/Mod · "
-            "纸箱按钮打包 · 垃圾桶删除版本 · 也可以直接把 .zip / .dklpack / .mrpack 拖进窗口"
+            "纸箱按钮打包 · 垃圾桶删除版本 · 文件可以直接拖进窗口"
         )
-        tip.setObjectName("Tiny")
-        layout.addWidget(tip)
+        self.tip_label.setObjectName("Tiny")
+        self.tip_label.setWordWrap(True)
+        layout.addWidget(self.tip_label)
 
         self.version_scroll = QScrollArea()
         self.version_scroll.setWidgetResizable(True)
@@ -240,30 +320,34 @@ class HomePage(QWidget):
         empty_layout = QVBoxLayout(self.empty_box)
         empty_layout.setContentsMargins(20, 18, 20, 18)
         empty_layout.setSpacing(8)
-        empty_title = QLabel("还没有可以住的猫窝")
-        empty_title.setStyleSheet("font-weight: 700;")
-        empty_sub = QLabel(
-            "前往“下载”页面安装原版游戏，或导入 ZIP 版本包 / DKL 整合包 / "
-            "Modrinth 整合包，也可以直接把压缩包拖进窗口。"
-        )
-        empty_sub.setObjectName("Tiny")
-        empty_sub.setWordWrap(True)
+        self.empty_title = QLabel("还没有可以住的猫窝")
+        self.empty_title.setStyleSheet("font-weight: 700;")
+        self.empty_sub = QLabel("")
+        self.empty_sub.setObjectName("Tiny")
+        self.empty_sub.setWordWrap(True)
         empty_actions = QHBoxLayout()
         empty_actions.setSpacing(8)
-        download_btn = QPushButton("前往下载")
-        download_btn.setObjectName("Soft")
-        download_btn.setCursor(Qt.PointingHandCursor)
-        download_btn.clicked.connect(lambda: self.main.switch_page("download"))
-        import_btn = QPushButton("导入版本包")
-        import_btn.setObjectName("Soft")
-        import_btn.setCursor(Qt.PointingHandCursor)
-        import_btn.setIcon(icons.icon("package", colors()["accent"], 15))
-        import_btn.clicked.connect(self.main.open_version_import)
-        empty_actions.addWidget(download_btn)
-        empty_actions.addWidget(import_btn)
+        self.empty_download_btn = QPushButton("前往游戏版本")
+        self.empty_download_btn.setObjectName("Soft")
+        self.empty_download_btn.setCursor(Qt.PointingHandCursor)
+        self.empty_download_btn.clicked.connect(lambda: self.main.switch_page("download"))
+        self.empty_import_btn = QPushButton("导入版本包")
+        self.empty_import_btn.setObjectName("Soft")
+        self.empty_import_btn.setCursor(Qt.PointingHandCursor)
+        self.empty_import_btn.setIcon(icons.icon("package", colors()["accent"], 15))
+        self.empty_import_btn.clicked.connect(lambda: self.main.open_local_import())
+        self.empty_loader_btn = QPushButton("安装加载器")
+        self.empty_loader_btn.setObjectName("Soft")
+        self.empty_loader_btn.setCursor(Qt.PointingHandCursor)
+        self.empty_loader_btn.setIcon(icons.icon("download", colors()["accent"], 15))
+        self.empty_loader_btn.clicked.connect(self.main.open_loader_dialog)
+        self.empty_loader_btn.setVisible(False)
+        empty_actions.addWidget(self.empty_download_btn)
+        empty_actions.addWidget(self.empty_import_btn)
+        empty_actions.addWidget(self.empty_loader_btn)
         empty_actions.addStretch(1)
-        empty_layout.addWidget(empty_title)
-        empty_layout.addWidget(empty_sub)
+        empty_layout.addWidget(self.empty_title)
+        empty_layout.addWidget(self.empty_sub)
         empty_layout.addLayout(empty_actions)
         self.empty_box.setVisible(False)
         layout.addWidget(self.empty_box)
@@ -330,7 +414,7 @@ class HomePage(QWidget):
 
         actions = [
             ("folder", "游戏目录", "打开游戏文件夹", "#E23A5E", self.main.open_game_dir),
-            ("package", "导入版本包", "ZIP 版本或 DKL 整合包", "#E8683F", self.main.open_version_import),
+            ("package", "导入本地文件", "版本与 Mod", "#E8683F", self.main.open_local_import),
             ("migrate", "版本迁移", "搬走存档与 Mod", "#3FB3AA", lambda: self.main.open_migration_dialog(self._selected)),
             ("users", "好友与联机", "邀请卡直达房间", "#3FB3AA", self.main.open_social_dialog),
             ("cube", "模组管理", "管理已装 Mod", "#B15BE0", lambda: self.main.switch_page("mods")),
@@ -349,44 +433,73 @@ class HomePage(QWidget):
     # ------------------------------------------------------------------
     def refresh_versions(self) -> None:
         versions: list[VersionSummary] = list(self.main.game_version_summaries())
-        self.version_count.setText(f"{len(versions)} 个版本")
+        self._game_versions = versions
 
         had_selection = self._selected
-        while self.version_layout.count() > 1:
-            item = self.version_layout.takeAt(0)
-            widget = item.widget()
-            if widget:
-                widget.deleteLater()
-
-        self._version_rows.clear()
-        if not versions:
-            self.empty_box.setVisible(True)
-            self.version_scroll.setVisible(False)
+        if versions:
+            valid_ids = {v.id for v in versions}
+            target = had_selection if had_selection in valid_ids else ""
+            if not target and self.main.config.last_version in valid_ids:
+                target = self.main.config.last_version
+            if not target:
+                target = versions[0].id
+            self._selected = target
+            self.main.selected_version = target
+            self.main.config.last_version = target
+            self.main.config.save()
+        else:
             self._selected = ""
             self.main.selected_version = ""
             self.main.selection_changed.emit("")
-            self.hero_sub.setText("还没有版本可玩，先去仓库叼一个回来吧。")
+            self.hero_sub.setText("还没有版本可玩，先去游戏版本仓库叼一个回来吧。")
             self.hero_status.setText("● 猫窝是空的")
             self.hero_status.setStyleSheet(
                 "color: rgba(255,220,180,220); background: rgba(255,255,255,26);"
                 "border-radius: 9px; padding: 5px 10px; font-size: 11px; font-weight: 600;"
             )
             self.launch_btn.setEnabled(False)
+
+        self._render_current_view()
+        if self._selected and self._view == "loaders":
+            self._update_hero()
+
+    def _on_view_changed(self, value: str) -> None:
+        self._view = value if value in ("games", "loaders") else "games"
+        self._render_current_view()
+
+    def _render_current_view(self) -> None:
+        while self.version_layout.count() > 1:
+            item = self.version_layout.takeAt(0)
+            widget = item.widget()
+            if widget:
+                widget.deleteLater()
+        self._version_rows.clear()
+        if self._view == "loaders":
+            self._render_loaders()
+        else:
+            self._render_games()
+
+    def _render_games(self) -> None:
+        versions = self._game_versions
+        self.version_count.setText(f"{len(versions)} 个版本")
+        self.import_btn.setVisible(True)
+        self.loader_install_btn.setVisible(False)
+        self.tip_label.setText(
+            "双击启动 · 齿轮选择原版/加载器 · 交换箭头迁移存档/Mod · "
+            "纸箱按钮打包 · 垃圾桶删除版本 · 文件可以直接拖进窗口"
+        )
+        if not versions:
+            self._show_empty(
+                "还没有可以住的猫窝",
+                "前往“游戏版本”页面安装原版游戏，或导入版本 ZIP / 版本文件夹 / "
+                "整合包，也可以直接把文件拖进窗口。",
+                mode="games",
+            )
             return
 
         self.empty_box.setVisible(False)
         self.version_scroll.setVisible(True)
-
-        valid_ids = {v.id for v in versions}
-        target = had_selection if had_selection in valid_ids else ""
-        if not target and self.main.config.last_version in valid_ids:
-            target = self.main.config.last_version
-        if not target:
-            target = versions[0].id
-        self._selected = target
-        self.main.selected_version = target
-
-        row_widgets: list[VersionRow] = []
+        target = self._selected
         for summary in versions:
             profile = self.main.loader_profile_for(summary.id)
             bound_loader = ""
@@ -405,13 +518,66 @@ class HomePage(QWidget):
                 lambda version_id: self.main.open_migration_dialog(version_id)
             )
             row.settings_requested.connect(self.main.open_version_settings)
-            row_widgets.append(row)
             self._version_rows[summary.id] = row
             self.version_layout.insertWidget(self.version_layout.count() - 1, row)
+        if target:
+            self._update_hero()
 
-        self._update_hero()
-        self.main.config.last_version = target
-        self.main.config.save()
+    def _render_loaders(self) -> None:
+        profiles = list(self.main.loader_profiles())
+        self.version_count.setText(f"{len(profiles)} 个加载器")
+        self.import_btn.setVisible(False)
+        self.loader_install_btn.setVisible(True)
+        self.tip_label.setText(
+            "加载器住在独立的配置目录里。点一下加载器就能进入加载器工坊，"
+            "勾选要让哪些游戏版本使用它；游戏版本本身仍然保持原版，可随时切回。"
+        )
+        if not profiles:
+            self._show_empty(
+                "还没有加载器配置",
+                "先安装一个 Fabric、Forge 或 NeoForge，再去加载器工坊分配游戏版本。"
+                "加载器和原版版本分开管理，不会把客户端文件混在一起。",
+                mode="loaders",
+            )
+            return
+
+        self.empty_box.setVisible(False)
+        self.version_scroll.setVisible(True)
+        for profile in profiles:
+            bound = sum(
+                1
+                for game in self.main.compatible_game_versions(profile.id)
+                if self.main.config.loader_for(game.id) == profile.id
+            )
+            row = LoaderOverviewRow(profile, bound)
+            row.clicked.connect(lambda _profile_id: self.main.switch_page("loaders"))
+            self.version_layout.insertWidget(self.version_layout.count() - 1, row)
+
+        hint = QFrame()
+        hint.setObjectName("SoftCard")
+        hint.setAttribute(Qt.WA_StyledBackground, True)
+        hint_layout = QHBoxLayout(hint)
+        hint_layout.setContentsMargins(12, 8, 12, 8)
+        hint_layout.setSpacing(8)
+        text = QLabel("加载器只负责启动方式，Mod、存档、材质和光影仍然住在游戏版本自己的目录里。")
+        text.setObjectName("Tiny")
+        text.setWordWrap(True)
+        hint_layout.addWidget(text, 1)
+        manage = QPushButton("打开加载器工坊")
+        manage.setObjectName("Soft")
+        manage.setCursor(Qt.PointingHandCursor)
+        manage.clicked.connect(lambda: self.main.switch_page("loaders"))
+        hint_layout.addWidget(manage)
+        self.version_layout.insertWidget(self.version_layout.count() - 1, hint)
+
+    def _show_empty(self, title: str, subtitle: str, mode: str) -> None:
+        self.empty_title.setText(title)
+        self.empty_sub.setText(subtitle)
+        self.empty_download_btn.setVisible(mode == "games")
+        self.empty_import_btn.setVisible(mode == "games")
+        self.empty_loader_btn.setVisible(mode == "loaders")
+        self.empty_box.setVisible(True)
+        self.version_scroll.setVisible(False)
 
     def _launch_version(self, version_id: str) -> None:
         if version_id != self._selected:
