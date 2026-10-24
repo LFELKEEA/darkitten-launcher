@@ -1,23 +1,21 @@
 {
-  "version": "1.9.18",
+  "version": "1.9.19",
   "released": "2026-10-24",
   "notes": [
-    "顶栏新增下载进度预览：关闭 Mod 下载窗口后任务会继续，可以在启动器里做别的事，点击顶栏进度即可查看下载任务。",
-    "下载任务窗口支持同时查看多个任务、取消下载、打开目标文件夹；整合包下载完成后可直接从任务窗口导入。",
-    "修复下载的 Mod 不显示图标：下载完成后会保存项目图标，并优先读取 JAR 内置图标，列表和详情都能正常显示。",
-    "已下载 Mod 列表和 Mod 下载界面新增中文介绍；常用 Mod 使用人工整理文案，其余项目根据分类、加载器、版本和作者自动生成。",
-    "Mod 下载详情保留英文原文简介作为补充提示，分类名称同步显示为中文。",
-    "服务端列表和详情优先显示服务端文件夹内的 server-icon.png（也兼容 icon.png），没有图标时继续使用类型默认图标。",
-    "退出启动器时如果还有下载任务，会先提醒；选择退出会清理未完成的临时文件。"
+    "修复下载中心没有真正接管任务的问题：整合包导入、版本 ZIP 导入、本地内容导入、游戏版本安装、加载器安装和服务端安装都会进入全局下载中心。",
+    "关闭整合包、版本包、本地导入、加载器或服务端安装窗口后，任务会转到顶栏继续，不再取消；可以继续浏览页面或做别的事。",
+    "顶栏下载中心改为常驻入口：没有任务时也显示下载图标，点击可以查看最近的下载与导入记录。",
+    "下载中心统一显示“下载中 / 导入中 / 安装中”和进度、目标目录，并支持取消、打开文件夹和完成后的导入跳转。",
+    "任务在后台完成后会统一刷新版本、Mod 或服务端列表，并提示结果；加载器完成时继续自动绑定到原游戏版本。"
   ],
-  "download_url": "downloads/DKL-1.9.18-update.zip",
+  "download_url": "downloads/DKL-1.9.19-update.zip",
   "page_url": "index.html",
-  "source_url": "downloads/DarkittenLauncher-1.9.18-source.zip",
-  "source_txt_url": "downloads/DarkittenLauncher-1.9.18-source.txt",
-  "sha256": "dc78d17f11c3ebba09cbfbe6fdd3adefb1cf1adfe2e63fe133143ded2efb406a",
-  "size": 1048332,
-  "source_sha256": "d1ade5e56288c47aedd03014225862b117cc86b654ec8f810c860c31bc4d86fa",
-  "source_size": 1797920,
-  "source_txt_sha256": "81b333d7f9e92a1f385ba47f08b69f23c1071708952d21926a39cfa91f052ebd",
-  "source_txt_size": 1925091
+  "source_url": "downloads/DarkittenLauncher-1.9.19-source.zip",
+  "source_txt_url": "downloads/DarkittenLauncher-1.9.19-source.txt",
+  "sha256": "3b748a027a4b5eb0a3fb5a4db20ae63ed795760c922e9613a4ea90100a5d9609",
+  "size": 1051731,
+  "source_sha256": "c1058a75e50040b2a46dd73c219e7854de8da83c67526902ac628b6eb0959702",
+  "source_size": 1804460,
+  "source_txt_sha256": "4585cb0a5ce4c85edc0ce7ff5b55e0027ea12175dc56e60f0310ae7b775048c7",
+  "source_txt_size": 1951280
 }
