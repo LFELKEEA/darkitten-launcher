@@ -8,13 +8,11 @@ import threading
 import time
 import zipfile
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable
 
 from .config import APP_DIR
 from .downloader import (
-    USER_AGENT,
     DownloadCancelled,
     download_to_file,
     http_open as _http_open,
@@ -38,7 +36,6 @@ from .versions import (
     check_installation,
     client_jar_path,
     libraries_dir,
-    load_chain,
     natives_dir,
     resolve_version,
     version_json_path,
@@ -58,15 +55,6 @@ class InstallCancelled(Exception):
 
 class DownloadError(Exception):
     pass
-
-
-@dataclass
-class _FileTask:
-    url: str
-    dest: Path
-    sha1: str = ""
-    size: int = 0
-    label: str = ""
 
 
 THIRD_PARTY_MAVENS = (
@@ -833,25 +821,3 @@ class Installer:
             label="日志配置",
         )
         self._set_progress(self.STAGE_FINISH[0], "日志配置就绪")
-
-
-def install_version_worker(
-    game_dir: Path,
-    version_id: str,
-    version_url: str = "",
-    source: str = "official",
-    verify: bool = False,
-    progress_cb: ProgressCallback | None = None,
-    log_cb: LogCallback | None = None,
-    cancel_event: threading.Event | None = None,
-    threads: int = 8,
-) -> None:
-    installer = Installer(
-        game_dir=game_dir,
-        source=source,
-        progress_cb=progress_cb,
-        log_cb=log_cb,
-        cancel_event=cancel_event,
-        threads=threads,
-    )
-    installer.install(version_id, version_url=version_url, verify=verify)

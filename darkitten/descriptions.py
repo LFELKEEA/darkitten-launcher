@@ -451,10 +451,6 @@ def local_mod_zh_intro(
     )
 
 
-def project_title(data: dict) -> str:
-    return str(data.get("title") or data.get("name") or data.get("slug") or "").strip()
-
-
 def _trim(text: str, limit: int) -> str:
     text = " ".join(str(text or "").split())
     if limit and len(text) > limit:

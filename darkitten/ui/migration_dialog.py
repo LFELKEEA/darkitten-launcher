@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from PySide6.QtCore import Qt, QTimer
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -10,7 +10,6 @@ from PySide6.QtWidgets import (
     QLabel,
     QPlainTextEdit,
     QProgressBar,
-    QPushButton,
     QVBoxLayout,
     QWidget,
 )
@@ -26,7 +25,7 @@ from ..migration import (
 from ..versions import resolve_version
 from ..workers import LoaderVersionsWorker, MigrationWorker
 from .dialogs import StyledDialog
-from .widgets import Card, SegmentedControl, colors, repolish
+from .widgets import Card, SegmentedControl
 
 CATEGORY_ORDER = (
     "saves",

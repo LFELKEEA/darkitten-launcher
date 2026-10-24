@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+from functools import lru_cache
 from pathlib import Path
 
 from PySide6.QtCore import QPointF, QRectF, QSize, Qt
@@ -35,6 +36,7 @@ def _line(painter: QPainter, points: list[tuple[float, float]]) -> None:
     painter.drawPath(path)
 
 
+@lru_cache(maxsize=512)
 def pixmap(name: str, color: str = "#59637A", size: int = 18) -> QPixmap:
     pm, p, s = _new_painter(size)
     c = QColor(color)
@@ -314,6 +316,7 @@ def logo_pixmap(size: int = 40) -> QPixmap:
     return app_icon_pixmap(size)
 
 
+@lru_cache(maxsize=64)
 def chibi_face_pixmap(size: int) -> QPixmap:
     """Q 版 OC 的正面头像，正方形裁切，适合圆形徽章。"""
     image = QImage(str(ASSETS_DIR / "chibi_face.png"))
@@ -332,6 +335,7 @@ def chibi_face_pixmap(size: int) -> QPixmap:
     )
 
 
+@lru_cache(maxsize=32)
 def chibi_pixmap(height: int) -> QPixmap:
     """Q 版 OC 头像立绘，保持宽高比缩放到指定高度。"""
     image = QImage(str(ASSETS_DIR / "chibi_oc.png"))
@@ -340,11 +344,6 @@ def chibi_pixmap(height: int) -> QPixmap:
     return QPixmap.fromImage(
         image.scaledToHeight(max(1, height), Qt.SmoothTransformation)
     )
-
-
-def mascot_pixmap(size: int) -> QPixmap:
-    """兼容旧调用：返回 Q 版 OC 的圆形头像。"""
-    return chibi_face_pixmap(size)
 
 
 def skin_face_pixmap(size: int) -> QPixmap:
@@ -525,6 +524,7 @@ def app_icon_image(size: int) -> QImage:
     return base.scaled(size, size, Qt.IgnoreAspectRatio, Qt.FastTransformation)
 
 
+@lru_cache(maxsize=64)
 def app_icon_pixmap(size: int) -> QPixmap:
     return QPixmap.fromImage(app_icon_image(size))
 

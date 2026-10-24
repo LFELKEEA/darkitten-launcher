@@ -11,7 +11,7 @@ from pathlib import Path, PurePosixPath
 from typing import Any, Callable
 
 from .paths import version_game_dir
-from .packs import PackError, human_size, normalize_version_id, unique_version_id
+from .packs import PackError, human_size, normalize_version_id
 from .version_zip import VersionZipError, inspect_version_zip
 from .versions import version_json_path
 
@@ -31,7 +31,6 @@ CONTENT_CATEGORIES = (
     "config",
     "defaultconfigs",
 )
-_ARCHIVE_SUFFIXES = (".zip", ".dklpack", ".mrpack")
 _JUNK_NAMES = {"desktop.ini", "thumbs.db", ".ds_store"}
 _JUNK_SUFFIXES = (".part", ".tmp", ".download")
 _SKIP_TOP_DIRS = {
@@ -1213,10 +1212,3 @@ def detect_local_import(path: Path | str) -> LocalImportInfo:
     raise LocalImportError(
         "这个 ZIP 既不是版本包、整合包、服务端，也不像材质 / 光影 / Mod 合集。"
     )
-
-
-def unique_content_name(game_dir: Path | str, base: str) -> str:
-    try:
-        return unique_version_id(game_dir, base)
-    except PackError as exc:
-        raise LocalImportError(str(exc)) from exc

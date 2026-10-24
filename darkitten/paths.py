@@ -15,9 +15,3 @@ def version_game_dir(
     if isolated and version_id:
         return root / "versions" / version_id
     return root
-
-
-def version_mods_dir(
-    game_dir: Path | str, version_id: str, isolated: bool = True
-) -> Path:
-    return version_game_dir(game_dir, version_id, isolated) / "mods"

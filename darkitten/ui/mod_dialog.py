@@ -32,7 +32,6 @@ from ..config import APP_DIR
 from ..descriptions import (
     category_labels,
     project_zh_intro,
-    project_title,
 )
 from ..modrinth import primary_file, required_dependencies
 from ..versions import resolve_version

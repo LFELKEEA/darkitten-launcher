@@ -31,7 +31,6 @@ from ..modrinth_pack import (
 from ..packs import (
     CONTENT_LABELS,
     PACK_EXTENSION,
-    PackError,
     PackInfo,
     PackOptions,
     human_size,
@@ -51,7 +50,7 @@ from ..workers import (
 from . import icons
 from .dialogs import ConfirmDialog, StyledDialog
 from .download_center import DownloadTask, TASK_SUCCESS
-from .widgets import badge, colors, icon_button
+from .widgets import badge, colors
 
 
 def _count_files(root: Path) -> int:

@@ -581,14 +581,6 @@ def asset_index_path(game_dir: Path, resolved: ResolvedVersion) -> Path:
 # ---------------------------------------------------------------------------
 # Scanning
 
-def _default_java_major(game_dir: Path, version_id: str) -> int:
-    try:
-        data = _read_json(version_json_path(game_dir, version_id))
-        return int((data.get("javaVersion") or {}).get("majorVersion") or 0)
-    except Exception:
-        return 0
-
-
 def dependent_versions(game_dir: Path, version_id: str) -> list[str]:
     """返回所有直接或间接依赖 version_id 的已安装版本。"""
     root = Path(game_dir) / "versions"

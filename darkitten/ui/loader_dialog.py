@@ -8,7 +8,6 @@ from PySide6.QtWidgets import (
     QLabel,
     QPlainTextEdit,
     QProgressBar,
-    QPushButton,
     QVBoxLayout,
     QWidget,
 )
@@ -17,9 +16,8 @@ from ..java import pick_java
 from ..loaders import LOADER_NAMES
 from ..versions import check_installation, resolve_version
 from ..workers import LoaderInstallWorker, LoaderVersionsWorker
-from . import icons
 from .dialogs import StyledDialog
-from .widgets import SegmentedControl, colors, repolish
+from .widgets import SegmentedControl
 
 LOADER_HINTS = {
     "fabric": "直接写入 Fabric 版本配置，不需要运行安装器，也不需要 Java。",

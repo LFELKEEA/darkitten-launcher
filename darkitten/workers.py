@@ -26,7 +26,6 @@ from .microsoft_auth import (
     login_with_device_code,
 )
 from .packs import (
-    PackError,
     PackOptions,
     export_pack,
     import_pack,

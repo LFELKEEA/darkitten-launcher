@@ -8,7 +8,6 @@ import shutil
 import subprocess
 import sys
 import threading
-import time
 import urllib.parse
 import zipfile
 from dataclasses import dataclass, field

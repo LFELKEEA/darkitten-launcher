@@ -21,7 +21,7 @@ from PySide6.QtWidgets import (
 from ..workers import ModDownloadWorker
 from . import icons
 from .dialogs import StyledDialog
-from .widgets import badge, colors, icon_button, repolish, transparent_children
+from .widgets import badge, colors, repolish, transparent_children
 
 TASK_RUNNING = "running"
 TASK_SUCCESS = "success"

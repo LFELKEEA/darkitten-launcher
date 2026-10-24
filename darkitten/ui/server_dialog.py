@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from PySide6.QtCore import Qt, QTimer
-from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -11,7 +10,6 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QPlainTextEdit,
     QProgressBar,
-    QPushButton,
     QSpinBox,
     QVBoxLayout,
     QWidget,
@@ -20,7 +18,6 @@ from PySide6.QtWidgets import (
 from ..java import JavaInfo, pick_java
 from ..servers import (
     EULA_URL,
-    SERVER_BADGE,
     SERVER_NAMES,
     ServerInfo,
     check_port,
@@ -29,9 +26,8 @@ from ..servers import (
     save_server,
 )
 from ..workers import LoaderVersionsWorker, ManifestWorker, ServerInstallWorker
-from . import icons
 from .dialogs import StyledDialog
-from .widgets import SegmentedControl, Switch, badge, colors
+from .widgets import SegmentedControl, Switch, colors
 
 COMMON_VERSIONS = [
     "1.21.1",

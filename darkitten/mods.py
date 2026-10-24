@@ -6,7 +6,7 @@ import json
 import re
 import tomllib
 import zipfile
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 from .descriptions import has_chinese, local_mod_zh_intro, project_zh_intro
@@ -562,8 +562,55 @@ def remember_downloaded_mod(
     write_mod_meta(Path(mods_dir), jar_path.name, payload, icon)
 
 
+_MOD_CACHE: dict[tuple[str, bool], tuple[tuple, ModInfo]] = {}
+_MOD_CACHE_LIMIT = 512
+
+
+def _file_signature(path: Path) -> tuple[int, int] | None:
+    try:
+        stat = path.stat()
+    except OSError:
+        return None
+    return stat.st_mtime_ns, stat.st_size
+
+
+def _mod_signature(path: Path, with_meta: bool) -> tuple:
+    """用文件修改时间与大小判断缓存是否仍然有效。"""
+    signature: list[object] = [_file_signature(path)]
+    if with_meta:
+        meta_dir = path.parent / META_DIR_NAME
+        try:
+            has_meta = meta_dir.is_dir()
+        except OSError:
+            has_meta = False
+        if has_meta:
+            for name in _meta_candidates(path.name):
+                signature.append(
+                    _file_signature(mod_meta_json_path(path.parent, name))
+                )
+                signature.append(
+                    _file_signature(mod_meta_icon_path(path.parent, name))
+                )
+    return tuple(signature)
+
+
 def read_mod(path: Path, with_meta: bool = True) -> ModInfo:
+    """读取 Mod 信息；同一个文件未变化时复用上一次的解析结果。"""
     path = Path(path)
+    key = (str(path), bool(with_meta))
+    signature = _mod_signature(path, with_meta)
+    cached = _MOD_CACHE.get(key)
+    if cached is not None and cached[0] == signature:
+        return replace(cached[1])
+
+    info = _read_mod_uncached(path, with_meta)
+    if len(_MOD_CACHE) >= _MOD_CACHE_LIMIT:
+        _MOD_CACHE.clear()
+    _MOD_CACHE[key] = (signature, replace(info))
+    return info
+
+
+def _read_mod_uncached(path: Path, with_meta: bool = True) -> ModInfo:
     enabled = path.name.lower().endswith(".jar")
     size = 0
     try:

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from functools import lru_cache
 from pathlib import Path
 
 from PySide6.QtCore import Qt, Signal
@@ -72,6 +73,7 @@ class _ElidedLabel(QLabel):
             QLabel.setText(self, elided)
 
 
+@lru_cache(maxsize=256)
 def _icon_pixmap(data: bytes, size: int = 38, radius: int = 9) -> QPixmap:
     image = QImage()
     if data:

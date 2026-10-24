@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from PySide6.QtCore import QRectF, Qt
-from PySide6.QtGui import QColor, QPainter, QPainterPath, QPen
+from PySide6.QtCore import Qt
+from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
     QDialog,
     QFrame,
@@ -214,18 +214,3 @@ class TextInputDialog(StyledDialog):
 
     def value(self) -> str:
         return self._result
-
-
-class IconGlow(QWidget):
-    """给关于页面用的小装饰。"""
-
-    def __init__(self, size: int = 64, parent: QWidget | None = None) -> None:
-        super().__init__(parent)
-        self.setFixedSize(size, size)
-        self._pixmap = icons.logo_pixmap(size)
-
-    def paintEvent(self, event) -> None:
-        p = QPainter(self)
-        p.setRenderHint(QPainter.Antialiasing)
-        p.drawPixmap(0, 0, self._pixmap)
-        p.end()

@@ -58,10 +58,6 @@ class LibrarySkin:
         return data
 
 
-def library_dir() -> Path:
-    return LIBRARY_DIR
-
-
 def _clean_name(value: str, fallback: str = "未命名皮肤") -> str:
     name = _BAD_NAME_RE.sub(" ", str(value or "")).strip()
     name = re.sub(r"\s+", " ", name)

@@ -975,14 +975,3 @@ class SakuraTunnelProcess(QObject):
                 process.kill()
             except Exception:
                 pass
-
-
-def start_timeout_seconds() -> int:
-    return 45
-
-
-def elapsed_text(started_at: float) -> str:
-    seconds = max(0, int(time.time() - started_at))
-    if seconds < 60:
-        return f"{seconds} 秒"
-    return f"{seconds // 60} 分 {seconds % 60} 秒"

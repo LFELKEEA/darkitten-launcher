@@ -1,10 +1,7 @@
 from __future__ import annotations
 
-from datetime import datetime
-from pathlib import Path
-
 from PySide6.QtCore import QSize, Qt, Signal
-from PySide6.QtGui import QColor, QCursor
+from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
@@ -17,15 +14,13 @@ from PySide6.QtWidgets import (
 )
 
 from ...accounts import offline_uuid
-from ...config import APP_VERSION
 from ...versions import (
     LOADER_COLORS,
-    ResolvedVersion,
     VersionSummary,
     check_installation,
     resolve_version,
 )
-from .. import icons, theme
+from .. import icons
 from ..dialogs import TextInputDialog
 from ..widgets import (
     Avatar,
@@ -35,7 +30,6 @@ from ..widgets import (
     VersionRow,
     badge,
     colors,
-    hline,
     icon_button,
     repolish,
     transparent_children,

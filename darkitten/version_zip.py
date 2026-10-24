@@ -4,7 +4,7 @@ import json
 import shutil
 import threading
 import zipfile
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import Any, Callable
 

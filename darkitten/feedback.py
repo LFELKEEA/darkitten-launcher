@@ -197,31 +197,6 @@ def build_mailto_url(payload: dict[str, Any]) -> str:
     return f"mailto:{FEEDBACK_EMAIL}?{query}"
 
 
-def feedback_as_text(item: dict[str, Any]) -> str:
-    kind = KIND_LABELS.get(str(item.get("kind") or "other"), "其他")
-    status = STATUS_LABELS.get(str(item.get("status") or "open"), "待处理")
-    lines = [
-        f"反馈编号：{item.get('id') or '—'}",
-        f"类型：{kind}",
-        f"状态：{status}",
-        f"标题：{item.get('title') or '未命名反馈'}",
-        f"时间：{item.get('created_at') or item.get('updated_at') or '—'}",
-        f"版本：{item.get('version') or '—'}",
-        f"来源：{SOURCE_LABELS.get(str(item.get('source') or ''), item.get('source') or '—')}",
-    ]
-    contact = str(item.get("contact") or "").strip()
-    if contact:
-        lines.append(f"联系方式：{contact}")
-    page = str(item.get("page") or "").strip()
-    if page:
-        lines.append(f"页面：{page}")
-    system = str(item.get("system") or "").strip()
-    if system:
-        lines.append(f"系统：{system}")
-    lines.extend(["", "描述：", str(item.get("description") or "")])
-    return "\n".join(lines)
-
-
 def _issue_field(body: str, name: str) -> str:
     match = re.search(
         r"^\*\*" + re.escape(name) + r"\*\*：(.*)$", body, re.MULTILINE

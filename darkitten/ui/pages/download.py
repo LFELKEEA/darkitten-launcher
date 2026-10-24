@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from datetime import datetime
-
 from PySide6.QtCore import QTimer, Qt, Signal
 from PySide6.QtWidgets import (
     QFrame,
@@ -12,12 +10,10 @@ from PySide6.QtWidgets import (
     QProgressBar,
     QPushButton,
     QScrollArea,
-    QSizePolicy,
     QVBoxLayout,
     QWidget,
 )
 
-from ...config import APP_NAME
 from ...workers import ManifestWorker
 from .. import icons
 from ..widgets import (

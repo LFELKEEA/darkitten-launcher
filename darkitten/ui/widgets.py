@@ -4,7 +4,6 @@ import math
 import random
 import time
 from pathlib import Path
-from typing import Callable
 
 from PySide6.QtCore import (
     QEasingCurve,
@@ -22,7 +21,6 @@ from PySide6.QtGui import (
     QColor,
     QFont,
     QFontMetrics,
-    QLinearGradient,
     QPainter,
     QPainterPath,
     QPen,
@@ -186,15 +184,6 @@ class Card(QFrame):
     def __init__(self, parent: QWidget | None = None, soft: bool = False) -> None:
         super().__init__(parent)
         self.setObjectName("SoftCard" if soft else "Card")
-        self.setAttribute(Qt.WA_StyledBackground, True)
-
-
-class Surface(QWidget):
-    """带样式的普通容器，避免 QWidget 不绘制背景。"""
-
-    def __init__(self, object_name: str, parent: QWidget | None = None) -> None:
-        super().__init__(parent)
-        self.setObjectName(object_name)
         self.setAttribute(Qt.WA_StyledBackground, True)
 
 

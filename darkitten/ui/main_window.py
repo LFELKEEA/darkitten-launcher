@@ -11,7 +11,6 @@ from pathlib import Path
 from shiboken6 import isValid
 from PySide6.QtCore import QEvent, QPoint, QSize, Qt, QTimer, QUrl, Signal
 from PySide6.QtGui import (
-    QColor,
     QCloseEvent,
     QDesktopServices,
     QKeySequence,
@@ -92,7 +91,6 @@ from .widgets import (
     GrassLogo,
     LogPanel,
     NavButton,
-    Surface,
     Toast,
     colors,
     icon_button,

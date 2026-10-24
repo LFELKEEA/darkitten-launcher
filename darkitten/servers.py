@@ -47,7 +47,6 @@ SERVER_NAMES = {
     "neoforge": "NeoForge",
 }
 PLUGIN_SERVERS = {"paper", "spigot"}
-LOADER_SERVERS = {"fabric", "forge", "neoforge"}
 SERVER_BADGE = {
     "paper": "blue",
     "spigot": "orange",
@@ -273,49 +272,6 @@ def _properties_escape(value: str) -> str:
         else:
             out.append(ch)
     return "".join(out)
-
-
-def _properties_unescape(value: str) -> str:
-    text = str(value or "")
-    result: list[str] = []
-    index = 0
-    while index < len(text):
-        ch = text[index]
-        if ch != "\\" or index + 1 >= len(text):
-            result.append(ch)
-            index += 1
-            continue
-        nxt = text[index + 1]
-        if nxt == "u" and index + 5 < len(text):
-            try:
-                result.append(chr(int(text[index + 2 : index + 6], 16)))
-                index += 6
-                continue
-            except ValueError:
-                pass
-        mapping = {"n": "\n", "r": "\r", "t": "\t", "\\": "\\", "=": "=", ":": ":", " ": " "}
-        result.append(mapping.get(nxt, nxt))
-        index += 2
-    return "".join(result)
-
-
-def read_server_properties(info: ServerInfo) -> dict[str, str]:
-    path = info.path / "server.properties"
-    data: dict[str, str] = {}
-    if not path.exists():
-        return data
-    try:
-        for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
-            raw = line.strip()
-            if not raw or raw.startswith("#") or raw.startswith("!"):
-                continue
-            if "=" not in raw:
-                continue
-            key, value = raw.split("=", 1)
-            data[key.strip()] = _properties_unescape(value.strip())
-    except OSError:
-        pass
-    return data
 
 
 def update_server_properties(
