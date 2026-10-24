@@ -63,6 +63,7 @@ class ServerCreateDialog(StyledDialog):
         self._versions_worker: LoaderVersionsWorker | None = None
         self._manifest_worker: ManifestWorker | None = None
         self._install_worker: ServerInstallWorker | None = None
+        self._task = None
         self._pending_info: ServerInfo | None = None
         self._installing = False
         self._name_auto = True
@@ -203,6 +204,7 @@ class ServerCreateDialog(StyledDialog):
         self.close_btn = self.add_button("关闭", "Secondary", self.reject)
         self.install_btn = self.add_button("创建并安装", "Primary", self._install)
         self.install_btn.setMinimumWidth(120)
+        self.finished.connect(self._detach_download_center)
 
         self.eula_check.toggled.connect(lambda _: self._update_action())
         self.java_combo.currentIndexChanged.connect(lambda _: self._update_java_note())
@@ -510,7 +512,8 @@ class ServerCreateDialog(StyledDialog):
         self.log.clear()
         self.log.setVisible(True)
         self.install_btn.setText("取消安装")
-        self.close_btn.setEnabled(False)
+        self.close_btn.setEnabled(True)
+        self.close_btn.setText("后台运行")
         self.adjustSize()
 
         worker = ServerInstallWorker(
@@ -524,13 +527,29 @@ class ServerCreateDialog(StyledDialog):
         worker.progress.connect(self._on_progress)
         worker.log_line.connect(self._append_log)
         worker.finished.connect(self._on_finished)
-        worker.start()
+        self._task = self.main.download_center.start_worker(
+            worker,
+            title=f"安装服务端 · {info.name}",
+            content_type="server-install",
+            target=info.path,
+            source=self.main.config.download_source,
+            metadata={
+                "folder": info.folder,
+                "name": info.name,
+                "kind": info.kind,
+            },
+            forward_log=False,
+        )
 
     def _cancel_install(self) -> None:
         if self._install_worker:
             self.progress_text.setText("正在取消…")
             self.install_btn.setEnabled(False)
             self._install_worker.cancel()
+
+    def _detach_download_center(self, _result: int = 0) -> None:
+        if self._task is not None and not self._task.running:
+            self._task = None
 
     def _set_form_enabled(self, enabled: bool) -> None:
         for widget in self._form_widgets:
@@ -552,15 +571,24 @@ class ServerCreateDialog(StyledDialog):
     def _on_finished(self, success: bool, message: str) -> None:
         self._installing = False
         self._install_worker = None
+        if self._task is not None:
+            self._task.metadata["ui_handled"] = True
         self._set_form_enabled(True)
         self.close_btn.setEnabled(True)
+        self.close_btn.setText("关闭")
         self.install_btn.setText("创建并安装")
         if success and self._pending_info is not None:
             self.progress.setValue(100)
             self.progress_text.setText("安装完成")
             self.server = self._pending_info
+            if hasattr(self.main, "server_page"):
+                self.main.server_page.refresh_servers(self.server.folder)
             self.main.toast(f"{self.server.name} 服务端已就绪", "success")
             QTimer.singleShot(500, self.accept)
+            return
+        if "取消" in str(message):
+            self.progress_text.setText("安装已取消")
+            self.main.toast("服务端安装已取消", "info")
             return
         self.progress_text.setText(message)
         self.install_btn.setText("重试安装")
@@ -568,6 +596,9 @@ class ServerCreateDialog(StyledDialog):
 
     def reject(self) -> None:
         if self._installing:
-            self._cancel_install()
-            return
+            self.main.toast(
+                "服务端安装已转到顶栏继续，可以继续操作启动器；"
+                "点击顶栏进度可以查看任务",
+                "info",
+            )
         super().reject()

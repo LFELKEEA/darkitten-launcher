@@ -207,6 +207,7 @@ class MainWindow(QWidget):
         self._java_worker: JavaDetectWorker | None = None
         self._java_busy = False
         self.install_worker: InstallWorker | None = None
+        self._install_task = None
         self.install_active = False
         self._install_version = ""
         self._install_success_callback = None
@@ -366,6 +367,7 @@ class MainWindow(QWidget):
         self.download_chip = TopDownloadChip()
         self.download_chip.clicked.connect(self.open_download_tasks)
         layout.addWidget(self.download_chip)
+        self.download_chip.sync(self.download_center)
         layout.addSpacing(8)
         self.account_chip = AccountChip()
         self.account_chip.clicked.connect(self.open_social_dialog)
@@ -1212,7 +1214,16 @@ class MainWindow(QWidget):
         self.speed_timer.start()
         self._update_action_button()
         self.log(f"开始安装 {version_id}（{self.config.download_source}）")
-        worker.start()
+        self._install_task = self.download_center.start_worker(
+            worker,
+            title=f"安装游戏版本 · {version_id}",
+            content_type="version-install",
+            target=self.config.version_game_path(version_id),
+            source=self.config.download_source,
+            metadata={"version_id": version_id},
+            cancel_cb=self.cancel_install,
+            forward_log=False,
+        )
 
     def _on_install_progress(self, percent: int, message: str) -> None:
         self.progress_bar.setValue(percent)
@@ -1357,24 +1368,98 @@ class MainWindow(QWidget):
         filename = str(getattr(task, "filename", "") or task.title)
         content_type = str(getattr(task, "content_type", ""))
         status = str(getattr(task, "status", ""))
-        if status == "success":
-            if content_type == "mod" and hasattr(self, "mods_page"):
-                self.mods_page.refresh_mods()
-            self.set_status(f"下载完成：{filename}", "success")
-            if content_type == "modpack":
-                self.toast(
-                    "整合包下载完成，可在顶栏下载任务中导入",
-                    "success",
+        import_types = ("modpack", "version-import", "local-import")
+        if content_type == "version-install":
+            # 安装流程自己的 _on_install_finished 已经负责提示、刷新和回调，
+            # 这里只让任务留在下载中心，避免重复弹出提示。
+            return
+        if content_type == "loader-install":
+            if bool(getattr(task, "metadata", {}).get("ui_handled")):
+                return
+            meta = getattr(task, "metadata", {}) or {}
+            version_id = str(
+                getattr(task, "filename", "")
+                or meta.get("loader_version", "")
+            )
+            base_id = str(meta.get("base_id", ""))
+            if status == "success":
+                self.refresh_versions()
+                profile = next(
+                    (v for v in self.versions if v.id == version_id), None
                 )
+                if profile and profile.is_loader_profile and base_id:
+                    self.config.bind_loader(base_id, version_id)
+                    self.config.last_version = base_id
+                    self.config.save()
+                    self.select_version(base_id)
+                self.set_status(f"加载器安装完成：{version_id}", "success")
+                self.toast(f"{version_id} 加载器已安装", "success")
+            elif status == "cancelled":
+                self.set_status("加载器安装已取消", "idle")
+                self.toast("加载器安装已取消", "info")
             else:
+                message = str(
+                    getattr(task, "error", "") or getattr(task, "message", "")
+                )
+                self.set_status(f"加载器安装失败：{message}", "error")
+                self.toast(f"加载器安装失败：{message}", "error")
+            return
+        if content_type == "server-install":
+            if bool(getattr(task, "metadata", {}).get("ui_handled")):
+                return
+            meta = getattr(task, "metadata", {}) or {}
+            name = str(meta.get("name", "") or "服务端")
+            folder = str(meta.get("folder", ""))
+            if status == "success":
+                if hasattr(self, "server_page"):
+                    self.server_page.refresh_servers(folder)
+                self.set_status(f"服务端安装完成：{name}", "success")
+                self.toast(f"{name} 服务端已就绪", "success")
+            elif status == "cancelled":
+                self.set_status("服务端安装已取消", "idle")
+                self.toast("服务端安装已取消", "info")
+            else:
+                message = str(
+                    getattr(task, "error", "") or getattr(task, "message", "")
+                )
+                self.set_status(f"服务端安装失败：{message}", "error")
+                self.toast(f"服务端安装失败：{message}", "error")
+            return
+        if status == "success":
+            if content_type in ("mod", "local-import") and hasattr(self, "mods_page"):
+                self.mods_page.refresh_mods()
+            if content_type in ("modpack", "version-import"):
+                self.refresh_versions()
+                if getattr(task, "filename", ""):
+                    self.select_version(str(task.filename))
+            if content_type == "pack-fetch":
+                self.set_status("压缩包下载完成", "success")
+                self.toast("压缩包下载完成，可在下载任务中点击导入", "success")
+            elif content_type == "modpack":
+                self.set_status(f"整合包导入完成：{filename}", "success")
+                self.log(f"整合包导入完成：{filename}")
+                self.toast(f"整合包导入完成：{filename}", "success")
+            elif content_type == "version-import":
+                self.set_status(f"版本导入完成：{filename}", "success")
+                self.log(f"版本导入完成：{filename}")
+                self.toast(f"版本导入完成：{filename}", "success")
+            elif content_type == "local-import":
+                self.set_status("本地内容导入完成", "success")
+                self.toast("本地内容已经放进对应文件夹", "success")
+            elif content_type == "mod":
+                self.set_status(f"下载完成：{filename}", "success")
                 self.toast(f"已下载 {filename}", "success")
+            else:
+                self.set_status(f"任务完成：{filename}", "success")
+                self.toast(f"已完成 {filename}", "success")
         elif status == "cancelled":
-            self.set_status("下载已取消", "idle")
-            self.toast("下载已取消，临时文件已清理", "info")
+            self.set_status("任务已取消", "idle")
+            self.toast("任务已取消，临时文件已清理", "info")
         else:
             message = str(getattr(task, "error", "") or getattr(task, "message", ""))
-            self.set_status(f"下载失败：{message}", "error")
-            self.toast(f"下载失败：{message}", "error")
+            label = "导入" if content_type in import_types else "下载"
+            self.set_status(f"{label}失败：{message}", "error")
+            self.toast(f"{label}失败：{message}", "error")
 
     def open_download_tasks(self) -> None:
         if self._download_tasks_dialog is not None:

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -28,6 +29,10 @@ TASK_ERROR = "error"
 TASK_CANCELLED = "cancelled"
 
 
+IMPORT_TYPES = {"modpack", "version-import", "local-import"}
+INSTALL_TYPES = {"version-install", "loader-install", "server-install"}
+
+
 @dataclass
 class DownloadTask:
     id: int
@@ -42,7 +47,8 @@ class DownloadTask:
     filename: str = ""
     error: str = ""
     metadata: dict = field(default_factory=dict)
-    worker: ModDownloadWorker | None = None
+    worker: QObject | None = None
+    cancel_cb: Callable[[], None] | None = None
     created_at: float = field(default_factory=time.time)
     finished_at: float = 0.0
 
@@ -51,9 +57,17 @@ class DownloadTask:
         return self.status == TASK_RUNNING
 
     @property
+    def action_text(self) -> str:
+        if self.content_type in IMPORT_TYPES:
+            return "导入中"
+        if self.content_type in INSTALL_TYPES:
+            return "安装中"
+        return "下载中"
+
+    @property
     def status_text(self) -> str:
         return {
-            TASK_RUNNING: "下载中",
+            TASK_RUNNING: self.action_text,
             TASK_SUCCESS: "已完成",
             TASK_ERROR: "失败",
             TASK_CANCELLED: "已取消",
@@ -67,15 +81,30 @@ class DownloadTask:
 class _TaskRelay(QObject):
     """把工作线程信号排队回主线程，避免下载过程中直接操作界面数据。"""
 
-    def __init__(self, center: "DownloadCenter", task_id: int) -> None:
+    def __init__(
+        self,
+        center: "DownloadCenter",
+        task_id: int,
+        finished_adapter: Callable[..., tuple[bool, str, str]] | None = None,
+    ) -> None:
         super().__init__(center)
         self.center = center
         self.task_id = task_id
+        self.finished_adapter = finished_adapter
 
     def on_progress(self, percent: int, message: str) -> None:
         self.center._on_progress(self.task_id, percent, message)
 
-    def on_finished(self, success: bool, message: str, filename: str) -> None:
+    def on_finished(self, *args) -> None:
+        try:
+            if self.finished_adapter is not None:
+                success, message, filename = self.finished_adapter(*args)
+            else:
+                success = bool(args[0]) if args else False
+                message = str(args[1]) if len(args) > 1 else ""
+                filename = str(args[2]) if len(args) > 2 else ""
+        except Exception as exc:
+            success, message, filename = False, str(exc), ""
         self.center._on_finished(self.task_id, success, message, filename)
 
 
@@ -140,6 +169,58 @@ class DownloadCenter(QObject):
         worker.start()
         return task
 
+    def start_worker(
+        self,
+        worker: QObject,
+        *,
+        title: str,
+        content_type: str,
+        target: Path,
+        source: str = "",
+        pack_mode: bool = False,
+        metadata: dict | None = None,
+        finished_adapter: Callable[..., tuple[bool, str, str]] | None = None,
+        cancel_cb: Callable[[], None] | None = None,
+        forward_log: bool = True,
+    ) -> DownloadTask:
+        """接管任意带 progress/finished/cancel 的工作线程。
+
+        finished_adapter 负责把不同 worker 的 finished 参数归一成
+        (success, message, filename)。worker 会改由下载中心持有，
+        因此发起它的对话框关闭后任务仍会继续。
+        """
+        task_id = self._next_id
+        self._next_id += 1
+        target_path = Path(target)
+        task = DownloadTask(
+            id=task_id,
+            title=str(title or "后台任务"),
+            content_type=str(content_type or "download"),
+            source=str(source or ""),
+            target=target_path,
+            pack_mode=bool(pack_mode),
+            metadata=dict(metadata or {}),
+            worker=worker,
+            cancel_cb=cancel_cb,
+        )
+        worker.setParent(self)
+        self._tasks[task_id] = task
+        self._order.append(task_id)
+        relay = _TaskRelay(self, task_id, finished_adapter)
+        self._relays[task_id] = relay
+        progress = getattr(worker, "progress", None)
+        if progress is not None:
+            progress.connect(relay.on_progress)
+        finished = getattr(worker, "finished", None)
+        if finished is not None:
+            finished.connect(relay.on_finished)
+        log_line = getattr(worker, "log_line", None)
+        if forward_log and log_line is not None:
+            log_line.connect(self.main.log)
+        self.tasks_changed.emit()
+        worker.start()
+        return task
+
     def task(self, task_id: int) -> DownloadTask | None:
         return self._tasks.get(int(task_id))
 
@@ -172,10 +253,14 @@ class DownloadCenter(QObject):
 
     def cancel(self, task_id: int) -> None:
         task = self._tasks.get(int(task_id))
-        if task is None or not task.running or task.worker is None:
+        if task is None or not task.running:
             return
         task.message = "正在取消，请稍候…"
-        task.worker.cancel()
+        cancel = task.cancel_cb
+        if cancel is None and task.worker is not None:
+            cancel = getattr(task.worker, "cancel", None)
+        if callable(cancel):
+            cancel()
         self.tasks_changed.emit()
 
     def clear_finished(self) -> None:
@@ -214,13 +299,18 @@ class DownloadCenter(QObject):
         if success:
             task.status = TASK_SUCCESS
             task.progress = 100
-            task.message = "下载完成"
+            if task.content_type in IMPORT_TYPES:
+                task.message = "导入完成"
+            elif task.content_type in INSTALL_TYPES:
+                task.message = "安装完成"
+            else:
+                task.message = "下载完成"
         elif "取消" in str(message):
             task.status = TASK_CANCELLED
-            task.message = "下载已取消"
+            task.message = "任务已取消"
         else:
             task.status = TASK_ERROR
-            task.error = str(message or "下载失败")
+            task.error = str(message or "任务失败")
             task.message = task.error
         self.task_finished.emit(task)
         self.tasks_changed.emit()
@@ -376,7 +466,10 @@ class DownloadTasksDialog(StyledDialog):
         self.list_layout.addStretch(1)
         self.scroll.setWidget(self.holder)
         card_layout.addWidget(self.scroll, 1)
-        self.empty = QLabel("暂时没有下载任务。关闭 Mod 下载窗口后，任务会继续并显示在这里。")
+        self.empty = QLabel(
+            "暂时没有下载、导入或安装任务。关闭下载、整合包、版本导入、"
+            "加载器或服务端安装窗口后，任务会继续并显示在这里。"
+        )
         self.empty.setObjectName("Muted")
         self.empty.setAlignment(Qt.AlignCenter)
         self.empty.setWordWrap(True)
@@ -403,9 +496,9 @@ class DownloadTasksDialog(StyledDialog):
         tasks = self.center.recent_tasks(12)
         active = self.center.active_tasks()
         self.summary.setText(
-            f"{len(active)} 个任务正在下载，关闭此窗口不会中断下载。"
+            f"{len(active)} 个任务正在进行，关闭此窗口不会中断。"
             if active
-            else "下载任务会在启动器顶栏显示进度，关闭窗口不会取消下载。"
+            else "下载、导入和安装任务会在启动器顶栏显示进度，关闭原窗口不会取消任务。"
         )
         if not tasks:
             self._clear_rows()
@@ -453,15 +546,9 @@ class DownloadTasksDialog(StyledDialog):
     def _import_pack(self, task: DownloadTask) -> None:
         path = task.target / task.filename
         if not path.is_file():
-            self.main.toast("整合包文件没有保存成功，请重新下载", "error")
+            self.main.toast("文件没有保存成功，请重新下载", "error")
             return
-        from .pack_dialog import PackImportDialog
-
-        dialog = PackImportDialog(self.main, initial_path=path)
-        dialog.exec()
-        if dialog.imported_version:
-            self.main.refresh_versions()
-            self.main.select_version(dialog.imported_version)
+        self.main.open_local_import(path)
         self.refresh()
 
 
@@ -507,7 +594,7 @@ class TopDownloadChip(QFrame):
         self._hide_timer = QTimer(self)
         self._hide_timer.setSingleShot(True)
         self._hide_timer.setInterval(8000)
-        self._hide_timer.timeout.connect(self.hide)
+        self._hide_timer.timeout.connect(self._apply_idle)
 
         outer = QHBoxLayout(self)
         outer.setContentsMargins(7, 4, 9, 4)
@@ -545,7 +632,7 @@ class TopDownloadChip(QFrame):
         text_box.addWidget(self.progress)
         outer.addLayout(text_box, 1)
         transparent_children(self)
-        self.hide()
+        self._apply_idle()
 
     def resizeEvent(self, event) -> None:
         super().resizeEvent(event)
@@ -568,21 +655,48 @@ class TopDownloadChip(QFrame):
             return
         latest = center.latest_task()
         if latest is None:
-            self.hide()
+            self._apply_idle()
             return
-        self._apply(latest, running_count=0)
+        self._apply(latest, running_count=0, final=True)
         if self._final_task_id != latest.id:
             self._final_task_id = latest.id
             self._hide_timer.start()
 
-    def _apply(self, task: DownloadTask, running_count: int) -> None:
+    def _apply_idle(self) -> None:
+        self._task = None
+        self._hide_timer.stop()
+        self.setProperty("state", "idle")
+        repolish(self)
+        self.setMinimumWidth(48)
+        self.setMaximumWidth(48)
+        self.status_label.setText("下载中心")
+        self.percent_label.setText("")
+        self.message_label.setText("没有进行中的任务")
+        self.progress.setValue(0)
+        self.icon_box.setPixmap(icons.pixmap("download", colors()["accent"], 14))
+        self.icon_box.setStyleSheet(
+            f"background: {colors()['accent_soft']}; border-radius: 7px;"
+        )
+        self.setToolTip("下载中心\n没有进行中的任务\n点击查看下载与导入记录")
+        self.show()
+        self.updateGeometry()
+
+    def _apply(
+        self, task: DownloadTask, running_count: int, final: bool = False
+    ) -> None:
         self._task = task
+        if final:
+            self.setMinimumWidth(48)
+            self.setMaximumWidth(196)
+        else:
+            self.setMinimumWidth(120)
+            self.setMaximumWidth(196)
         self.setProperty("state", task.status)
         repolish(self)
         self.status_label.setText(
-            f"下载中 · {running_count} 项"
+            f"{task.action_text} · {running_count} 项"
             if running_count > 1
-            else ("下载中" if task.running else task.status_text)
+            else (task.action_text if task.running else task.status_text)
         )
         self.percent_label.setText(f"{task.progress}%")
         self.message_label.setText(task.message or task.display_name)
@@ -606,8 +720,9 @@ class TopDownloadChip(QFrame):
                 f"background: {colors()['accent_soft']}; border-radius: 7px;"
             )
         self.show()
+        self.updateGeometry()
 
     def mouseReleaseEvent(self, event) -> None:
-        if event.button() == Qt.LeftButton and self._task is not None:
+        if event.button() == Qt.LeftButton:
             self.clicked.emit()
         super().mouseReleaseEvent(event)

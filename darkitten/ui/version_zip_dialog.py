@@ -18,13 +18,15 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from ..config import APP_DIR
 from ..modrinth_pack import inspect_modrinth_pack, looks_like_modrinth_pack
 from ..packs import human_size, inspect_pack, normalize_version_id, unique_version_id
 from ..version_zip import VersionZipCandidate, VersionZipInfo, inspect_version_zip
 from ..versions import version_json_path
 from ..workers import PackFetchWorker, VersionZipImportWorker
 from . import icons
-from .dialogs import ConfirmDialog, StyledDialog
+from .dialogs import StyledDialog
+from .download_center import DownloadTask, TASK_SUCCESS
 from .widgets import badge, colors, local_archive_paths
 
 
@@ -36,7 +38,8 @@ class VersionZipDialog(StyledDialog):
         self.main = main
         self._info: VersionZipInfo | None = None
         self._candidate: VersionZipCandidate | None = None
-        self._worker: VersionZipImportWorker | PackFetchWorker | None = None
+        self._task: DownloadTask | None = None
+        self._download_bound = False
         self._mode = "idle"
         self._attempted_version_id = ""
         self.imported_version = ""
@@ -179,7 +182,7 @@ class VersionZipDialog(StyledDialog):
         self.import_btn = self.add_button("导入版本", "Primary", self._start_import)
         self.import_btn.setEnabled(False)
 
-        self.finished.connect(self._cleanup)
+        self.finished.connect(self._detach_download_center)
         if initial_path:
             self._load_archive(Path(initial_path))
 
@@ -254,7 +257,7 @@ class VersionZipDialog(StyledDialog):
     def _route_to_pack(self, path: Path) -> None:
         main = self.main
         self._mode = "idle"
-        self._worker = None
+        self._task = None
         self.accept()
         QTimer.singleShot(0, lambda p=str(path): main.open_pack_import(p))
 
@@ -319,6 +322,74 @@ class VersionZipDialog(StyledDialog):
             "默认沿用版本 JSON 里的名称；同名版本会自动加序号。" + isolation
         )
 
+    @staticmethod
+    def _fetch_result(path: str, error: str) -> tuple[bool, str, str]:
+        if error:
+            return False, str(error), ""
+        target = Path(path)
+        return True, "压缩包下载完成", target.name
+
+    def _bind_download_center(self) -> None:
+        if self._download_bound:
+            return
+        center = self.main.download_center
+        center.task_progress.connect(self._on_task_progress)
+        center.task_finished.connect(self._on_task_finished)
+        self._download_bound = True
+
+    def _detach_download_center(self, _result: int = 0) -> None:
+        if not self._download_bound:
+            return
+        center = self.main.download_center
+        try:
+            center.task_progress.disconnect(self._on_task_progress)
+            center.task_finished.disconnect(self._on_task_finished)
+        except (RuntimeError, TypeError):
+            pass
+        self._download_bound = False
+
+    def _on_task_progress(self, task_id: int, percent: int, message: str) -> None:
+        if self._task is None or int(task_id) != self._task.id:
+            return
+        self.progress.setValue(percent)
+        self.progress_text.setText(message)
+
+    def _on_task_finished(self, task: DownloadTask) -> None:
+        if self._task is None or task.id != self._task.id:
+            return
+        self._task = None
+        self._mode = "idle"
+        self.cancel_btn.setText("取消")
+        if task.status == TASK_SUCCESS:
+            self.progress.setValue(100)
+            self.progress_text.setText(task.message)
+            if task.content_type == "pack-fetch":
+                self._set_controls_enabled(True)
+                self.progress_box.setVisible(False)
+                path = task.target / task.filename
+                if path.is_file():
+                    self._load_archive(path)
+                else:
+                    self._show_error("下载完成但找不到压缩包，请重试。")
+                return
+            self.imported_version = task.filename
+            self.accept()
+            return
+        self._set_controls_enabled(True)
+        self.progress_box.setVisible(False)
+        self.import_btn.setEnabled(True)
+        self.import_btn.setText("重新导入")
+        message = task.error or task.message or "导入失败"
+        target = normalize_version_id(self.name_edit.text())
+        if version_json_path(self.main.config.game_path, target).is_file():
+            self._attempted_version_id = target
+            message = (
+                f"{message}\n已保留版本骨架，可以再次点击“重新导入”继续补全；"
+                "已经解压的文件不会重复解压。"
+            )
+        self._show_error(message)
+        self.main.log(f"版本包任务失败：{message}")
+
     def _download_url(self) -> None:
         if self._mode != "idle":
             return
@@ -331,26 +402,20 @@ class VersionZipDialog(StyledDialog):
         worker = PackFetchWorker(
             url,
             threads=self.main.config.download_threads,
-            parent=self,
+            parent=None,
             inspect_result=False,
             default_suffix=".zip",
         )
-        self._worker = worker
-        worker.progress.connect(self._on_progress)
-        worker.finished.connect(self._on_fetch_finished)
-        worker.start()
-
-    def _on_fetch_finished(self, path: str, error: str) -> None:
-        self._worker = None
-        self._mode = "idle"
-        self._set_controls_enabled(True)
-        self.progress_box.setVisible(False)
-        self.cancel_btn.setText("取消")
-        if error:
-            self._show_error(error)
-            return
-        self.progress_text.setText("下载完成")
-        self._load_archive(Path(path))
+        self._bind_download_center()
+        self._task = self.main.download_center.start_worker(
+            worker,
+            title="下载版本包",
+            content_type="pack-fetch",
+            source="url",
+            target=APP_DIR / "cache" / "packs",
+            pack_mode=True,
+            finished_adapter=self._fetch_result,
+        )
 
     # ------------------------------------------------------------------
     def _start_import(self) -> None:
@@ -388,41 +453,14 @@ class VersionZipDialog(StyledDialog):
             threads=self.main.config.download_threads,
             parent=self,
         )
-        self._worker = worker
-        worker.progress.connect(self._on_progress)
-        worker.log_line.connect(self.main.log)
-        worker.finished.connect(self._on_import_finished)
-        worker.start()
-
-    def _on_import_finished(self, success: bool, message: str, version_id: str) -> None:
-        self._worker = None
-        self._mode = "idle"
-        if success:
-            self.imported_version = version_id
-            self.progress.setValue(100)
-            self.progress_text.setText(message)
-            self.main.refresh_versions()
-            self.main.log(f"ZIP 版本导入完成：{version_id}")
-            self.main.toast("版本已经放进猫窝，去列表看看喵。", "success")
-            self.accept()
-            return
-
-        self._set_controls_enabled(True)
-        self.progress_box.setVisible(False)
-        self.cancel_btn.setText("取消")
-        self.import_btn.setEnabled(True)
-        self.import_btn.setText("重新导入")
-        target = normalize_version_id(self.name_edit.text())
-        exists = version_json_path(self.main.config.game_path, target).is_file()
-        if exists:
-            self._attempted_version_id = target
-            self.main.refresh_versions()
-            message = (
-                f"{message}\n已保留版本骨架，可以再次点击“重新导入”继续补全；"
-                "已经解压的文件不会重复解压。"
-            )
-        self._show_error(message or "导入失败")
-        self.main.log(f"ZIP 版本导入失败：{message}")
+        self._bind_download_center()
+        self._task = self.main.download_center.start_worker(
+            worker,
+            title=f"导入版本 · {target}",
+            content_type="version-import",
+            source=self.main.config.download_source,
+            target=version_dir,
+        )
 
     def _begin_busy(self, mode: str) -> None:
         self._mode = mode
@@ -447,15 +485,11 @@ class VersionZipDialog(StyledDialog):
         self.candidate_picker.setEnabled(enabled)
         self.import_btn.setEnabled(enabled and self._candidate is not None)
 
-    def _on_progress(self, percent: int, message: str) -> None:
-        self.progress.setValue(percent)
-        self.progress_text.setText(message)
-
     def _on_cancel(self) -> None:
-        if self._mode != "idle" and self._worker:
+        if self._mode != "idle" and self._task is not None:
             self.cancel_btn.setEnabled(False)
             self.progress_text.setText("正在收回猫爪…")
-            self._worker.cancel()  # type: ignore[attr-defined]
+            self.main.download_center.cancel(self._task.id)
             return
         self.reject()
 
@@ -470,24 +504,11 @@ class VersionZipDialog(StyledDialog):
     def _hide_error(self) -> None:
         self._clear_error()
 
-    def _cleanup(self) -> None:
-        self._worker = None
-
     def reject(self) -> None:
-        if self._mode != "idle":
-            dialog = ConfirmDialog(
-                self,
-                "停止当前任务",
-                "猫猫还在拆压缩包，现在离开会中断操作。已经解压的文件会保留，"
-                "下次可以继续导入。确定停止吗？",
-                primary_text="停止",
-                secondary_text="继续",
-                icon_name="warning",
-                icon_color=colors()["orange"],
+        if self._mode != "idle" and self._task is not None:
+            self._detach_download_center()
+            self.main.toast(
+                "任务已转到顶栏继续，可以继续操作启动器；点击顶栏进度查看任务",
+                "info",
             )
-            if not dialog.exec():
-                return
-            if self._worker:
-                self._worker.cancel()  # type: ignore[attr-defined]
-            self._mode = "idle"
         super().reject()

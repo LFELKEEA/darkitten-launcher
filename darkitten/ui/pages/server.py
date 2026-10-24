@@ -1567,7 +1567,20 @@ class ServerPage(QWidget):
             )
         )
         self._update_controls()
-        worker.start()
+        self.main.download_center.start_worker(
+            worker,
+            title=f"重装服务端 · {info.name}",
+            content_type="server-install",
+            target=info.path,
+            source=self.main.config.download_source,
+            metadata={
+                "folder": info.folder,
+                "name": info.name,
+                "kind": info.kind,
+                "ui_handled": True,
+            },
+            forward_log=False,
+        )
 
     def _on_install_progress(self, folder: str, percent: int, message: str) -> None:
         if folder != self._install_folder:

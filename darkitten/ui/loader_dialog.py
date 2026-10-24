@@ -35,6 +35,7 @@ class LoaderDialog(StyledDialog):
         self._installing = False
         self._versions_worker: LoaderVersionsWorker | None = None
         self._install_worker: LoaderInstallWorker | None = None
+        self._task = None
         self._bases = [
             v for v in main.versions if not v.loader and not v.error
         ]
@@ -135,6 +136,7 @@ class LoaderDialog(StyledDialog):
         self.close_btn = self.add_button("关闭", "Secondary", self.reject)
         self.install_btn = self.add_button("安装", "Primary", self._install)
         self.install_btn.setMinimumWidth(104)
+        self.finished.connect(self._detach_download_center)
 
         self._populate_bases()
         self.base_combo.currentIndexChanged.connect(lambda _: self._reload_versions())
@@ -334,7 +336,8 @@ class LoaderDialog(StyledDialog):
         self.log.clear()
         self.log.setVisible(True)
         self.install_btn.setText("取消安装")
-        self.close_btn.setEnabled(False)
+        self.close_btn.setEnabled(True)
+        self.close_btn.setText("后台运行")
         self.adjustSize()
 
         worker = LoaderInstallWorker(
@@ -350,7 +353,19 @@ class LoaderDialog(StyledDialog):
         worker.progress.connect(self._on_progress)
         worker.log_line.connect(self._append_log)
         worker.finished.connect(self._on_finished)
-        worker.start()
+        self._task = self.main.download_center.start_worker(
+            worker,
+            title=f"安装加载器 · {kind} {version}",
+            content_type="loader-install",
+            target=self.main.config.version_game_path(version),
+            source=self.main.config.download_source,
+            metadata={
+                "base_id": summary.id,
+                "loader": kind,
+                "loader_version": version,
+            },
+            forward_log=False,
+        )
 
     def _cancel_install(self) -> None:
         if self._install_worker:
@@ -362,7 +377,8 @@ class LoaderDialog(StyledDialog):
         self.base_combo.setEnabled(not busy and bool(self._bases))
         self.loader_tabs.setEnabled(not busy)
         self.version_combo.setEnabled(not busy)
-        self.close_btn.setEnabled(not busy)
+        self.close_btn.setEnabled(True)
+        self.close_btn.setText("后台运行" if busy else "关闭")
         self.install_btn.setText("取消安装" if busy else "安装")
         if not busy:
             self._update_action()
@@ -376,9 +392,16 @@ class LoaderDialog(StyledDialog):
         bar = self.log.verticalScrollBar()
         bar.setValue(bar.maximum())
 
+    def _detach_download_center(self, _result: int = 0) -> None:
+        if self._task is not None and not self._task.running:
+            self._task = None
+
     def _on_finished(self, success: bool, message: str, version_id: str) -> None:
         self._installing = False
         self._install_worker = None
+        if self._task is not None:
+            # 对话框还活着时由这里负责收尾，主窗口不要再弹第二次提示。
+            self._task.metadata["ui_handled"] = True
         self._set_busy(False)
         self.close_btn.setEnabled(True)
         self.install_btn.setEnabled(True)
@@ -389,10 +412,15 @@ class LoaderDialog(StyledDialog):
             profile = next(
                 (v for v in self.main.versions if v.id == version_id), None
             )
+            meta_base = (
+                str(self._task.metadata.get("base_id") or "")
+                if self._task is not None
+                else ""
+            )
             base_id = (
                 profile.base_id
                 if profile and profile.base_id
-                else str(self.base_combo.currentData() or "")
+                else (meta_base or str(self.base_combo.currentData() or ""))
             )
             if profile and profile.is_loader_profile and base_id:
                 self.main.config.bind_loader(base_id, version_id)
@@ -407,6 +435,10 @@ class LoaderDialog(StyledDialog):
                 "success",
             )
             QTimer.singleShot(450, self.accept)
+        elif "取消" in str(message):
+            self.progress_text.setText("安装已取消")
+            self.install_btn.setText("安装")
+            self.main.toast("加载器安装已取消", "info")
         else:
             self.progress_text.setText(message)
             self.install_btn.setText("安装")
@@ -414,6 +446,9 @@ class LoaderDialog(StyledDialog):
 
     def reject(self) -> None:
         if self._installing:
-            self._cancel_install()
-            return
+            self.main.toast(
+                "加载器安装已转到顶栏继续，可以继续操作启动器；"
+                "点击顶栏进度可以查看任务",
+                "info",
+            )
         super().reject()

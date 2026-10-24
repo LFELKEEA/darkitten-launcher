@@ -29,6 +29,7 @@ from ..versions import version_json_path
 from ..workers import LocalContentImportWorker, VersionFolderImportWorker
 from . import icons
 from .dialogs import StyledDialog
+from .download_center import DownloadTask, TASK_SUCCESS
 from .widgets import badge, colors, local_transfer_paths
 
 
@@ -46,7 +47,8 @@ class LocalImportDialog(StyledDialog):
         self._sources: list[Path] = []
         self._infos: list[LocalImportInfo] = []
         self._version_info: VersionFolderInfo | None = None
-        self._worker: LocalContentImportWorker | VersionFolderImportWorker | None = None
+        self._task: DownloadTask | None = None
+        self._download_bound = False
         self._mode = "idle"
         self.imported_version = ""
         self.setAcceptDrops(True)
@@ -171,7 +173,7 @@ class LocalImportDialog(StyledDialog):
         self.import_btn = self.add_button("直接放进游戏", "Primary", self._start_import)
         self.import_btn.setEnabled(False)
 
-        self.finished.connect(self._cleanup)
+        self.finished.connect(self._detach_download_center)
         paths = [Path(item) for item in (initial_paths or [])]
         if initial_path:
             paths.append(Path(initial_path))
@@ -361,6 +363,50 @@ class LocalImportDialog(StyledDialog):
         )
 
     # ------------------------------------------------------------------
+    @staticmethod
+    def _content_result(success: bool, message: str, _result) -> tuple[bool, str, str]:
+        return bool(success), str(message), ""
+
+    def _bind_download_center(self) -> None:
+        if self._download_bound:
+            return
+        center = self.main.download_center
+        center.task_progress.connect(self._on_task_progress)
+        center.task_finished.connect(self._on_task_finished)
+        self._download_bound = True
+
+    def _detach_download_center(self, _result: int = 0) -> None:
+        if not self._download_bound:
+            return
+        center = self.main.download_center
+        try:
+            center.task_progress.disconnect(self._on_task_progress)
+            center.task_finished.disconnect(self._on_task_finished)
+        except (RuntimeError, TypeError):
+            pass
+        self._download_bound = False
+
+    def _on_task_progress(self, task_id: int, percent: int, message: str) -> None:
+        if self._task is None or int(task_id) != self._task.id:
+            return
+        self.progress.setValue(percent)
+        self.progress_text.setText(message)
+
+    def _on_task_finished(self, task: DownloadTask) -> None:
+        if self._task is None or task.id != self._task.id:
+            return
+        self._task = None
+        self._mode = "idle"
+        if task.status == TASK_SUCCESS:
+            self.progress.setValue(100)
+            self.progress_text.setText(task.message)
+            if task.content_type == "version-import":
+                self.imported_version = task.filename
+            self.accept()
+            return
+        self._finish_busy()
+        self._show_error(task.error or task.message or "导入失败")
+
     def _start_import(self) -> None:
         if self._mode != "idle":
             return
@@ -383,11 +429,14 @@ class LocalImportDialog(StyledDialog):
             isolated=self.main.config.version_isolation,
             parent=self,
         )
-        self._worker = worker
-        worker.progress.connect(self._on_progress)
-        worker.log_line.connect(self.main.log)
-        worker.finished.connect(self._on_content_finished)
-        worker.start()
+        self._bind_download_center()
+        self._task = self.main.download_center.start_worker(
+            worker,
+            title=f"导入本地内容 · {version_id}",
+            content_type="local-import",
+            target=self.main.config.version_game_path(version_id),
+            finished_adapter=self._content_result,
+        )
 
     def _start_version_import(self) -> None:
         if not self._version_info:
@@ -416,11 +465,14 @@ class LocalImportDialog(StyledDialog):
             threads=self.main.config.download_threads,
             parent=self,
         )
-        self._worker = worker
-        worker.progress.connect(self._on_progress)
-        worker.log_line.connect(self.main.log)
-        worker.finished.connect(self._on_version_finished)
-        worker.start()
+        self._bind_download_center()
+        self._task = self.main.download_center.start_worker(
+            worker,
+            title=f"导入版本文件夹 · {target}",
+            content_type="version-import",
+            source=self.main.config.download_source,
+            target=self.main.config.game_path / "versions" / target,
+        )
 
     def _begin_busy(self) -> None:
         self._mode = "import"
@@ -440,59 +492,22 @@ class LocalImportDialog(StyledDialog):
         self.progress.setValue(percent)
         self.progress_text.setText(message)
 
-    def _on_content_finished(self, success: bool, message: str, result) -> None:
-        self._worker = None
-        if not success:
-            self._finish_busy()
-            self._show_error(message)
-            return
-        self.progress.setValue(100)
-        self.progress_text.setText(message)
-        targets = getattr(result, "targets", {}) or {}
-        detail = "、".join(f"{key} {value}" for key, value in targets.items())
-        self.main.log(f"本地内容导入完成：{message}" + (f"（{detail}）" if detail else ""))
-        self.main.toast(message + "，已经放进对应文件夹", "success")
-        if hasattr(self.main, "mods_page"):
-            self.main.mods_page.refresh_mods()
-        self.accept()
-
-    def _on_version_finished(self, success: bool, message: str, version_id: str) -> None:
-        self._worker = None
-        if not success:
-            self._finish_busy()
-            self._show_error(message)
-            return
-        self.progress.setValue(100)
-        self.progress_text.setText(message)
-        self.imported_version = version_id
-        self.main.log(f"版本文件夹导入完成：{version_id} · {message}")
-        self.main.refresh_versions()
-        self.main.select_version(version_id)
-        self.main.toast(f"{version_id} 已经直接搬进猫窝", "success")
-        self.accept()
-
-    def _finish_busy(self) -> None:
-        self._mode = "idle"
-        self.choose_btn.setEnabled(True)
-        self.folder_btn.setEnabled(True)
-        self.name_edit.setEnabled(True)
-        self.complete.setEnabled(True)
-        self.version_combo.setEnabled(True)
-        self.import_btn.setEnabled(True)
-        self.cancel_btn.setText("取消")
-        self.cancel_btn.setEnabled(True)
-
     def _on_cancel(self) -> None:
-        if self._worker is not None and self._mode == "import":
-            self._worker.cancel()
+        if self._task is not None and self._mode == "import":
+            self.main.download_center.cancel(self._task.id)
             self.cancel_btn.setText("正在取消…")
             self.cancel_btn.setEnabled(False)
             return
         self.reject()
 
-    def _cleanup(self) -> None:
-        if self._worker is not None and self._mode == "import":
-            self._worker.cancel()
+    def reject(self) -> None:
+        if self._task is not None and self._mode == "import":
+            self._detach_download_center()
+            self.main.toast(
+                "任务已转到顶栏继续，可以继续操作启动器；点击顶栏进度查看任务",
+                "info",
+            )
+        super().reject()
 
     def _show_error(self, message: str) -> None:
         self.error.setText(message)

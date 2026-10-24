@@ -13,7 +13,7 @@ APP_SHORT_NAME = "DKL"
 APP_TAGLINE = "恶魔小猫的秘密基地"
 APP_AUTHOR = "LFELKEEA"
 APP_EMAIL = "lfel278623@outlook.com"
-APP_VERSION = "1.9.18"
+APP_VERSION = "1.9.19"
 APP_ID = "DarkittenLauncher"
 DEFAULT_UPDATE_URL = "https://lfelkeea.github.io/darkitten-launcher/update.json"
 

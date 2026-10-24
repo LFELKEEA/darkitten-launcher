@@ -223,7 +223,10 @@ def main() -> None:
             f"badge={content_dialog.preview_badge.text()} versions={content_dialog.version_combo.count()}",
         )
         content_dialog._start_import()
-        finished = wait_until(app, lambda: content_dialog._worker is None)
+        finished = wait_until(
+            app,
+            lambda: content_dialog._task is None and content_dialog._mode == "idle",
+        )
         target_mod = game / "versions" / "1.21.11" / "mods" / "demo.jar"
         ok &= check(
             "content_import",
@@ -260,7 +263,10 @@ def main() -> None:
         version_dialog.name_edit.setText("LocalCat")
         version_dialog.complete.setChecked(False)
         version_dialog._start_import()
-        version_finished = wait_until(app, lambda: version_dialog._worker is None)
+        version_finished = wait_until(
+            app,
+            lambda: version_dialog._task is None and version_dialog._mode == "idle",
+        )
         imported = game / "versions" / "LocalCat"
         imported_json = imported / "LocalCat.json"
         json_ok = False
