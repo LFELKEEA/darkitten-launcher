@@ -211,8 +211,15 @@ class LaunchWorker(QObject):
                 account=account,
                 server_address=self.server_address,
                 instance_id=self.instance_id,
+                status_cb=self.status.emit,
             )
             if self._cancelled():
+                close_plan = getattr(plan, "close", None)
+                if callable(close_plan):
+                    try:
+                        close_plan()
+                    except Exception:
+                        pass
                 self.cancelled.emit()
                 return
         except MissingFilesError as exc:

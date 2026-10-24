@@ -2323,6 +2323,9 @@ class MainWindow(QWidget):
             self.launch_active = False
             self.launch_worker = None
             self._launch_cancel_requested = False
+            close_plan = getattr(plan, "close", None)
+            if callable(close_plan):
+                close_plan()
             self.home_page.set_launching(False)
             self._update_action_button()
             self.loading_overlay.abort()

@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+from datetime import datetime
 from pathlib import Path
 
-from PySide6.QtCore import Qt, QUrl
+from PySide6.QtCore import Qt, QUrl, Signal
 from PySide6.QtGui import (
     QDesktopServices,
     QImage,
@@ -13,7 +14,9 @@ from PySide6.QtGui import (
 from PySide6.QtWidgets import (
     QFileDialog,
     QFrame,
+    QGridLayout,
     QHBoxLayout,
+    QInputDialog,
     QLabel,
     QLineEdit,
     QPushButton,
@@ -24,6 +27,21 @@ from PySide6.QtWidgets import (
 )
 
 from ...accounts import offline_uuid
+from ...skin_library import (
+    LibrarySkin,
+    SkinLibraryError,
+    add_skin,
+    delete_skin,
+    ensure_library,
+    get_skin,
+    import_path,
+    list_skins,
+    load_entry_image,
+    path_matches,
+    rename_skin,
+    set_variant,
+    sync_preview_copy,
+)
 from ...skins import (
     SKIN_DIR,
     CurrentSkin,
@@ -32,7 +50,6 @@ from ...skins import (
     default_skin,
     load_skin_file,
     local_skin_path,
-    save_local_skin,
     variant_text,
 )
 from ...workers import SkinFetchWorker, SkinResetWorker, SkinUploadWorker
@@ -73,6 +90,119 @@ def _rounded_face(image: QImage, size: int = 48) -> QPixmap:
     return QPixmap.fromImage(canvas)
 
 
+class LibrarySkinCard(QFrame):
+    """皮肤库中的一个皮肤卡片。"""
+
+    use_requested = Signal(str)
+    delete_requested = Signal(str)
+    rename_requested = Signal(str)
+
+    def __init__(
+        self,
+        entry: LibrarySkin,
+        image: QImage,
+        active: bool,
+        parent: QWidget | None = None,
+    ) -> None:
+        super().__init__(parent)
+        self.entry = entry
+        self.setObjectName("SoftCard")
+        self.setAttribute(Qt.WA_StyledBackground, True)
+        self.setMinimumHeight(132)
+        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        tip = [
+            f"名称：{entry.name}",
+            f"尺寸：{'64×32 旧版' if entry.legacy else '64×64'}",
+            f"模型：{'Slim' if entry.variant == 'slim' else 'Classic'}",
+        ]
+        if entry.source:
+            tip.append(f"来源：{entry.source}")
+        self.setToolTip("\n".join(tip))
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(9, 9, 9, 9)
+        layout.setSpacing(6)
+
+        top = QHBoxLayout()
+        top.setSpacing(9)
+        thumb = QLabel()
+        thumb.setFixedSize(68, 68)
+        thumb.setAlignment(Qt.AlignCenter)
+        thumb.setStyleSheet(
+            f"background: {colors()['card']}; border: 1px solid {colors()['border']};"
+            " border-radius: 9px;"
+        )
+        if not image.isNull():
+            thumb.setPixmap(
+                QPixmap.fromImage(image).scaled(
+                    64,
+                    64,
+                    Qt.KeepAspectRatio,
+                    Qt.FastTransformation,
+                )
+            )
+        top.addWidget(thumb)
+
+        info = QVBoxLayout()
+        info.setSpacing(3)
+        name = QLabel(entry.name)
+        name.setWordWrap(True)
+        name.setMaximumHeight(36)
+        name.setStyleSheet("font-weight: 700; font-size: 12px;")
+        info.addWidget(name)
+
+        badges = QHBoxLayout()
+        badges.setSpacing(4)
+        badges.addWidget(
+            badge("Slim" if entry.variant == "slim" else "Classic",
+                  "purple" if entry.variant == "slim" else "gray")
+        )
+        if entry.legacy:
+            badges.addWidget(badge("64×32", "orange"))
+        if active:
+            badges.addWidget(badge("使用中", "green"))
+        badges.addStretch(1)
+        info.addLayout(badges)
+
+        added = ""
+        if entry.added:
+            try:
+                added = datetime.fromtimestamp(entry.added).strftime("%Y-%m-%d")
+            except (OSError, ValueError, OverflowError):
+                added = ""
+        meta = QLabel(added or "本地皮肤")
+        meta.setObjectName("Tiny")
+        info.addWidget(meta)
+        info.addStretch(1)
+        top.addLayout(info, 1)
+        layout.addLayout(top)
+
+        actions = QHBoxLayout()
+        actions.setSpacing(4)
+        use_btn = QPushButton("使用中" if active else "使用")
+        use_btn.setObjectName("Soft" if not active else "Ghost")
+        use_btn.setCursor(Qt.PointingHandCursor)
+        use_btn.setEnabled(not active)
+        use_btn.clicked.connect(lambda: self.use_requested.emit(self.entry.id))
+        rename_btn = icon_button(
+            "edit", "重命名皮肤", colors()["text2"], 28, 14
+        )
+        rename_btn.clicked.connect(
+            lambda: self.rename_requested.emit(self.entry.id)
+        )
+        delete_btn = icon_button(
+            "trash", "从皮肤库移除", colors()["red"], 28, 14
+        )
+        delete_btn.clicked.connect(
+            lambda: self.delete_requested.emit(self.entry.id)
+        )
+        actions.addWidget(use_btn)
+        actions.addStretch(1)
+        actions.addWidget(rename_btn)
+        actions.addWidget(delete_btn)
+        layout.addLayout(actions)
+
+
 class SkinPage(QWidget):
     def __init__(self, main, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -84,6 +214,7 @@ class SkinPage(QWidget):
         self._reset_worker: SkinResetWorker | None = None
         self._busy = False
         self._auto_fetch_done: set[str] = set()
+        self._syncing_variant = False
         self.setAcceptDrops(True)
         self._build()
         self._load_initial_skin()
@@ -113,8 +244,8 @@ class SkinPage(QWidget):
         title = QLabel("猫猫试衣间")
         title.setObjectName("PageTitle")
         sub = QLabel(
-            "导入 64×64 或 64×32 的 PNG 皮肤，实时查看 3D 效果，"
-            "登录正版账户后可以直接上传并使用。"
+            "导入 64×64 或 64×32 的 PNG 皮肤，收进皮肤库并实时查看 3D 效果。"
+            "正版账户可以上传到 Mojang，离线账户也能在游戏内使用本地皮肤。"
         )
         sub.setObjectName("Muted")
         sub.setWordWrap(True)
@@ -140,6 +271,7 @@ class SkinPage(QWidget):
         right = QVBoxLayout()
         right.setSpacing(12)
         right.addWidget(self._build_account_card())
+        right.addWidget(self._build_library_card())
         right.addWidget(self._build_upload_card())
         right.addWidget(self._build_community_card())
         right.addStretch(1)
@@ -254,6 +386,52 @@ class SkinPage(QWidget):
         layout.addWidget(self.status_label)
         return card
 
+    def _build_library_card(self) -> QWidget:
+        card = Card()
+        layout = QVBoxLayout(card)
+        layout.setContentsMargins(18, 14, 18, 14)
+        layout.setSpacing(9)
+
+        header = QHBoxLayout()
+        title = QLabel("皮肤库")
+        title.setObjectName("H2")
+        header.addWidget(title)
+        self.library_count = badge("0 款", "gray")
+        header.addWidget(self.library_count)
+        header.addStretch(1)
+        import_btn = QPushButton("导入 PNG")
+        import_btn.setObjectName("Soft")
+        import_btn.setCursor(Qt.PointingHandCursor)
+        import_btn.setIcon(icons.icon("import", colors()["accent"], 15))
+        import_btn.clicked.connect(self._choose_skin)
+        header.addWidget(import_btn)
+        layout.addLayout(header)
+
+        hint = QLabel(
+            "可以保存多套皮肤。点击“使用”即可切换到该皮肤；"
+            "离线账户启动游戏时会自动加载，正版账户再点“上传并使用”同步。"
+        )
+        hint.setObjectName("Tiny")
+        hint.setWordWrap(True)
+        layout.addWidget(hint)
+
+        self.library_grid_host = QWidget()
+        self.library_grid = QGridLayout(self.library_grid_host)
+        self.library_grid.setContentsMargins(0, 0, 0, 0)
+        self.library_grid.setHorizontalSpacing(8)
+        self.library_grid.setVerticalSpacing(8)
+        for column in range(3):
+            self.library_grid.setColumnStretch(column, 1)
+        layout.addWidget(self.library_grid_host)
+
+        self.library_empty = QLabel(
+            "皮肤库还是空的。导入一张 PNG，或把图片直接拖进窗口。"
+        )
+        self.library_empty.setObjectName("Tiny")
+        self.library_empty.setWordWrap(True)
+        layout.addWidget(self.library_empty)
+        return card
+
     def _build_upload_card(self) -> QWidget:
         card = Card()
         layout = QVBoxLayout(card)
@@ -274,7 +452,7 @@ class SkinPage(QWidget):
         file_row.setSpacing(7)
         self.file_edit = QLineEdit()
         self.file_edit.setReadOnly(True)
-        self.file_edit.setPlaceholderText("尚未选择本地皮肤，也可以把 PNG 拖进窗口")
+        self.file_edit.setPlaceholderText("尚未选择皮肤，也可以把 PNG 拖进窗口")
         self.file_edit.setMinimumWidth(260)
         self.select_btn = QPushButton("选择 PNG")
         self.select_btn.setObjectName("Soft")
@@ -317,8 +495,9 @@ class SkinPage(QWidget):
         layout.addLayout(actions)
 
         note = QLabel(
-            "选择文件后会复制一份到启动器的 skins 文件夹，原始图片不会被修改。"
-            "上传会立即替换正版账户当前皮肤，并同步到 Minecraft。"
+            "选择文件后会复制一份到皮肤库，原始图片不会被修改。"
+            "正版账户点击“上传并使用”会替换 Mojang 账户皮肤；"
+            "离线账户点击“离线使用”后，启动游戏时由本地皮肤服务加载。"
         )
         note.setObjectName("Tiny")
         note.setWordWrap(True)
@@ -362,6 +541,12 @@ class SkinPage(QWidget):
 
     # ------------------------------------------------------------------
     def _load_initial_skin(self) -> None:
+        try:
+            ensure_library(self.main.config)
+        except Exception:
+            pass
+        self._refresh_library()
+
         candidates: list[Path] = []
         configured = self.main.config.skin_path.strip()
         if configured:
@@ -380,7 +565,7 @@ class SkinPage(QWidget):
                 continue
             self._skin_file = skin
             if skin.legacy and self.variant_tabs.current() == "slim":
-                self.variant_tabs.set_value("classic")
+                self._set_variant_silently("classic")
                 self.main.config.skin_variant = "classic"
                 self.main.config.save()
             self._show_skin(skin.image, skin.legacy)
@@ -389,7 +574,41 @@ class SkinPage(QWidget):
             return
 
         self._show_skin(default_skin(), False)
-        self.current_label.setText("使用默认皮肤预览。选择本地 PNG 即可开始。")
+        self.current_label.setText("使用默认皮肤预览。导入 PNG 后会自动加入皮肤库。")
+
+    def _active_skin_path(self) -> Path | None:
+        configured = str(self.main.config.skin_path or "").strip()
+        if configured:
+            path = Path(configured)
+            if path.is_file():
+                return path
+        local = local_skin_path()
+        if local.is_file():
+            return local
+        return None
+
+    def _refresh_library(self) -> None:
+        if not hasattr(self, "library_grid"):
+            return
+        while self.library_grid.count():
+            item = self.library_grid.takeAt(0)
+            widget = item.widget()
+            if widget is not None:
+                widget.deleteLater()
+        entries = list_skins()
+        active = self._active_skin_path()
+        for index, entry in enumerate(entries):
+            card = LibrarySkinCard(
+                entry,
+                load_entry_image(entry),
+                path_matches(entry, active),
+            )
+            card.use_requested.connect(self._use_library_skin)
+            card.delete_requested.connect(self._delete_library_skin)
+            card.rename_requested.connect(self._rename_library_skin)
+            self.library_grid.addWidget(card, index // 3, index % 3)
+        self.library_empty.setVisible(not entries)
+        self.library_count.setText(f"{len(entries)} 款")
 
     def _show_skin(self, image: QImage, legacy: bool) -> None:
         self.preview.set_skin(image, legacy)
@@ -406,36 +625,185 @@ class SkinPage(QWidget):
         self.model_badge.setProperty("badge", "purple" if variant == "slim" else "gray")
         repolish(self.model_badge)
 
-    def _apply_local_file(self, path: str | Path, *, original: str = "") -> None:
+    def _set_variant_silently(self, value: str) -> None:
+        """程序化切换模型时不写入皮肤库，避免误改其他皮肤条目。"""
+        self._syncing_variant = True
         try:
-            skin = load_skin_file(path)
-            saved = save_local_skin(skin)
-        except SkinError as exc:
-            self._set_status(str(exc), "error")
-            self.main.toast(str(exc), "error")
-            return
+            self.variant_tabs.set_value(value)
+        finally:
+            self._syncing_variant = False
+
+    def _activate_entry(
+        self,
+        entry: LibrarySkin,
+        skin: SkinFile,
+        *,
+        original: str = "",
+        announce: bool = True,
+    ) -> None:
         self._skin_file = skin
         legacy_note = ""
         if skin.legacy:
-            if self.variant_tabs.current() != "classic":
-                self.variant_tabs.set_value("classic")
+            value = "classic"
             legacy_note = " 旧版 64×32 皮肤只支持 Classic 模型。"
-        self.main.config.skin_variant = "classic" if skin.legacy else self.variant_tabs.current()
-        self.main.config.skin_path = str(saved)
+        elif entry.variant == "slim":
+            value = "slim"
+        else:
+            value = self.variant_tabs.current()
+        if self.variant_tabs.current() != value:
+            self._set_variant_silently(value)
+        self.main.config.skin_variant = value
+        self.main.config.skin_path = str(entry.path)
         self.main.config.save()
+
+        preview_note = ""
+        try:
+            sync_preview_copy(entry)
+        except SkinLibraryError as exc:
+            preview_note = f" 预览副本同步失败：{exc}"
+
         self._show_skin(skin.image, skin.legacy)
-        self.file_edit.setText(original or str(Path(path)))
-        self.file_edit.setToolTip(
-            f"原始文件：{original or path}\n预览副本：{saved}"
-        )
-        self.current_label.setText(
-            "本地皮肤已就绪，可以预览 3D 效果。"
-            + ("点击“上传并使用”同步到正版账户。" if self.main.current_account().is_msa else "离线模式下只能预览。")
-            + legacy_note
-        )
-        self._set_status(f"已加载皮肤：{Path(original or path).name}{legacy_note}", "success")
+        self.file_edit.setText(original or str(entry.path))
+        tooltip = f"皮肤库：{entry.path}"
+        if entry.source:
+            tooltip += f"\n原始文件：{entry.source}"
+        self.file_edit.setToolTip(tooltip)
+
+        online = self.main.current_account().is_msa
+        if online:
+            self.current_label.setText(
+                f"已选择皮肤库中的「{entry.name}」。"
+                "点击“上传并使用”同步到正版账户。"
+                + legacy_note
+            )
+            status = f"已切换到皮肤：{entry.name}{legacy_note}"
+        else:
+            self.current_label.setText(
+                f"离线皮肤「{entry.name}」已启用。"
+                "启动游戏时会通过本地皮肤服务加载，不需要正版账户。"
+                + legacy_note
+            )
+            status = f"离线皮肤已启用：{entry.name}{legacy_note}"
+        self._set_status(status + preview_note, "success" if not preview_note else "info")
+        self._refresh_library()
         self._update_buttons()
         self.main.account_changed.emit()
+        if announce:
+            self.main.toast(status, "success")
+
+    def _apply_local_file(self, path: str | Path, *, original: str = "") -> None:
+        source = original or str(path)
+        try:
+            skin = load_skin_file(path)
+            entry = add_skin(
+                skin,
+                name=Path(source).stem,
+                variant=self.variant_tabs.current(),
+                source=source,
+            )
+        except (SkinError, SkinLibraryError) as exc:
+            self._set_status(str(exc), "error")
+            self.main.toast(str(exc), "error")
+            return
+        self._activate_entry(entry, skin, original=source, announce=False)
+        self._set_status(f"已加入皮肤库并切换：{entry.name}", "success")
+
+    def _import_to_library(self, path: str | Path) -> None:
+        try:
+            entry = import_path(
+                path,
+                variant=self.variant_tabs.current(),
+            )
+        except (SkinError, SkinLibraryError) as exc:
+            self._set_status(f"{Path(path).name}：{exc}", "error")
+            self.main.toast(f"无法加入皮肤库：{exc}", "error")
+            return
+        self._refresh_library()
+        self._set_status(f"已加入皮肤库：{entry.name}", "success")
+        self.main.toast(f"已加入皮肤库：{entry.name}", "success")
+
+    def _use_library_skin(self, entry_id: str) -> None:
+        entry = get_skin(entry_id)
+        if entry is None:
+            self._set_status("皮肤库中找不到这个皮肤，列表已刷新。", "error")
+            self._refresh_library()
+            return
+        try:
+            skin = load_skin_file(entry.path)
+        except SkinError as exc:
+            self._set_status(str(exc), "error")
+            self.main.toast(str(exc), "error")
+            self._refresh_library()
+            return
+        self._activate_entry(entry, skin)
+
+    def _delete_library_skin(self, entry_id: str) -> None:
+        entry = get_skin(entry_id)
+        if entry is None:
+            self._refresh_library()
+            return
+        active = path_matches(entry, self.main.config.skin_path)
+        dialog = ConfirmDialog(
+            self.main,
+            "从皮肤库移除",
+            f"将把「{entry.name}」从皮肤库中移除。",
+            primary_text="移除",
+            secondary_text="取消",
+            icon_name="trash",
+            icon_color=colors()["red"],
+            details=(
+                "只会删除启动器皮肤库中的副本，不会修改你导入的原始图片。"
+                + (" 这是当前正在使用的皮肤，移除后会恢复默认皮肤。" if active else "")
+            ),
+        )
+        if not dialog.exec():
+            return
+        if active:
+            self.main.config.skin_path = ""
+            self.main.config.save()
+            self._skin_file = None
+            self.file_edit.clear()
+            self.file_edit.setToolTip("")
+            self._show_skin(default_skin(), False)
+            self.current_label.setText(
+                "已移除当前皮肤，恢复默认预览。可以重新选择皮肤库中的其他皮肤。"
+            )
+            try:
+                local_skin_path().unlink(missing_ok=True)
+            except OSError:
+                pass
+            self.main.account_changed.emit()
+        ok, message = delete_skin(entry.id, to_recycle_bin=True)
+        self._refresh_library()
+        self._update_buttons()
+        if ok:
+            self._set_status(message, "success")
+            self.main.toast(message, "success")
+        else:
+            self._set_status(message, "error")
+            self.main.toast(message, "error")
+
+    def _rename_library_skin(self, entry_id: str) -> None:
+        entry = get_skin(entry_id)
+        if entry is None:
+            self._refresh_library()
+            return
+        name, ok = QInputDialog.getText(
+            self,
+            "重命名皮肤",
+            "给这套皮肤起个名字：",
+            text=entry.name,
+        )
+        if not ok:
+            return
+        clean = str(name or "").strip()
+        if not clean:
+            self._set_status("皮肤名称不能为空。", "error")
+            return
+        updated = rename_skin(entry.id, clean)
+        self._refresh_library()
+        if updated is not None:
+            self._set_status(f"已重命名：{updated.name}", "success")
 
     def _choose_skin(self) -> None:
         start = str(Path.home() / "Pictures")
@@ -444,18 +812,28 @@ class SkinPage(QWidget):
             parent = Path(configured).parent
             if parent.is_dir():
                 start = str(parent)
-        path, _ = QFileDialog.getOpenFileName(
+        paths, _ = QFileDialog.getOpenFileNames(
             self,
-            "选择 Minecraft 皮肤",
+            "导入 Minecraft 皮肤",
             start,
             "Minecraft 皮肤 (*.png)",
         )
-        if path:
-            self._apply_local_file(path, original=path)
+        if not paths:
+            return
+        self._apply_local_file(paths[0], original=paths[0])
+        for extra in paths[1:]:
+            self._import_to_library(extra)
+        if len(paths) > 1:
+            self.main.toast(
+                f"已导入 {len(paths)} 张皮肤，当前使用「{Path(paths[0]).stem}」",
+                "success",
+            )
 
     def _on_variant_changed(self, value: str) -> None:
+        if self._syncing_variant:
+            return
         if value == "slim" and self.preview.is_legacy():
-            self.variant_tabs.set_value("classic")
+            self._set_variant_silently("classic")
             value = "classic"
             self._set_status(
                 "64×32 旧版皮肤没有独立的细手臂纹理，已保持 Classic 模型。",
@@ -465,6 +843,12 @@ class SkinPage(QWidget):
         self.main.config.save()
         self.preview.set_variant(value)
         self._update_model_badge()
+        configured = self.main.config.skin_path
+        for entry in list_skins():
+            if path_matches(entry, configured):
+                set_variant(entry.id, value)
+                self._refresh_library()
+                break
 
     # ------------------------------------------------------------------
     def _set_status(self, text: str, kind: str = "info") -> None:
@@ -483,13 +867,19 @@ class SkinPage(QWidget):
         has_file = self._skin_file is not None
         self.refresh_skin_btn.setEnabled(online and available)
         self.reset_skin_btn.setEnabled(online and available)
-        self.upload_btn.setEnabled(online and available and has_file)
+        self.upload_btn.setEnabled(available and has_file)
         self.select_btn.setEnabled(available)
-        if not online and available:
-            self.upload_btn.setToolTip("登录 Microsoft 正版账户后才能上传皮肤")
-        else:
+        if online:
+            self.upload_btn.setText("上传并使用")
             self.upload_btn.setToolTip(
                 "" if has_file else "请先选择一张 64×64 或 64×32 的 PNG 皮肤"
+            )
+        else:
+            self.upload_btn.setText("离线使用")
+            self.upload_btn.setToolTip(
+                "把当前皮肤设为离线玩家皮肤，启动游戏时自动生效"
+                if has_file
+                else "请先从皮肤库选择或导入一张皮肤"
             )
 
     def _set_busy(self, busy: bool, text: str = "") -> None:
@@ -555,7 +945,7 @@ class SkinPage(QWidget):
             "slim" if skin.variant == "slim" else "classic"
         )
         self.main.config.save()
-        self.variant_tabs.set_value(self.main.config.skin_variant)
+        self._set_variant_silently(self.main.config.skin_variant)
         if self._skin_file is None:
             self._show_skin(skin.image, skin.image.height() == 32)
         else:
@@ -577,10 +967,40 @@ class SkinPage(QWidget):
         self._update_buttons()
         self.main.account_changed.emit()
 
+    def _use_offline_skin(self) -> None:
+        if self._busy:
+            return
+        if self._skin_file is None:
+            self.main.toast("请先从皮肤库选择或导入一张皮肤", "info")
+            return
+        configured = str(self.main.config.skin_path or "").strip()
+        entry = next(
+            (item for item in list_skins() if path_matches(item, configured)),
+            None,
+        )
+        if entry is None:
+            source = self.file_edit.text().strip()
+            try:
+                entry = add_skin(
+                    self._skin_file,
+                    name=Path(source).stem if source else "我的皮肤",
+                    variant=self.variant_tabs.current(),
+                    source=source,
+                )
+            except SkinLibraryError as exc:
+                self._set_status(str(exc), "error")
+                self.main.toast(str(exc), "error")
+                return
+        self._activate_entry(
+            entry,
+            self._skin_file,
+            original=self.file_edit.text().strip() or str(entry.path),
+        )
+
     def _upload_skin(self) -> None:
         account = self.main.current_account()
         if not account.is_msa:
-            self.main.toast("请先登录 Microsoft 正版账户", "error")
+            self._use_offline_skin()
             return
         if self._busy:
             return
@@ -698,24 +1118,49 @@ class SkinPage(QWidget):
                 f"UUID {uid[:8]}…{uid[-4:]}" if uid else "已登录 Microsoft 账户"
             )
         else:
-            self.account_badge.setText("离线预览")
-            self.account_badge.setProperty("badge", "gray")
+            has_skin = self._skin_file is not None
+            self.account_badge.setText("离线皮肤" if has_skin else "离线预览")
+            self.account_badge.setProperty("badge", "purple" if has_skin else "gray")
             self.mode_badge.setText("离线模式")
-            self.mode_badge.setProperty("badge", "gray")
+            self.mode_badge.setProperty("badge", "purple" if has_skin else "gray")
             name = self.main.config.player_name
-            self.account_name.setText(f"离线预览 · {name}")
+            self.account_name.setText(f"离线玩家 · {name}")
             uid = offline_uuid(name)
-            self.account_uuid.setText(
-                f"UUID {uid[:8]}…{uid[-4:]} · 登录正版后可上传皮肤"
-            )
+            if has_skin:
+                entry = next(
+                    (
+                        item
+                        for item in list_skins()
+                        if path_matches(item, self.main.config.skin_path)
+                    ),
+                    None,
+                )
+                skin_name = entry.name if entry is not None else "本地皮肤"
+                self.current_label.setText(
+                    f"离线皮肤「{skin_name}」已启用。"
+                    "启动游戏时由本地皮肤服务加载，不需要正版账户。"
+                )
+                self.account_uuid.setText(
+                    f"UUID {uid[:8]}…{uid[-4:]} · 本地皮肤已启用"
+                )
+            else:
+                self.account_uuid.setText(
+                    f"UUID {uid[:8]}…{uid[-4:]} · 可在皮肤库选择皮肤"
+                )
         repolish(self.account_badge)
         repolish(self.mode_badge)
         if not self._busy:
             online = account.is_msa
             if self._current_skin is not None and online:
                 self._set_status("正版账户已连接，可以上传或恢复皮肤。", "info")
+            elif not online and self._skin_file is not None:
+                self._set_status(
+                    "离线模式已启用本地皮肤，游戏内会显示你的皮肤。", "info"
+                )
             elif not online:
-                self._set_status("离线模式仅支持本地预览，不会修改任何账户。", "info")
+                self._set_status(
+                    "离线模式可以使用皮肤库中的皮肤，启动后自动生效。", "info"
+                )
             elif self._skin_file is not None:
                 self._set_status("本地皮肤已就绪，可以上传。", "info")
             else:
@@ -724,6 +1169,7 @@ class SkinPage(QWidget):
         self.preview.update()
 
     def on_show(self) -> None:
+        self._refresh_library()
         self.refresh_account()
         account = self.main.current_account()
         if not account.is_msa:
@@ -764,10 +1210,20 @@ class SkinPage(QWidget):
         super().dragEnterEvent(event)
 
     def dropEvent(self, event) -> None:
-        for url in event.mimeData().urls():
-            path = url.toLocalFile()
-            if path.lower().endswith(".png"):
-                self._apply_local_file(path, original=path)
-                event.acceptProposedAction()
-                return
-        super().dropEvent(event)
+        paths = [
+            url.toLocalFile()
+            for url in event.mimeData().urls()
+            if url.toLocalFile().lower().endswith(".png")
+        ]
+        if not paths:
+            super().dropEvent(event)
+            return
+        self._apply_local_file(paths[0], original=paths[0])
+        for extra in paths[1:]:
+            self._import_to_library(extra)
+        if len(paths) > 1:
+            self.main.toast(
+                f"已导入 {len(paths)} 张皮肤，当前使用「{Path(paths[0]).stem}」",
+                "success",
+            )
+        event.acceptProposedAction()

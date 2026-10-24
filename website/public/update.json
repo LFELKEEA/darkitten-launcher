@@ -1,18 +1,23 @@
 {
-  "version": "1.9.23",
+  "version": "1.9.24",
   "released": "2026-10-24",
   "notes": [
-    "修复开发者模式 OC 互动台词显示不全：首页恶魔猫猫气泡原先固定 116×36 像素且不换行，长台词会被裁切；现在按文字宽度自适应并自动换行，普通与开发者台词都能完整显示。",
-    "补充 OC 气泡回归测试：覆盖普通模式和开发者模式的全部台词，校验气泡边界、文字完整性与 Q 版头像气泡，防止后续改动再次造成裁切。"
+    "新增皮肤库：可以保存多套 64×64 或 64×32 皮肤，带缩略图、模型标记和使用中状态；支持逐张导入、一次选择多张、拖入多张 PNG，重复文件按 SHA-256 自动去重。",
+    "皮肤库支持“使用 / 重命名 / 移除”；移除优先进入回收站，不会改动你最初导入的 PNG；旧版本的单张本地皮肤会在首次打开皮肤页时自动迁入皮肤库。",
+    "离线模式现在可以在游戏内使用皮肤：启动时自动在 127.0.0.1 启动本地 Yggdrasil 皮肤服务，并通过 authlib-injector 注入皮肤属性，不需要安装 Mod，原版、Forge、Fabric 与 NeoForge 都能使用。",
+    "离线皮肤支持 Classic / Slim 模型，64×32 旧版皮肤会自动固定为 Classic；皮肤页会明确显示“离线皮肤已启用”，启动游戏后由本地服务加载。",
+    "第一次使用离线皮肤时会自动下载 authlib-injector 1.2.8（约 350 KB），支持官方、BMCLAPI、GitHub 与镜像回退，并校验 SHA-256；下载失败不会阻止游戏启动，只会提示离线皮肤暂不可用。",
+    "修复取消启动时可能遗留本地皮肤服务的问题：参数构建完成后取消启动会立即关闭服务并释放端口。",
+    "已完成真实 authlib-injector 1.2.8 联调：组件能正常读取本地服务元数据；新增皮肤库、离线皮肤服务、启动参数注入、签名校验和取消清理的回归测试。"
   ],
-  "download_url": "downloads/DKL-1.9.23-update.zip",
+  "download_url": "downloads/DKL-1.9.24-update.zip",
   "page_url": "index.html",
-  "source_url": "downloads/DarkittenLauncher-1.9.23-source.zip",
-  "source_txt_url": "downloads/DarkittenLauncher-1.9.23-source.txt",
-  "sha256": "927d85f373a83ff07ef59b4bff64ece4fb0d4c9d01b155ad1baebe6c9f1199f1",
-  "size": 1106221,
-  "source_sha256": "bd7c9c327e69a74a422b2f46b8bd64c4813f1423b74aac784b5067d59899183e",
-  "source_size": 1916814,
-  "source_txt_sha256": "b464141f71ae958ac62fa97fe62a40e45893775a35e0b7e60f5c9516b01622a8",
-  "source_txt_size": 2337829
+  "source_url": "downloads/DarkittenLauncher-1.9.24-source.zip",
+  "source_txt_url": "downloads/DarkittenLauncher-1.9.24-source.txt",
+  "sha256": "02eba6ae48428bc41137bba299018be404504d3b736acddc1be9f9f95bf19953",
+  "size": 1119032,
+  "source_sha256": "19fe99036a363f663c79cd84f2e552da417bc69f67287303e558a6eaa922a5bd",
+  "source_size": 1940997,
+  "source_txt_sha256": "345a2ac5104174146b88ffe9f24c39615b11a546a205cbcfe3151ad2d5132937",
+  "source_txt_size": 2420768
 }

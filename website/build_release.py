@@ -33,6 +33,7 @@ EXCLUDED_PARTS = {
     "minecraft",
     "servers",
     "rooms",
+    "runtime",
     "skins",
     "test_game",
     "updates",
@@ -233,6 +234,11 @@ def sync_site_version(version: str) -> None:
     script = PUBLIC / "app.js"
     text = script.read_text(encoding="utf-8")
     text = re.sub(r'(\|\| ")\d+\.\d+\.\d+(")', rf"\g<1>{version}\g<2>", text)
+    text = re.sub(
+        r'(FEEDBACK_VERSION_FALLBACK\s*=\s*")\d+\.\d+\.\d+(")',
+        rf"\g<1>{version}\g<2>",
+        text,
+    )
     script.write_text(text, encoding="utf-8")
 
 

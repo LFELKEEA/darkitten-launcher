@@ -10,7 +10,7 @@ import uuid
 from ctypes import wintypes
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from PySide6.QtCore import QObject, Signal
 
@@ -56,10 +56,21 @@ class LaunchPlan:
     version: ResolvedVersion
     log_file: str = ""
     warnings: list[str] = field(default_factory=list)
+    cleanup: Any = None
 
     @property
     def command_line(self) -> str:
         return subprocess.list2cmdline(self.command)
+
+    def close(self) -> None:
+        """释放启动阶段占用的本地资源（例如离线皮肤服务）。"""
+        cleanup = self.cleanup
+        self.cleanup = None
+        if cleanup is not None:
+            try:
+                cleanup.close()
+            except Exception:
+                pass
 
 
 def redacted_command_line(command: list[str]) -> str:
@@ -194,6 +205,7 @@ def prepare_launch(
     account: Account | None = None,
     server_address: str = "",
     instance_id: str = "",
+    status_cb: Callable[[str], None] | None = None,
 ) -> LaunchPlan:
     game_dir = Path(game_dir)
     # version_id 决定用哪套加载器/依赖启动；instance_id 决定存档、Mod、
@@ -359,6 +371,7 @@ def prepare_launch(
     if any(_unresolved(a) for a in game_arguments):
         warnings.append("游戏参数中存在未解析的占位符。")
 
+    main_index = len(command)
     command.append(resolved.main_class)
     command.extend(game_arguments)
 
@@ -371,6 +384,21 @@ def prepare_launch(
     run_dir.mkdir(parents=True, exist_ok=True)
     (run_dir / "mods").mkdir(parents=True, exist_ok=True)
 
+    offline_runtime = None
+    if not account.is_msa:
+        try:
+            from .offline_skin import prepare_offline_runtime
+
+            offline_runtime = prepare_offline_runtime(
+                cfg, name, auth_uuid, status_cb=status_cb
+            )
+        except Exception as exc:
+            warnings.append(f"离线皮肤暂不可用：{exc}")
+        if offline_runtime is not None:
+            command[main_index:main_index] = offline_runtime.jvm_args
+            if offline_runtime.note:
+                warnings.append(offline_runtime.note)
+
     return LaunchPlan(
         command=command,
         cwd=str(run_dir),
@@ -378,6 +406,7 @@ def prepare_launch(
         version=resolved,
         log_file=log_config,
         warnings=warnings,
+        cleanup=offline_runtime,
     )
 
 
@@ -463,6 +492,12 @@ class GameProcess(QObject):
         if self._finished.is_set():
             return
         self._finished.set()
+        close_plan = getattr(self.plan, "close", None)
+        if callable(close_plan):
+            try:
+                close_plan()
+            except Exception:
+                pass
         # 先通知界面，再尝试关闭管道。TextIOWrapper.close() 会等待读取线程
         # 持有的缓冲区锁；如果子进程还占着管道，这里会一直阻塞。
         self.game_finished.emit(code)
