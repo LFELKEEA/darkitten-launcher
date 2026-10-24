@@ -1,27 +1,18 @@
 {
-  "version": "1.9.22",
+  "version": "1.9.23",
   "released": "2026-10-24",
   "notes": [
-    "开发者模式改为密钥解锁：在设置页最底部输入开发者密钥即可开启，不再依赖正版账户名或 Microsoft 邮箱；解锁状态保存在本地，可随时退出。",
-    "反馈系统移除 Cloudflare：启动器与下载站的 Bug / 改进建议统一通过 GitHub Issues 提交，不再经过第三方反馈服务。",
-    "新增网站开发者反馈表：从启动器「设置 → 开发者模式」一键打开，网页只接受启动器签发的访问凭证；支持搜索、类型与状态筛选、回复入口，关闭 Issue 后自动标记为已处理。",
-    "已装 Mod 支持更新检测与一键更新：按 Modrinth / CurseForge 项目与版本号比对，显示可更新数量，批量下载新版本并保留旧文件备份。",
-    "新增 Mod 冲突与环境检查：识别重复 Mod、缺失前置、加载器不匹配和游戏版本不兼容，并可直接跳转下载必需前置。",
-    "下载任务支持跨会话恢复：关闭启动器后重新打开，未完成的下载会保留分段进度并继续，不再从头开始。",
-    "下载源新增自动测速与熔断：在 Mojang 官方与 BMCLAPI 之间自动选择更快的线路，连续失败会暂时切换线路，恢复后自动回来。",
-    "新增世界与配置快照：一键备份存档、config、defaultconfigs 和选项文件，可随时恢复；恢复只覆盖同名文件，不删除额外内容。",
-    "新增一键诊断包：汇总系统信息、启动器与游戏日志、崩溃报告和脱敏后的配置，自动隐藏令牌与账号敏感信息，方便反馈问题。",
-    "新增安全模式：启动时临时禁用全部 Mod，用于排查崩溃；游戏退出或启动失败后自动恢复，不会永久关闭 Mod。",
-    "新增 Ctrl+K 快捷命令面板：搜索并执行页面跳转、启动游戏、安全模式、快照、诊断、切换主题等操作；开发者模式新增反馈未读红点提醒。"
+    "修复开发者模式 OC 互动台词显示不全：首页恶魔猫猫气泡原先固定 116×36 像素且不换行，长台词会被裁切；现在按文字宽度自适应并自动换行，普通与开发者台词都能完整显示。",
+    "补充 OC 气泡回归测试：覆盖普通模式和开发者模式的全部台词，校验气泡边界、文字完整性与 Q 版头像气泡，防止后续改动再次造成裁切。"
   ],
-  "download_url": "downloads/DKL-1.9.22-update.zip",
+  "download_url": "downloads/DKL-1.9.23-update.zip",
   "page_url": "index.html",
-  "source_url": "downloads/DarkittenLauncher-1.9.22-source.zip",
-  "source_txt_url": "downloads/DarkittenLauncher-1.9.22-source.txt",
-  "sha256": "32f4b7a9f94cedb1da4480861729019f70cb8e1d1327acfceada9667124d2cb7",
-  "size": 1105781,
-  "source_sha256": "b9aa4b44dbfb5c97509753e248f476cc17cad4dc1f6794274a0f4d49ed0031e5",
-  "source_size": 1914906,
-  "source_txt_sha256": "f3e4416617e0cb2a6383f99d1c925da3ae480db1b6977f87253612650b8394bf",
-  "source_txt_size": 2332556
+  "source_url": "downloads/DarkittenLauncher-1.9.23-source.zip",
+  "source_txt_url": "downloads/DarkittenLauncher-1.9.23-source.txt",
+  "sha256": "5d8d90cccce7dd1394511a00b8c07a801318ba162bce96291fa966de60fec5b7",
+  "size": 1106238,
+  "source_sha256": "d0cecb60fb83c58de56f89e14f6840c6cd171388a3b1d0bd4b6836732e296ef1",
+  "source_size": 1917722,
+  "source_txt_sha256": "be9377aefa78b3898629ace616cfd951e9a984e22e439ee5b1f273fcdf703d47",
+  "source_txt_size": 2339438
 }

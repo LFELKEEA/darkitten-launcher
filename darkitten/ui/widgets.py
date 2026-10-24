@@ -11,6 +11,7 @@ from PySide6.QtCore import (
     QEvent,
     QPointF,
     QPropertyAnimation,
+    QRect,
     QRectF,
     QSize,
     Qt,
@@ -20,6 +21,7 @@ from PySide6.QtCore import (
 from PySide6.QtGui import (
     QColor,
     QFont,
+    QFontMetrics,
     QLinearGradient,
     QPainter,
     QPainterPath,
@@ -822,6 +824,39 @@ class HeroArt(QWidget):
             self._timer.stop()
         self.update()
 
+    @staticmethod
+    def _bubble_font() -> QFont:
+        font = QFont("Microsoft YaHei UI", 8)
+        font.setBold(True)
+        return font
+
+    def _bubble_layout(self, lift: float = 0.0) -> tuple[QRectF, QRectF, QFont]:
+        """按台词长度计算气泡与文字区域，长台词自动换行，避免被裁切。"""
+        font = self._bubble_font()
+        metrics = QFontMetrics(font)
+        body = self._body_rect()
+        pad_x, pad_y = 10.0, 8.0
+        available_w = max(96.0, body.left() - 20.0)
+        max_text_w = max(56.0, available_w - pad_x * 2 - 4.0)
+        natural_w = float(metrics.horizontalAdvance(self._phrase))
+        text_w = max(48.0, min(natural_w, max_text_w))
+        flags = Qt.AlignCenter | Qt.TextWordWrap | Qt.TextWrapAnywhere
+        needed = metrics.boundingRect(
+            QRect(0, 0, max(1, int(math.ceil(text_w))), 1000),
+            flags,
+            self._phrase,
+        )
+        bubble_w = max(
+            96.0, min(available_w, needed.width() + pad_x * 2 + 4.0)
+        )
+        bubble_h = max(37.0, float(needed.height()) + pad_y * 2)
+        bx = max(6.0, body.left() - bubble_w - 14.0)
+        by = body.center().y() - bubble_h / 2.0 + lift * 0.6
+        by = max(4.0, min(by, max(4.0, self.height() - bubble_h - 4.0)))
+        bubble = QRectF(bx, by, bubble_w, bubble_h)
+        text_rect = bubble.adjusted(pad_x, pad_y, -pad_x, -pad_y)
+        return bubble, text_rect, font
+
     def paintEvent(self, event) -> None:
         p = QPainter(self)
         p.setRenderHint(QPainter.Antialiasing)
@@ -956,11 +991,9 @@ class HeroArt(QWidget):
             alpha = 255
             if age > 2.0:
                 alpha = int(255 * max(0.0, (2.6 - age) / 0.6))
-            bubble_w = 116.0
-            bubble_h = 36.0
-            bx = max(6.0, body.left() - bubble_w - 14.0)
-            by = body.center().y() - bubble_h / 2.0 + lift * 0.6
-            bubble = QRectF(bx, by, bubble_w, bubble_h)
+            bubble, text_rect, font = self._bubble_layout(lift)
+            bubble_h = bubble.height()
+            by = bubble.top()
             p.setOpacity(alpha / 255.0)
             p.setPen(QPen(QColor(226, 58, 94, 150), 1.4))
             p.setBrush(QColor(255, 246, 248, 245))
@@ -975,10 +1008,12 @@ class HeroArt(QWidget):
             p.setBrush(QColor(255, 246, 248, 245))
             p.drawPolygon(tail)
             p.setPen(QPen(QColor("#7C1B31")))
-            font = QFont("Microsoft YaHei UI", 8)
-            font.setBold(True)
             p.setFont(font)
-            p.drawText(bubble, Qt.AlignCenter, self._phrase)
+            p.drawText(
+                text_rect,
+                Qt.AlignCenter | Qt.TextWordWrap | Qt.TextWrapAnywhere,
+                self._phrase,
+            )
             p.setOpacity(1.0)
 
         p.end()
