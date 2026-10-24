@@ -13,7 +13,7 @@ APP_SHORT_NAME = "DKL"
 APP_TAGLINE = "恶魔小猫的秘密基地"
 APP_AUTHOR = "LFELKEEA"
 APP_EMAIL = "lfel278623@outlook.com"
-APP_VERSION = "1.9.26"
+APP_VERSION = "1.10.0"
 APP_ID = "DarkittenLauncher"
 DEFAULT_UPDATE_URL = "https://lfelkeea.github.io/darkitten-launcher/update.json"
 
@@ -38,6 +38,9 @@ class Config:
     java_path: str = ""
     memory_mb: int = 4096
     jvm_args: str = ""
+    # 游戏版本级覆盖：一键优化只影响当前实例，不改变全局默认值。
+    version_memory: dict[str, int] = field(default_factory=dict)
+    version_jvm_args: dict[str, str] = field(default_factory=dict)
     download_source: str = "auto"
     download_threads: int = 8
     theme: str = "dark"
@@ -96,6 +99,20 @@ class Config:
 
     def loader_for(self, version_id: str) -> str:
         return str(self.version_loaders.get(version_id) or "").strip()
+
+    def memory_for(self, version_id: str) -> int:
+        """当前实例实际使用的内存；没有单独优化时沿用全局设置。"""
+        try:
+            value = int(self.version_memory.get(str(version_id or ""), 0) or 0)
+        except Exception:
+            value = 0
+        return value if value >= 512 else int(self.memory_mb)
+
+    def jvm_args_for(self, version_id: str) -> str:
+        key = str(version_id or "")
+        if key in self.version_jvm_args:
+            return str(self.version_jvm_args.get(key) or "")
+        return str(self.jvm_args or "")
 
     def bind_loader(self, version_id: str, loader_id: str) -> None:
         version_id = str(version_id or "").strip()
@@ -178,6 +195,24 @@ class Config:
             str(key): str(value)
             for key, value in cfg.version_loaders.items()
             if str(key).strip() and str(value).strip()
+        }
+        if not isinstance(cfg.version_memory, dict):
+            cfg.version_memory = {}
+        clean_memory: dict[str, int] = {}
+        for key, value in cfg.version_memory.items():
+            try:
+                size = int(value)
+            except Exception:
+                continue
+            if str(key).strip() and 512 <= size <= 65536:
+                clean_memory[str(key)] = size
+        cfg.version_memory = clean_memory
+        if not isinstance(cfg.version_jvm_args, dict):
+            cfg.version_jvm_args = {}
+        cfg.version_jvm_args = {
+            str(key): str(value)
+            for key, value in cfg.version_jvm_args.items()
+            if str(key).strip()
         }
         cfg.loaders_migrated = bool(cfg.loaders_migrated)
         return cfg

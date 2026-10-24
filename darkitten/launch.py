@@ -305,8 +305,10 @@ def prepare_launch(
     }
 
     command: list[str] = [java.path]
-    command.append(f"-Xmx{cfg.memory_mb}M")
-    command.append(f"-Xms{min(cfg.memory_mb, 2048)}M")
+    memory_mb = cfg.memory_for(instance_id or version_id)
+    jvm_args = cfg.jvm_args_for(instance_id or version_id)
+    command.append(f"-Xmx{memory_mb}M")
+    command.append(f"-Xms{min(memory_mb, 2048)}M")
 
     default_jvm = _extract_args(resolved.default_user_jvm, placeholder)
     default_jvm = _ignore_client_jar(default_jvm, client_jar.name)
@@ -337,11 +339,11 @@ def prepare_launch(
     if log_config and not any(a.startswith("-Dlog4j.configurationFile=") for a in command):
         command.append("-Dlog4j.configurationFile=" + log_config)
 
-    if cfg.jvm_args.strip():
+    if jvm_args.strip():
         try:
-            extra = shlex.split(cfg.jvm_args, posix=True)
+            extra = shlex.split(jvm_args, posix=True)
         except ValueError:
-            extra = cfg.jvm_args.split()
+            extra = jvm_args.split()
         command.extend(extra)
 
     # 防止 JVM 参数中的未知占位符漏到命令行

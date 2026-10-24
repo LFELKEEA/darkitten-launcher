@@ -6,6 +6,7 @@ import io
 import json
 import os
 import re
+import socket
 import ssl
 import threading
 import time
@@ -20,15 +21,15 @@ from typing import Callable
 from .config import APP_VERSION
 
 USER_AGENT = f"DarkittenLauncher/{APP_VERSION} (Minecraft Launcher)"
-CHUNK_SIZE = 512 * 1024
-MIN_SEGMENT_SIZE = 2 * 1024 * 1024
-MIN_CONNECTION_SIZE = 1024 * 1024
+CHUNK_SIZE = 1024 * 1024
+MIN_SEGMENT_SIZE = 1024 * 1024
+MIN_CONNECTION_SIZE = 512 * 1024
 
 # HTTP 长连接池。urllib 每发起一个请求都会重新完成一次 TCP + TLS 握手，
 # 安装原版时几千个资源文件会因此浪费大量时间；这里按主机复用连接。
 _IDLE_TTL = 45.0
-_MAX_IDLE_PER_HOST = 24
-_MAX_IDLE_TOTAL = 96
+_MAX_IDLE_PER_HOST = 32
+_MAX_IDLE_TOTAL = 128
 _MAX_DRAIN = 256 * 1024
 
 BytesCallback = Callable[[int, int], None]
@@ -90,6 +91,17 @@ def _new_connection(
             host, port, timeout=timeout, context=_get_ssl_context()
         )
     return http.client.HTTPConnection(host, port, timeout=timeout)
+
+
+def _tune_socket(conn: http.client.HTTPConnection) -> None:
+    """降低小包延迟，避免多连接下载时被 Nagle 算法合并。"""
+    sock = getattr(conn, "sock", None)
+    if sock is None:
+        return
+    try:
+        sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+    except OSError:
+        pass
 
 
 def _purge_stale(now: float) -> None:
@@ -195,6 +207,7 @@ class _PooledResponse:
         self._key = key
         self._url = url
         self._closed = False
+        _tune_socket(conn)
 
     @property
     def status(self) -> int:
@@ -581,6 +594,11 @@ def _download_single(
                 written = 0
                 digest = hashlib.sha1()
 
+        if expected and written == expected:
+            # 取消可能刚好发生在最后一块写入之后，此时断点数据已经完整。
+            # 直接进入校验与收尾，避免发送 bytes=<size>- 触发 HTTP 416。
+            return digest.hexdigest(), written
+
         headers = {"Range": f"bytes={written}-"} if written else None
         mode = "ab" if written else "wb"
         try:
@@ -703,7 +721,7 @@ def download_to_file(
 
         if supports_range and total >= MIN_SEGMENT_SIZE and connections > 1:
             count = min(
-                12,
+                16,
                 max(2, min(int(connections), total // MIN_CONNECTION_SIZE)),
             )
             per_segment = (total + count - 1) // count

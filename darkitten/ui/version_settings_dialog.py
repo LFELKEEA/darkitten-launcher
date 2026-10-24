@@ -74,6 +74,8 @@ class VersionSettingsDialog(StyledDialog):
         self.body.addWidget(info_box)
 
         self.add_button("打开版本目录", "Secondary", self._open_folder)
+        if not summary.is_loader_profile:
+            self.add_button("游戏优化", "Soft", self._open_optimize)
         self.install_btn = self.add_button("安装加载器", "Secondary", self._open_installer)
 
         self._profiles = main.compatible_loader_profiles(summary.id)
@@ -171,6 +173,13 @@ class VersionSettingsDialog(StyledDialog):
     def _open_installer(self) -> None:
         self.accept()
         QTimer.singleShot(0, self.main.open_loader_dialog)
+
+    def _open_optimize(self) -> None:
+        version_id = self.version_id
+        self.accept()
+        QTimer.singleShot(
+            0, lambda: self.main.open_optimize_dialog(version_id)
+        )
 
     def _save(self) -> None:
         if self.summary is None:

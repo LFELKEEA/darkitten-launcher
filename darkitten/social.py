@@ -72,6 +72,7 @@ class Invite:
     room_version: str = ""
     note: str = ""
     kind: str = "friend"
+    mod_manifest: str = ""
 
 
 def encode_invite(
@@ -80,6 +81,7 @@ def encode_invite(
     room_version: str = "",
     note: str = "",
     kind: str = "friend",
+    mod_manifest: str = "",
 ) -> str:
     payload = {
         "v": 1,
@@ -91,6 +93,9 @@ def encode_invite(
         "note": str(note or "").strip()[:120],
         "ts": int(time.time()),
     }
+    manifest = str(mod_manifest or "").strip()
+    if manifest:
+        payload["mods"] = manifest
     raw = json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
     token = base64.urlsafe_b64encode(raw).decode("ascii").rstrip("=")
     return INVITE_PREFIX + token
@@ -121,6 +126,7 @@ def parse_invite(text: str) -> Invite:
         room_version=str(data.get("mc") or "").strip()[:64],
         note=str(data.get("note") or "").strip()[:120],
         kind=str(data.get("kind") or "friend"),
+        mod_manifest=str(data.get("mods") or "").strip(),
     )
     if not ID_RE.fullmatch(invite.id):
         raise SocialError("邀请卡里的 DKL ID 无效。")

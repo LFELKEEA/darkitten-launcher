@@ -2225,3 +2225,215 @@ class SakuraRoomWorker(QObject):
         except Exception as exc:
             remove_tunnel_config(config_path)
             self.failed.emit(str(exc))
+
+
+class OptimizeWorker(QObject):
+    """一键性能优化：写入版本级内存参数并安装优化 Mod。"""
+
+    progress = Signal(int, str)
+    finished = Signal(bool, str, object)
+
+    def __init__(
+        self,
+        plan,
+        config,
+        *,
+        install_mods: bool = True,
+        apply_memory: bool = True,
+        apply_jvm: bool = True,
+        threads: int = 8,
+        parent=None,
+    ) -> None:
+        super().__init__(parent)
+        self.plan = plan
+        self.config = config
+        self.install_mods = install_mods
+        self.apply_memory = apply_memory
+        self.apply_jvm = apply_jvm
+        self.threads = threads
+        self.cancel_event = threading.Event()
+
+    def start(self) -> None:
+        threading.Thread(target=self._run, daemon=True).start()
+
+    def cancel(self) -> None:
+        self.cancel_event.set()
+
+    def _run(self) -> None:
+        try:
+            from .optimize import apply_optimization
+
+            result = apply_optimization(
+                self.plan,
+                self.config,
+                install_mods=self.install_mods,
+                apply_memory=self.apply_memory,
+                apply_jvm=self.apply_jvm,
+                threads=self.threads,
+                progress_cb=lambda p, m: self.progress.emit(p, m),
+                cancel_event=self.cancel_event,
+            )
+        except Exception as exc:
+            self.finished.emit(False, str(exc), None)
+            return
+        message = "性能优化已取消" if result.cancelled else "性能优化完成"
+        self.finished.emit(True, message, result)
+
+
+class GraphicsWorker(QObject):
+    """画面一键升级：写入 options.txt，并按需安装 Iris 与光影。"""
+
+    progress = Signal(int, str)
+    finished = Signal(bool, str, object)
+
+    def __init__(
+        self,
+        plan,
+        config,
+        *,
+        apply_options: bool = True,
+        install_iris: bool = True,
+        install_shader: bool = True,
+        threads: int = 8,
+        parent=None,
+    ) -> None:
+        super().__init__(parent)
+        self.plan = plan
+        self.config = config
+        self.apply_options = apply_options
+        self.install_iris = install_iris
+        self.install_shader = install_shader
+        self.threads = threads
+        self.cancel_event = threading.Event()
+
+    def start(self) -> None:
+        threading.Thread(target=self._run, daemon=True).start()
+
+    def cancel(self) -> None:
+        self.cancel_event.set()
+
+    def _run(self) -> None:
+        try:
+            from .optimize import apply_graphics
+
+            result = apply_graphics(
+                self.plan,
+                self.config,
+                apply_options=self.apply_options,
+                install_iris=self.install_iris,
+                install_shader=self.install_shader,
+                threads=self.threads,
+                progress_cb=lambda p, m: self.progress.emit(p, m),
+                cancel_event=self.cancel_event,
+            )
+        except Exception as exc:
+            self.finished.emit(False, str(exc), None)
+            return
+        message = "画面升级已取消" if result.cancelled else "画面升级完成"
+        self.finished.emit(True, message, result)
+
+
+class RoomInviteWorker(QObject):
+    """在后台整理房主 Mod 清单，避免复制邀请卡时卡住界面。"""
+
+    progress = Signal(int, str)
+    finished = Signal(bool, str, str)
+
+    def __init__(
+        self,
+        profile,
+        room_code: str,
+        version_id: str,
+        config,
+        versions,
+        parent=None,
+    ) -> None:
+        super().__init__(parent)
+        self.profile = profile
+        self.room_code = str(room_code or "")
+        self.version_id = str(version_id or "")
+        self.config = config
+        self.versions = list(versions or [])
+        self.cancel_event = threading.Event()
+
+    def start(self) -> None:
+        threading.Thread(target=self._run, daemon=True).start()
+
+    def cancel(self) -> None:
+        self.cancel_event.set()
+
+    def _run(self) -> None:
+        try:
+            from .room_sync import build_room_manifest, encode_manifest
+            from .social import encode_invite
+
+            manifest = build_room_manifest(
+                self.version_id,
+                self.config,
+                self.versions,
+                host_name=self.profile.name,
+                lookup_unknown=True,
+                progress_cb=lambda p, m: self.progress.emit(p, m),
+                cancel_event=self.cancel_event,
+            )
+            mod_manifest = ""
+            if manifest.mods:
+                mod_manifest = encode_manifest(manifest)
+            text = encode_invite(
+                self.profile,
+                self.room_code,
+                self.version_id,
+                mod_manifest=mod_manifest,
+            )
+        except Exception as exc:
+            self.finished.emit(False, str(exc), "")
+            return
+        count = manifest.mod_count
+        message = (
+            f"邀请卡已复制，包含 {count} 个 Mod 清单"
+            if count
+            else "邀请卡已复制"
+        )
+        self.finished.emit(True, message, text)
+
+
+class RoomModSyncWorker(QObject):
+    """下载房主清单里缺失的 Mod。"""
+
+    progress = Signal(int, str)
+    finished = Signal(bool, str, object)
+
+    def __init__(
+        self,
+        plan,
+        *,
+        threads: int = 8,
+        parent=None,
+    ) -> None:
+        super().__init__(parent)
+        self.plan = plan
+        self.threads = threads
+        self.cancel_event = threading.Event()
+
+    def start(self) -> None:
+        threading.Thread(target=self._run, daemon=True).start()
+
+    def cancel(self) -> None:
+        self.cancel_event.set()
+
+    def _run(self) -> None:
+        try:
+            from .room_sync import sync_missing_mods
+
+            result = sync_missing_mods(
+                self.plan,
+                threads=self.threads,
+                max_workers=4,
+                progress_cb=lambda p, m: self.progress.emit(p, m),
+                cancel_event=self.cancel_event,
+            )
+        except Exception as exc:
+            self.finished.emit(False, str(exc), None)
+            return
+        message = "Mod 同步完成" if not result.cancelled else "Mod 同步已取消"
+        self.finished.emit(True, message, result)

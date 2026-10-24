@@ -369,7 +369,9 @@ class MainWindow(QWidget):
         brand.setSpacing(0)
         name = QLabel(APP_NAME)
         name.setObjectName("AppName")
-        name.setMinimumWidth(128)
+        name.ensurePolished()
+        # 13px / 800 的全名约 136px，固定 128 会把最后一个字母裁掉。
+        name.setMinimumWidth(name.fontMetrics().horizontalAdvance(APP_NAME) + 6)
         name.setToolTip(f"{APP_NAME} · {APP_TAGLINE}")
         tag = QLabel(f"LAUNCHER · {APP_SHORT_NAME}")
         tag.setObjectName("AppTag")
@@ -1409,6 +1411,17 @@ class MainWindow(QWidget):
         VersionSettingsDialog(self, version_id).exec()
         self.refresh_versions()
 
+    def open_optimize_dialog(self, version_id: str = "") -> None:
+        version_id = version_id or self.selected_version
+        if not version_id:
+            self.toast("先选一个游戏版本，再进行优化", "info")
+            return
+        from .optimize_dialog import OptimizeDialog
+
+        OptimizeDialog(self, version_id).exec()
+        if hasattr(self, "mods_page"):
+            self.mods_page.refresh_mods()
+
     def open_loader_dialog(self) -> None:
         if self.install_active:
             self.toast("已有安装任务正在进行，请稍候", "info")
@@ -1615,6 +1628,12 @@ class MainWindow(QWidget):
                 "keywords": "mod modrinth curseforge 下载 整合包 材质 光影",
             },
             {
+                "id": "game-optimize",
+                "title": "游戏优化",
+                "subtitle": "内存、JVM、画面与优化 Mod",
+                "keywords": "optimize performance fps graphics 优化 性能 画面 内存",
+            },
+            {
                 "id": "import-local",
                 "title": "导入本地内容",
                 "subtitle": "版本 ZIP、整合包、Mod、材质、光影",
@@ -1745,6 +1764,8 @@ class MainWindow(QWidget):
             self.close_game()
         elif command_id == "mod-download":
             self.open_mod_download()
+        elif command_id == "game-optimize":
+            self.open_optimize_dialog()
         elif command_id == "import-local":
             self.open_local_import()
         elif command_id == "download-center":

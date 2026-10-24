@@ -210,7 +210,8 @@ def test_segment_resume() -> None:
 
 
 def test_single_resume() -> None:
-    data = bytes(range(251)) * (1024 * 1024 // 251)
+    # 单流下载按 1 MiB 读取，数据必须大于一个读取块，取消才能稳定落在中途。
+    data = bytes(range(251)) * (3 * 1024 * 1024 // 251)
     work = Path(tempfile.mkdtemp(prefix="dkl-resume-single-"))
     dest = work / "single.bin"
     url, stats, close = build_server(data, delay=0.01)
@@ -250,6 +251,37 @@ def test_single_resume() -> None:
         close()
 
 
+def test_complete_part_resume() -> None:
+    data = bytes(range(251)) * (1024 * 1024 // 251)
+    work = Path(tempfile.mkdtemp(prefix="dkl-resume-complete-"))
+    dest = work / "complete.bin"
+    part = dest.with_name(dest.name + ".part")
+    meta = dest.with_name(dest.name + ".part.json")
+    url, stats, close = build_server(data, delay=0.02)
+    try:
+        part.write_bytes(data)
+        meta.write_text(
+            '{"url": "%s", "size": %d, "sha1": "%s", '
+            '"mode": "single", "ranges": []}'
+            % (url, len(data), sha1(data)),
+            encoding="utf-8",
+        )
+        download_to_file(
+            url,
+            dest,
+            sha1=sha1(data),
+            size=len(data),
+            connections=1,
+        )
+        check("complete-part-content", dest.read_bytes() == data)
+        check("complete-part-sidecar-removed", not meta.exists())
+        ranges, sent = stats.snapshot()
+        check("complete-part-no-request", not ranges, str(ranges))
+        check("complete-part-no-bytes", sent == 0, f"sent={sent}")
+    finally:
+        close()
+
+
 def test_stale_partial_cleanup() -> None:
     data = b"x" * (512 * 1024)
     work = Path(tempfile.mkdtemp(prefix="dkl-resume-stale-"))
@@ -285,6 +317,7 @@ def test_cleanup_includes_sidecar() -> None:
 def main() -> None:
     test_segment_resume()
     test_single_resume()
+    test_complete_part_resume()
     test_stale_partial_cleanup()
     test_cleanup_includes_sidecar()
     print(f"\n{len(CHECKS)} checks passed")

@@ -413,6 +413,8 @@ class HomePage(QWidget):
             ("users", "好友与联机", "邀请卡直达房间", "#3FB3AA", self.main.open_social_dialog),
             ("cube", "模组管理", "管理已装 Mod", "#B15BE0", lambda: self.main.switch_page("mods")),
             ("download", "补全文件", "修复缺失依赖", "#C98A4B", self.main.complete_selected),
+            ("bolt", "游戏优化", "内存、画面与优化 Mod", "#E23A5E", lambda: self.main.open_optimize_dialog(self._selected)),
+            ("download", "下载中心", "查看后台任务", "#3FB3AA", self.main.open_download_tasks),
         ]
         for index, (icon_name, title_text, sub, accent, callback) in enumerate(actions):
             action = QuickAction(icon_name, title_text, sub, accent)

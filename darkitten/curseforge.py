@@ -660,7 +660,7 @@ def download_mod_file(
                 size=size,
                 cancel_event=cancel_event,
                 progress_cb=on_bytes,
-                connections=min(4, max(2, int(threads) // 2)),
+                connections=min(8, max(2, int(threads))),
             )
             last_error = None
             break

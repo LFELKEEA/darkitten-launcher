@@ -10,9 +10,9 @@ if str(PROJECT) not in sys.path:
     sys.path.insert(0, str(PROJECT))
 
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QApplication, QPushButton
+from PySide6.QtWidgets import QApplication, QLabel, QPushButton
 
-from darkitten.config import Config
+from darkitten.config import APP_NAME, Config
 from darkitten.mods import ModInfo
 from darkitten.ui.main_window import MainWindow
 from darkitten.ui.pages.mods import ModRow
@@ -23,6 +23,15 @@ def main() -> None:
     app = QApplication.instance() or QApplication(sys.argv)
     window = MainWindow(Config.load())
     ok = True
+
+    title_label = window.findChild(QLabel, "AppName")
+    title_ok = (
+        title_label is not None
+        and title_label.minimumWidth()
+        >= title_label.fontMetrics().horizontalAdvance(APP_NAME)
+    )
+    print("titlebar_app_name:", "OK" if title_ok else "FAIL")
+    ok &= title_ok
 
     if window.versions:
         summary = window.versions[0]

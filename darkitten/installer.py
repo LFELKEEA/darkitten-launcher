@@ -231,7 +231,7 @@ class Installer:
         self.log_cb = log_cb or (lambda m: None)
         self.cancel_event = cancel_event or threading.Event()
         self.threads = max(1, min(16, int(threads)))
-        self.segments = min(8, max(2, self.threads // 2))
+        self.segments = min(12, max(3, self.threads))
 
         self._last_percent = 0
         self._downloaded_bytes = 0

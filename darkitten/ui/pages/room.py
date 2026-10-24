@@ -37,10 +37,12 @@ from ...sakura import (
     preferred_lan_port,
     remove_tunnel_config,
 )
-from ...social import encode_invite
-from ...workers import SakuraLoginWorker, SakuraRoomWorker
+from ...room_sync import RoomManifest, RoomSyncError, decode_manifest
+from ...social import INVITE_PREFIX, SocialError, parse_invite
+from ...workers import RoomInviteWorker, SakuraLoginWorker, SakuraRoomWorker
 from .. import icons
 from ..dialogs import ConfirmDialog
+from ..mod_sync_dialog import ModSyncDialog
 from ..widgets import (
     Card,
     ChibiCompanion,
@@ -70,6 +72,9 @@ class RoomPage(QWidget):
         self._tunnels: list[SakuraTunnel] = []
         self._login_worker: SakuraLoginWorker | None = None
         self._room_worker: SakuraRoomWorker | None = None
+        self._invite_worker: RoomInviteWorker | None = None
+        self._invite_manifest: RoomManifest | None = None
+        self._invite_room_code = ""
         self._pending_token = ""
         self._tunnel_process: SakuraTunnelProcess | None = None
         self._room_payload: dict | None = None
@@ -390,7 +395,8 @@ class RoomPage(QWidget):
         self.code_edit = QLineEdit()
         self.code_edit.setPlaceholderText("XXXXX-XXXX-XXXXX")
         self.code_edit.setClearButtonEnabled(True)
-        self.code_edit.setMaxLength(40)
+        # 好友邀请卡可能携带上百 KB 的 Mod 清单，先完整接收再解析。
+        self.code_edit.setMaxLength(200_000)
         self.code_edit.textChanged.connect(self._update_code_preview)
         self.code_edit.editingFinished.connect(self._format_code_field)
         self.code_edit.returnPressed.connect(self.join_room)
@@ -417,6 +423,16 @@ class RoomPage(QWidget):
         version_hint.setObjectName("Tiny")
         version_hint.setWordWrap(True)
         layout.addWidget(version_hint)
+
+        self.sync_mods_btn = QPushButton("同步房主 Mod")
+        self.sync_mods_btn.setObjectName("Soft")
+        self.sync_mods_btn.setCursor(Qt.PointingHandCursor)
+        self.sync_mods_btn.setIcon(icons.icon("users", colors()["accent"], 15))
+        self.sync_mods_btn.setToolTip(
+            "读取邀请卡里的 Mod 清单，补齐当前版本缺少的 Mod"
+        )
+        self.sync_mods_btn.clicked.connect(self._open_mod_sync)
+        layout.addWidget(self.sync_mods_btn)
 
         self.join_btn = QPushButton("启动游戏并进入")
         self.join_btn.setObjectName("Primary")
@@ -1070,6 +1086,8 @@ class RoomPage(QWidget):
             pass
 
     def _copy_invite_card(self) -> None:
+        if self._invite_worker is not None:
+            return
         payload = self._room_payload or {}
         code = str(payload.get("room_code") or payload.get("address") or "")
         if not code:
@@ -1079,13 +1097,48 @@ class RoomPage(QWidget):
             profile = self.main.social_store.ensure_profile(
                 self.main.display_name()
             )
-            text = encode_invite(
-                profile, code, str(self.main.selected_version or "")
-            )
         except Exception as exc:
             self.toast(f"生成邀请卡失败：{exc}", "error")
             return
-        self._copy_text(text, "好友邀请卡")
+        worker = RoomInviteWorker(
+            profile,
+            code,
+            str(self.main.selected_version or ""),
+            self.main.config,
+            self.main.versions,
+            self,
+        )
+        self._invite_worker = worker
+        self.copy_invite_btn.setEnabled(False)
+        self.copy_invite_btn.setText("整理 Mod 清单…")
+        worker.progress.connect(self._on_invite_progress)
+        worker.finished.connect(self._on_invite_ready)
+        worker.start()
+
+    def _on_invite_progress(self, percent: int, message: str) -> None:
+        if self._invite_worker is None:
+            return
+        self.copy_invite_btn.setText(
+            f"整理清单 {max(0, min(99, int(percent)))}%"
+        )
+
+    def _on_invite_ready(self, success: bool, message: str, text: str) -> None:
+        self._invite_worker = None
+        if self._closing:
+            return
+        self.copy_invite_btn.setEnabled(True)
+        self.copy_invite_btn.setText("好友邀请卡")
+        if not success:
+            self.toast(message or "生成邀请卡失败", "error")
+            return
+        QApplication.clipboard().setText(text)
+        self.toast(message or "好友邀请卡已复制", "success")
+
+    def _open_mod_sync(self) -> None:
+        version_id = str(self.version_combo.currentData() or "")
+        ModSyncDialog(
+            self.main, self._invite_manifest, version_id
+        ).exec()
 
     def join_friend_room(self, room_code: str, version_id: str = "") -> None:
         """从好友簿进入房间：填好房间号和版本，直接走客人启动流程。"""
@@ -1156,6 +1209,7 @@ class RoomPage(QWidget):
         text = self.code_edit.text().strip()
         if not text:
             self._decoded_address = ""
+            self._clear_invite_manifest()
             self.code_hint.setText(
                 "也可以直接粘贴 host:port 形式的服务器地址。"
             )
@@ -1163,6 +1217,8 @@ class RoomPage(QWidget):
                 self.guest_status, "房主创建房间后，把房间号发给你即可。", "muted"
             )
             self._sync_controls()
+            return
+        if self._handle_invite_text(text):
             return
         try:
             host, port = decode_room_input(text)
@@ -1177,11 +1233,133 @@ class RoomPage(QWidget):
             self._sync_controls()
             return
         self._decoded_address = f"{host}:{port}"
-        self.code_hint.setText(f"将连接 {self._decoded_address}")
-        self._set_status(
-            self.guest_status, "房间号有效，选择版本后即可启动。", "success"
-        )
+        hint = f"将连接 {self._decoded_address}"
+        if self._invite_manifest is not None:
+            hint += f" · 房主清单 {self._invite_manifest.mod_count} 个 Mod"
+        self.code_hint.setText(hint)
+        message = "房间号有效，选择版本后即可启动。"
+        if self._invite_manifest is not None:
+            message += " 也可以先同步房主 Mod。"
+        self._set_status(self.guest_status, message, "success")
         self._sync_controls()
+
+    def _handle_invite_text(self, text: str) -> bool:
+        if text.startswith(INVITE_PREFIX):
+            try:
+                invite = parse_invite(text)
+            except SocialError as exc:
+                self._decoded_address = ""
+                self.code_hint.setText(str(exc))
+                self._set_status(self.guest_status, str(exc), "error")
+                self._sync_controls()
+                return True
+            manifest = None
+            manifest_error = ""
+            if invite.mod_manifest:
+                try:
+                    manifest = decode_manifest(invite.mod_manifest)
+                except RoomSyncError as exc:
+                    manifest_error = str(exc)
+            self._invite_manifest = manifest
+            self._invite_room_code = invite.room_code
+            self._update_sync_button()
+            if invite.room_version:
+                index = self.version_combo.findData(invite.room_version)
+                if index >= 0:
+                    self.version_combo.setCurrentIndex(index)
+            if invite.room_code:
+                self.code_edit.blockSignals(True)
+                self.code_edit.setText(invite.room_code)
+                self.code_edit.blockSignals(False)
+                # _update_code_preview 已经会把房主清单数量拼进提示，避免重复追加。
+                self._update_code_preview()
+                return True
+            self._decoded_address = ""
+            if self.code_edit.text().strip() == text:
+                self.code_edit.blockSignals(True)
+                self.code_edit.clear()
+                self.code_edit.blockSignals(False)
+            if manifest_error:
+                self.code_hint.setText(
+                    f"邀请卡里的 Mod 清单无法读取：{manifest_error}"
+                )
+                self._set_status(self.guest_status, manifest_error, "error")
+            elif manifest is not None and manifest.mods:
+                self.code_hint.setText(
+                    f"已读取房主 {manifest.name or '好友'} 的 "
+                    f"{manifest.mod_count} 个 Mod 清单。"
+                )
+                self._set_status(
+                    self.guest_status,
+                    "清单已就绪，填写房间号后可以先同步 Mod 再加入。",
+                    "success",
+                )
+            else:
+                self.code_hint.setText(
+                    "邀请卡里没有 Mod 清单，房主可能使用的是旧版本。"
+                )
+                self._set_status(
+                    self.guest_status,
+                    "请让房主用新版本重新复制邀请卡，或手动输入房间号。",
+                    "warning",
+                )
+            self._sync_controls()
+            return True
+        if text.startswith("DKLM1:"):
+            try:
+                manifest = decode_manifest(text)
+            except RoomSyncError as exc:
+                self._decoded_address = ""
+                self.code_hint.setText(str(exc))
+                self._set_status(self.guest_status, str(exc), "error")
+                self._sync_controls()
+                return True
+            self._invite_manifest = manifest
+            self._invite_room_code = ""
+            self._update_sync_button()
+            self._decoded_address = ""
+            if self.code_edit.text().strip() == text:
+                self.code_edit.blockSignals(True)
+                self.code_edit.clear()
+                self.code_edit.blockSignals(False)
+            self.code_hint.setText(
+                f"已读取房主 {manifest.name or '好友'} 的 "
+                f"{manifest.mod_count} 个 Mod 清单。请填写房间号。"
+            )
+            self._set_status(
+                self.guest_status,
+                "Mod 清单已就绪，可以点击“同步房主 Mod”补齐文件。",
+                "success",
+            )
+            self._sync_controls()
+            return True
+        if (
+            self._invite_manifest is not None
+            and self._invite_room_code
+            and text != self._invite_room_code
+        ):
+            self._clear_invite_manifest()
+        return False
+
+    def _update_sync_button(self) -> None:
+        if not hasattr(self, "sync_mods_btn"):
+            return
+        count = self._invite_manifest.mod_count if self._invite_manifest else 0
+        self.sync_mods_btn.setText(
+            f"同步房主 Mod（{count}）" if count else "同步房主 Mod"
+        )
+        self.sync_mods_btn.setToolTip(
+            f"邀请卡里包含 {count} 个 Mod，可以补齐当前版本缺少的文件"
+            if count
+            else "读取邀请卡里的 Mod 清单，补齐当前版本缺少的 Mod"
+        )
+
+    def _clear_invite_manifest(self) -> None:
+        if self._invite_manifest is None and not self._invite_room_code:
+            return
+        self._invite_manifest = None
+        self._invite_room_code = ""
+        self._update_sync_button()
 
     def _format_code_field(self) -> None:
         text = self.code_edit.text().strip()
@@ -1291,6 +1469,8 @@ class RoomPage(QWidget):
         has_version = bool(self.version_combo.currentData())
         self.join_btn.setEnabled(has_version and not self._busy)
         self.copy_decode_btn.setEnabled(has_version)
+        if hasattr(self, "sync_mods_btn"):
+            self.sync_mods_btn.setEnabled(not self._busy)
 
     def toast(self, text: str, kind: str = "info") -> None:
         self.main.toast(text, kind)
@@ -1307,6 +1487,10 @@ class RoomPage(QWidget):
         login = self._login_worker
         if login:
             self._login_worker = None
+        invite = self._invite_worker
+        if invite:
+            invite.cancel()
+            self._invite_worker = None
         process = self._tunnel_process
         self._tunnel_process = None
         if process is not None:
