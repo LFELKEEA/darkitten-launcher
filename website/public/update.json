@@ -1,19 +1,19 @@
 {
-  "version": "1.10.5",
+  "version": "1.10.6",
   "released": "2026-10-25",
   "notes": [
-    "修复 Mod 页筛选器在较窄窗口中只剩“启”“禁”一个字的问题：分段按钮现在按标签文字计算最小宽度，窗口宽度不足时工具栏会自动折成两行，保证“全部 / 已启用 / 已禁用”始终完整显示。",
-    "窗口拉宽后工具栏自动恢复单行，搜索框、筛选器和操作按钮的位置保持不变；折叠只影响布局，不影响筛选与下载功能。",
-    "修复皮肤库卡片的重命名、删除按钮过小且图标发虚的问题：按钮放大到 30×30、图标提升到 16px，并加上边框与悬停反馈，铅笔和垃圾桶图标现在清晰可辨。"
+    "修复 3D 皮肤预览行走时手臂贴图错位：外层贴图改为贴合手臂基体绘制，不再按固定厚度向外膨胀，摆动时白色袖口和臂环不会脱离手臂悬在空中。",
+    "补上背面剔除：手臂和腿部摆动时，背向摄像机的面不再覆盖正面，腰侧与手腕附近的大块白色错误贴图消失。",
+    "待机、行走、转圈、拖拽旋转和皮肤库功能保持不变，本次只调整预览渲染，不影响游戏内皮肤和已保存的皮肤库。"
   ],
-  "download_url": "downloads/DKL-1.10.5-update.zip",
+  "download_url": "downloads/DKL-1.10.6-update.zip",
   "page_url": "index.html",
-  "source_url": "downloads/DarkittenLauncher-1.10.5-source.zip",
-  "source_txt_url": "downloads/DarkittenLauncher-1.10.5-source.txt",
-  "sha256": "bf7dbbddc5dcf4d35295ff3b0b0ad07e0532c5de8e51f8533da5492b5daf6658",
-  "size": 898840,
-  "source_sha256": "42f0c734b64eac24febeefa3e29f778db7eaa6545b772c127096ef8d1dd23e3f",
-  "source_size": 901596,
-  "source_txt_sha256": "c7aec7a58c329399a6c3e12d389dba04e4d961873bc5326c2755d8b9eec7250a",
-  "source_txt_size": 2006588
+  "source_url": "downloads/DarkittenLauncher-1.10.6-source.zip",
+  "source_txt_url": "downloads/DarkittenLauncher-1.10.6-source.txt",
+  "sha256": "4d06d70d39f819e81cde6d7bacdc366fa8863264da79a6736046accd2025388b",
+  "size": 899285,
+  "source_sha256": "06116a81e7723c2a176636745f16ae1a1f249393cc06ba3b3e76cd7d4bab7044",
+  "source_size": 902041,
+  "source_txt_sha256": "9eb2f150e864aa1790c76e98387025d87aae2b2da3c6bb7a68d89da13107c75c",
+  "source_txt_size": 2007764
 }

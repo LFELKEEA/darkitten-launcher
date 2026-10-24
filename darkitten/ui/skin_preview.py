@@ -142,6 +142,17 @@ def _rotate_about_z(
     )
 
 
+def _polygon_area(polygon: QPolygonF) -> float:
+    """返回投影多边形的有向面积，用于判断面是否朝向摄像机。"""
+    total = 0.0
+    count = polygon.count()
+    for index in range(count):
+        current = polygon.at(index)
+        following = polygon.at((index + 1) % count)
+        total += current.x() * following.y() - following.x() * current.y()
+    return total / 2.0
+
+
 def _region_has_alpha(image: QImage, u: int, v: int, w: int, h: int) -> bool:
     if image.isNull():
         return False
@@ -475,18 +486,22 @@ class SkinPreviewWidget(QWidget):
                 cy - (y2 + pose["bob"]) * scale,
             ), depth
 
-        faces: list[tuple[float, QPolygonF, QImage]] = []
+        faces: list[tuple[float, list[tuple[QPolygonF, QImage]]]] = []
         for part in self._parts():
             layers: list[tuple[float, tuple[int, int] | None]] = [(0.0, None)]
             if part.overlay and part.use_overlay and not self._legacy:
                 if self._has_overlay(part):
-                    layers.append((0.5, part.overlay))
-            for inflate, overlay_uv in layers:
-                box_w = part.width + inflate * 2
-                box_h = part.height + inflate * 2
-                box_d = part.depth + inflate * 2
-                uv = overlay_uv or part.uv
-                for face, normal, u_axis, v_axis in _FACES:
+                    # 外层贴图与基体贴合绘制：着色器里外扩 0.25 会让手臂摆动时
+                    # 外层侧面探出基体轮廓，形成白色浮边；分层排序已能区分前后。
+                    layers.append((0.0, part.overlay))
+            for face, normal, u_axis, v_axis in _FACES:
+                layer_faces: list[tuple[QPolygonF, QImage]] = []
+                layer_depths: list[float] = []
+                for inflate, overlay_uv in layers:
+                    box_w = part.width + inflate * 2
+                    box_h = part.height + inflate * 2
+                    box_d = part.depth + inflate * 2
+                    uv = overlay_uv or part.uv
                     length = {"front": box_w, "back": box_w, "left": box_d,
                               "right": box_d, "top": box_w, "bottom": box_w}[face]
                     v_length = {"front": box_h, "back": box_h, "left": box_h,
@@ -508,6 +523,9 @@ class SkinPreviewWidget(QWidget):
                     ]
                     depth = sum(item[1] for item in projected) / 4.0
                     polygon = QPolygonF([item[0] for item in projected])
+                    if _polygon_area(polygon) <= 0:
+                        # 背面朝向摄像机时剔除，避免背面在摆动时盖住正面。
+                        continue
                     row = _face_rect(
                         uv,
                         part.width,
@@ -522,11 +540,15 @@ class SkinPreviewWidget(QWidget):
                         continue
                     if part.mirror:
                         crop = crop.mirrored(True, False)
-                    faces.append((depth, polygon, crop))
+                    layer_faces.append((polygon, crop))
+                    layer_depths.append(depth)
+                if layer_faces:
+                    faces.append((max(layer_depths), layer_faces))
 
         faces.sort(key=lambda item: item[0])
-        for _depth, polygon, crop in faces:
-            self._draw_face(p, polygon, crop)
+        for _depth, layer_faces in faces:
+            for polygon, crop in layer_faces:
+                self._draw_face(p, polygon, crop)
         p.end()
 
     def _has_overlay(self, part: _Part) -> bool:
