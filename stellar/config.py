@@ -13,15 +13,9 @@ APP_SHORT_NAME = "DKL"
 APP_TAGLINE = "恶魔小猫的秘密基地"
 APP_AUTHOR = "LFELKEEA"
 APP_EMAIL = "lfel278623@outlook.com"
-APP_VERSION = "1.9.13"
-# 保持旧的 APP_ID 以兼容已加密的账户 / 樱花密钥配置。
-APP_ID = "StellarLauncher"
+APP_VERSION = "1.9.14"
+APP_ID = "DarkittenLauncher"
 DEFAULT_UPDATE_URL = "https://lfelkeea.github.io/darkitten-launcher/update.json"
-LEGACY_UPDATE_URLS = {
-    "http://127.0.0.1:8765/update.json",
-    "http://localhost:8765/update.json",
-    "https://darkitten-launcher.pages.dev/update.json",
-}
 
 if getattr(sys, "frozen", False):
     APP_DIR = Path(sys.executable).resolve().parent
@@ -67,6 +61,11 @@ class Config:
     update_auto_check: bool = True
     update_skipped_version: str = ""
     update_last_check: str = ""
+    # 游戏版本 -> 纯加载器配置。没有条目表示原版启动。
+    version_loaders: dict[str, str] = field(default_factory=dict)
+    # 1.9.14 之前加载器版本直接出现在首页。首次运行时把旧选择迁移成绑定，
+    # 之后尊重用户手动选择的“原版启动”，不再自动改回来。
+    loaders_migrated: bool = False
 
     def __post_init__(self) -> None:
         if not self.game_dir:
@@ -85,6 +84,25 @@ class Config:
 
     def mods_path(self, version_id: str = "") -> Path:
         return self.version_game_path(version_id) / "mods"
+
+    def resourcepacks_path(self, version_id: str = "") -> Path:
+        return self.version_game_path(version_id) / "resourcepacks"
+
+    def shaderpacks_path(self, version_id: str = "") -> Path:
+        return self.version_game_path(version_id) / "shaderpacks"
+
+    def loader_for(self, version_id: str) -> str:
+        return str(self.version_loaders.get(version_id) or "").strip()
+
+    def bind_loader(self, version_id: str, loader_id: str) -> None:
+        version_id = str(version_id or "").strip()
+        loader_id = str(loader_id or "").strip()
+        if not version_id:
+            return
+        if loader_id:
+            self.version_loaders[version_id] = loader_id
+        else:
+            self.version_loaders.pop(version_id, None)
 
     @classmethod
     def load(cls) -> "Config":
@@ -138,14 +156,22 @@ class Config:
             cfg.sakura_tunnel_id = max(0, int(cfg.sakura_tunnel_id))
         except Exception:
             cfg.sakura_tunnel_id = 0
-        cfg.update_url = str(cfg.update_url or DEFAULT_UPDATE_URL).strip()
-        if cfg.update_url in LEGACY_UPDATE_URLS:
-            cfg.update_url = DEFAULT_UPDATE_URL
+        # 旧版本留下过本机、临时托管和测试源。现在只保留官方 GitHub Pages
+        # 地址，避免升级后仍然去请求已经失效的旧地址。
+        cfg.update_url = DEFAULT_UPDATE_URL
         cfg.update_auto_check = bool(cfg.update_auto_check)
         cfg.update_skipped_version = str(
             cfg.update_skipped_version or ""
         ).strip()
         cfg.update_last_check = str(cfg.update_last_check or "").strip()
+        if not isinstance(cfg.version_loaders, dict):
+            cfg.version_loaders = {}
+        cfg.version_loaders = {
+            str(key): str(value)
+            for key, value in cfg.version_loaders.items()
+            if str(key).strip() and str(value).strip()
+        }
+        cfg.loaders_migrated = bool(cfg.loaders_migrated)
         return cfg
 
     @property

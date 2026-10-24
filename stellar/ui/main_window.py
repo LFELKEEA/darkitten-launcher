@@ -45,6 +45,8 @@ from ..social import load_store
 from ..versions import (
     check_installation,
     dependent_versions,
+    game_versions as list_game_versions,
+    loader_profiles as list_loader_profiles,
     resolve_version,
     scan_versions,
     version_json_path,
@@ -62,6 +64,7 @@ from .dialogs import ConfirmDialog, NoticeDialog
 from .update_dialog import UpdateDialog
 from .pages.download import DownloadPage
 from .pages.home import HomePage
+from .pages.loaders import LoaderPage
 from .pages.mods import ModsPage
 from .pages.room import RoomPage
 from .pages.server import ServerPage
@@ -84,11 +87,12 @@ from .widgets import (
 PAGE_INDEX = {
     "home": 0,
     "download": 1,
-    "mods": 2,
-    "skin": 3,
-    "room": 4,
-    "server": 5,
-    "settings": 6,
+    "loaders": 2,
+    "mods": 3,
+    "skin": 4,
+    "room": 5,
+    "server": 6,
+    "settings": 7,
 }
 
 
@@ -187,13 +191,15 @@ class MainWindow(QWidget):
             or "Steve"
         )
         self.versions = scan_versions(self.config.game_path)
+        self._repair_loader_bindings()
         self.selected_version = ""
-        if self.versions:
-            ids = {v.id for v in self.versions}
+        games = list_game_versions(self.versions)
+        if games:
+            ids = {v.id for v in games}
             self.selected_version = (
                 self.config.last_version
                 if self.config.last_version in ids
-                else self.versions[0].id
+                else games[0].id
             )
 
         self.java_installs = []
@@ -210,7 +216,9 @@ class MainWindow(QWidget):
         self._launch_closing = False
         self._launch_connect_address = ""
         self._launch_auto_retry = True
+        self._launch_profile_id = ""
         self._running_version = ""
+        self._running_profile_id = ""
         self.game_process: GameProcess | None = None
         self.game_running = False
         self._delete_worker: DeleteWorker | None = None
@@ -257,6 +265,7 @@ class MainWindow(QWidget):
         self.stack.setObjectName("Pages")
         self.home_page = HomePage(self)
         self.download_page = DownloadPage(self)
+        self.loader_page = LoaderPage(self)
         self.mods_page = ModsPage(self)
         self.skin_page = SkinPage(self)
         self.room_page = RoomPage(self)
@@ -264,6 +273,7 @@ class MainWindow(QWidget):
         self.settings_page = SettingsPage(self)
         self.stack.addWidget(self.home_page)
         self.stack.addWidget(self.download_page)
+        self.stack.addWidget(self.loader_page)
         self.stack.addWidget(self.mods_page)
         self.stack.addWidget(self.skin_page)
         self.stack.addWidget(self.room_page)
@@ -330,6 +340,7 @@ class MainWindow(QWidget):
         nav_specs = [
             ("home", "启动", "play", "#E23A5E"),
             ("download", "下载", "download", "#E8683F"),
+            ("loaders", "加载器", "package", "#D99A3D"),
             ("mods", "模组", "cube", "#B15BE0"),
             ("skin", "皮肤", "shirt", "#F06292"),
             ("room", "联机", "users", "#3FB3AA"),
@@ -460,6 +471,8 @@ class MainWindow(QWidget):
             self.home_page.refresh_versions()
         if hasattr(self, "download_page"):
             self.download_page.refresh_theme()
+        if hasattr(self, "loader_page"):
+            self.loader_page.refresh_theme()
         if hasattr(self, "mods_page"):
             self.mods_page.refresh_mods()
         if hasattr(self, "skin_page"):
@@ -906,17 +919,162 @@ class MainWindow(QWidget):
 
     def refresh_versions(self) -> None:
         self.versions = scan_versions(self.config.game_path)
-        ids = {v.id for v in self.versions}
+        self._repair_loader_bindings()
+        games = list_game_versions(self.versions)
+        ids = {v.id for v in games}
         if self.selected_version not in ids:
             if self.config.last_version in ids:
                 self.selected_version = self.config.last_version
-            elif self.versions:
-                self.selected_version = self.versions[0].id
+            elif games:
+                self.selected_version = games[0].id
             else:
                 self.selected_version = ""
         self.versions_changed.emit()
         self.selection_changed.emit(self.selected_version)
         self._update_status_version()
+
+    # ------------------------------------------------------------------
+    # 加载器 / 游戏版本绑定
+
+    def loader_profiles(self):
+        return list_loader_profiles(self.versions)
+
+    def game_version_summaries(self):
+        return list_game_versions(self.versions)
+
+    def loader_profile_for(self, version_id: str):
+        """返回游戏版本当前绑定的纯加载器配置；无效时返回 None。"""
+        summary = next((v for v in self.versions if v.id == version_id), None)
+        if not summary or summary.is_loader_profile or summary.loader:
+            return None
+        profile_id = self.config.loader_for(version_id)
+        if not profile_id:
+            return None
+        profile = next(
+            (
+                v
+                for v in self.versions
+                if v.id == profile_id and v.is_loader_profile
+            ),
+            None,
+        )
+        if not profile or profile.base_id != summary.base_id:
+            return None
+        return profile
+
+    def compatible_loader_profiles(self, version_id: str):
+        summary = next((v for v in self.versions if v.id == version_id), None)
+        if not summary or summary.is_loader_profile or summary.loader:
+            return []
+        return [
+            profile
+            for profile in self.loader_profiles()
+            if profile.base_id == summary.base_id
+        ]
+
+    def compatible_game_versions(self, loader_id: str):
+        profile = next(
+            (v for v in self.versions if v.id == loader_id),
+            None,
+        )
+        if not profile or not profile.is_loader_profile:
+            return []
+        return [
+            game
+            for game in self.game_version_summaries()
+            if not game.loader and game.base_id == profile.base_id
+        ]
+
+    def bind_loader(self, version_id: str, loader_id: str) -> None:
+        self.config.bind_loader(version_id, loader_id)
+        self.config.save()
+        self.versions_changed.emit()
+        self.selection_changed.emit(self.selected_version)
+        self._update_status_version()
+
+    def launch_profile(self, version_id: str) -> tuple[str, str]:
+        """返回（启动配置 ID，游戏实例 ID）。"""
+        summary = next((v for v in self.versions if v.id == version_id), None)
+        if not summary:
+            return version_id, version_id
+        if summary.is_loader_profile:
+            return summary.id, summary.base_id or summary.id
+        profile = self.loader_profile_for(version_id)
+        if profile:
+            return profile.id, version_id
+        return version_id, version_id
+
+    def _launch_mode_note(self, profile_id: str, instance_id: str) -> str:
+        summary = next(
+            (v for v in self.versions if v.id == instance_id), None
+        )
+        if profile_id and profile_id != instance_id:
+            return f" · 加载器 {profile_id}"
+        if summary and summary.loader:
+            return f" · {summary.loader}"
+        return " · 原版"
+
+    def _repair_loader_bindings(self) -> None:
+        profiles = {
+            item.id: item
+            for item in self.versions
+            if item.is_loader_profile
+        }
+        games = [
+            item
+            for item in self.versions
+            if not item.is_loader_profile
+        ]
+        game_ids = {item.id for item in games}
+        valid: dict[str, str] = {}
+        changed = False
+        for game in games:
+            if game.loader:
+                continue
+            profile = profiles.get(self.config.loader_for(game.id))
+            if profile and profile.base_id == game.base_id:
+                valid[game.id] = profile.id
+
+        # 旧版本里用户是直接选中加载器版本启动的。升级后把这类选择迁移到
+        # 它继承的原版游戏版本上，避免打开首页时选中项凭空消失。
+        last = next(
+            (item for item in self.versions if item.id == self.config.last_version),
+            None,
+        )
+        if last and last.is_loader_profile and last.base_id in game_ids:
+            valid[last.base_id] = last.id
+            self.config.last_version = last.base_id
+            changed = True
+
+        # 只有一个加载器候选时，升级后首次运行给它的基础版本补上绑定；
+        # 其他同基础版本仍保持原版，等用户在加载器页面明确勾选。
+        # 迁移完成后不再自动绑定，避免用户手动选择原版后被改回去。
+        if not self.config.loaders_migrated:
+            for game in games:
+                if game.loader or game.id in valid:
+                    continue
+                candidates = [
+                    item
+                    for item in profiles.values()
+                    if item.base_id == game.base_id
+                ]
+                if len(candidates) == 1 and game.id == candidates[0].base_id:
+                    valid[game.id] = candidates[0].id
+
+        # 旧绑定指向已删除或已不兼容的版本时一并清理。
+        self.config.version_loaders = {
+            key: value
+            for key, value in self.config.version_loaders.items()
+            if key in game_ids
+        }
+        if self.config.version_loaders != valid:
+            self.config.version_loaders = valid
+            changed = True
+        if not self.config.loaders_migrated:
+            self.config.loaders_migrated = True
+            changed = True
+        if changed:
+            self.config.save()
 
     def _update_status_version(self) -> None:
         if hasattr(self, "mc_label"):
@@ -946,8 +1104,9 @@ class MainWindow(QWidget):
         if not hasattr(self, "java_label"):
             return
         required = 0
+        profile_id, _instance_id = self.launch_profile(self.selected_version)
         summary = next(
-            (v for v in self.versions if v.id == self.selected_version), None
+            (v for v in self.versions if v.id == profile_id), None
         )
         if summary:
             required = summary.java_major
@@ -1124,8 +1283,9 @@ class MainWindow(QWidget):
         if not self.selected_version:
             self.toast("请先选择一个版本", "info")
             return
+        profile_id, _instance_id = self.launch_profile(self.selected_version)
         try:
-            resolved = resolve_version(self.config.game_path, self.selected_version)
+            resolved = resolve_version(self.config.game_path, profile_id)
             missing = check_installation(self.config.game_path, resolved, check_assets=False)
         except Exception as exc:
             self.toast(f"无法读取版本：{exc}", "error")
@@ -1133,9 +1293,19 @@ class MainWindow(QWidget):
         if not missing:
             self.toast("当前版本文件已完整", "success")
             return
-        self.begin_install(self.selected_version, verify=True)
+        self.begin_install(profile_id, verify=True)
         self.log_panel.open_panel()
         self.log_btn.setText("收起日志")
+
+    def open_version_settings(self, version_id: str = "") -> None:
+        version_id = version_id or self.selected_version
+        if not version_id:
+            self.toast("先选一个游戏版本，再打开版本设置", "info")
+            return
+        from .version_settings_dialog import VersionSettingsDialog
+
+        VersionSettingsDialog(self, version_id).exec()
+        self.refresh_versions()
 
     def open_loader_dialog(self) -> None:
         if self.install_active:
@@ -1255,6 +1425,10 @@ class MainWindow(QWidget):
         if self.install_active or self.launch_active:
             self.toast("有任务正在进行，稍等一下喵", "info")
             return
+        from ..curseforge_pack import (
+            inspect_curseforge_pack,
+            looks_like_curseforge_pack,
+        )
         from ..modrinth_pack import inspect_modrinth_pack, looks_like_modrinth_pack
         from ..packs import inspect_pack
         from ..version_zip import inspect_version_zip
@@ -1287,6 +1461,14 @@ class MainWindow(QWidget):
                     return
                 self.open_pack_import(source)
                 return
+            if looks_like_curseforge_pack(source):
+                try:
+                    inspect_curseforge_pack(source)
+                except Exception as exc:
+                    self.toast(f"这个 CurseForge 整合包不能导入：{exc}", "error")
+                    return
+                self.open_pack_import(source)
+                return
             try:
                 inspect_version_zip(source)
             except Exception as exc:
@@ -1315,12 +1497,18 @@ class MainWindow(QWidget):
         if self.install_active and self._install_version == version_id:
             self.toast("该版本正在安装，请先取消安装", "info")
             return
-        if self.game_running and self._running_version == version_id:
+        if self.game_running and (
+            self._running_version == version_id
+            or self._running_profile_id == version_id
+        ):
             self.toast("该版本正在运行，请先关闭游戏", "error")
             return
         if self._delete_worker is not None:
             self.toast("已有删除任务正在进行", "info")
             return
+
+        summary = next((v for v in self.versions if v.id == version_id), None)
+        is_profile = bool(summary and summary.is_loader_profile)
 
         dependents = dependent_versions(self.config.game_path, version_id)
         if dependents:
@@ -1346,26 +1534,61 @@ class MainWindow(QWidget):
             self.refresh_versions()
             return
 
-        if self.config.version_isolation:
+        if is_profile:
+            bound_games = sorted(
+                gid
+                for gid, pid in self.config.version_loaders.items()
+                if pid == version_id
+            )
+            note = f"目录：{version_dir}\n"
+            if bound_games:
+                note += (
+                    "以下游戏版本会切回原版启动："
+                    + "、".join(bound_games)
+                    + "。存档、Mod、材质和光影不会被删除。"
+                )
+            else:
+                note += "当前没有游戏版本使用这个加载器。"
+            dialog = ConfirmDialog(
+                self,
+                "删除加载器配置",
+                f"确定删除加载器 {version_id} 吗？配置文件会移入系统回收站。",
+                primary_text="移入回收站",
+                secondary_text="取消",
+                icon_name="trash",
+                icon_color=colors()["red"],
+                details=note,
+            )
+        elif self.config.version_isolation:
             note = (
                 f"目录：{version_dir}\n"
                 "版本隔离已开启，此目录内的 mods、saves 和 config 也会一并移入回收站。"
+            )
+            dialog = ConfirmDialog(
+                self,
+                "删除游戏版本",
+                f"确定删除版本 {version_id} 吗？文件会移入系统回收站，可在回收站恢复。",
+                primary_text="移入回收站",
+                secondary_text="取消",
+                icon_name="trash",
+                icon_color=colors()["red"],
+                details=note,
             )
         else:
             note = (
                 f"目录：{version_dir}\n"
                 "版本隔离已关闭，只会删除版本文件，公共 mods 和存档不受影响。"
             )
-        dialog = ConfirmDialog(
-            self,
-            "删除游戏版本",
-            f"确定删除版本 {version_id} 吗？文件会移入系统回收站，可在回收站恢复。",
-            primary_text="移入回收站",
-            secondary_text="取消",
-            icon_name="trash",
-            icon_color=colors()["red"],
-            details=note,
-        )
+            dialog = ConfirmDialog(
+                self,
+                "删除游戏版本",
+                f"确定删除版本 {version_id} 吗？文件会移入系统回收站，可在回收站恢复。",
+                primary_text="移入回收站",
+                secondary_text="取消",
+                icon_name="trash",
+                icon_color=colors()["red"],
+                details=note,
+            )
         if not dialog.exec():
             return
 
@@ -1387,8 +1610,17 @@ class MainWindow(QWidget):
             self.set_status(f"删除失败：{message}", "error")
             self.toast(f"删除失败：{message}", "error")
             return
+        changed = False
         if self.config.last_version == version_id:
             self.config.last_version = ""
+            changed = True
+        if self.config.version_loaders.pop(version_id, None) is not None:
+            changed = True
+        for game_id in list(self.config.version_loaders):
+            if self.config.version_loaders[game_id] == version_id:
+                del self.config.version_loaders[game_id]
+                changed = True
+        if changed:
             self.config.save()
         self.refresh_versions()
         self.set_status(f"已删除版本 {version_id}", "success")
@@ -1421,14 +1653,17 @@ class MainWindow(QWidget):
         self._launch_closing = False
         self._launch_connect_address = connect_address
         self._launch_auto_retry = auto_retry
+        profile_id, instance_id = self.launch_profile(self.selected_version)
+        self._launch_profile_id = profile_id
         worker = LaunchWorker(
             self.config.game_path,
-            self.selected_version,
+            profile_id,
             self.config,
             self.java_installs,
             self.current_account(),
             server_address=connect_address,
             parent=self,
+            instance_id=instance_id,
         )
         self.launch_worker = worker
         worker.status.connect(self._on_launch_status)
@@ -1441,6 +1676,7 @@ class MainWindow(QWidget):
         self.set_status("正在准备启动…", "busy")
         self.log(
             f"准备启动 {self.selected_version}"
+            f"{self._launch_mode_note(profile_id, instance_id)}"
             + (f" · 联机 {connect_address}" if connect_address else "")
         )
         self.loading_overlay.show_loading(self.selected_version)
@@ -1480,12 +1716,15 @@ class MainWindow(QWidget):
         self.config.last_version = self.selected_version
         self.config.save()
         self._running_version = self.selected_version
+        self._running_profile_id = self._launch_profile_id
         self.game_running = True
         self.home_page.set_game_running(True)
         self.set_status("正在启动游戏…", "busy")
         self._update_action_button()
         self.log(
-            f"启动 {self.selected_version} · Java {plan.java.version or plan.java.major}"
+            f"启动 {self.selected_version}"
+            f"{self._launch_mode_note(self._running_profile_id, self.selected_version)}"
+            + f" · Java {plan.java.version or plan.java.major}"
             f" · 内存 {self.config.memory_mb} MB"
             + (f" · 联机 {self._launch_connect_address}" if self._launch_connect_address else "")
         )
@@ -1588,10 +1827,11 @@ class MainWindow(QWidget):
         detail = "、".join(missing[:5])
         if len(missing) > 5:
             detail += f" 等 {len(missing)} 项"
+        install_id = self._launch_profile_id or self.selected_version
         if self.config.auto_complete and auto_retry:
             self.toast("正在自动补全缺失文件，完成后启动", "info")
             self.begin_install(
-                self.selected_version,
+                install_id,
                 success_callback=lambda: self.launch_selected(
                     auto_retry=False, connect_address=connect_address
                 ),
@@ -1611,7 +1851,7 @@ class MainWindow(QWidget):
         )
         if dialog.exec():
             self.begin_install(
-                self.selected_version,
+                self._launch_profile_id or self.selected_version,
                 success_callback=lambda: self.launch_selected(
                     auto_retry=False, connect_address=connect_address
                 ),

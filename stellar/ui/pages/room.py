@@ -1122,7 +1122,7 @@ class RoomPage(QWidget):
     # 客机流程
 
     def _sync_versions(self) -> None:
-        versions = list(self.main.versions)
+        versions = list(self.main.game_version_summaries())
         current = self.version_combo.currentData() if self.version_combo.count() else ""
         preferred = str(current or self.main.selected_version or "")
         self.version_combo.blockSignals(True)

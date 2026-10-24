@@ -33,14 +33,21 @@ def main() -> int:
                 encoding="utf-8",
             )
             cfg = Config.load()
-            check("legacy_local_url_migrated", cfg.update_url == DEFAULT_UPDATE_URL, cfg.update_url)
+            check("old_source_replaced", cfg.update_url == DEFAULT_UPDATE_URL, cfg.update_url)
 
             path.write_text(
                 json.dumps({"update_url": "https://example.com/update.json"}),
                 encoding="utf-8",
             )
             cfg = Config.load()
-            check("custom_url_kept", cfg.update_url == "https://example.com/update.json", cfg.update_url)
+            check("custom_source_replaced", cfg.update_url == DEFAULT_UPDATE_URL, cfg.update_url)
+
+            path.write_text(
+                json.dumps({"update_url": DEFAULT_UPDATE_URL}),
+                encoding="utf-8",
+            )
+            cfg = Config.load()
+            check("official_source_kept", cfg.update_url == DEFAULT_UPDATE_URL, cfg.update_url)
 
             path.unlink()
             cfg = Config.load()

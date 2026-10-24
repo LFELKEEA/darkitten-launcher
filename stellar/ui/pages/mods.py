@@ -127,10 +127,11 @@ class ModsPage(QWidget):
         header.addWidget(ChibiCompanion(60, "mods"), 0, Qt.AlignTop)
         self.version_label = badge("未选择版本", "blue")
         header.addWidget(self.version_label)
-        loader_btn = QPushButton("安装加载器")
+        loader_btn = QPushButton("管理加载器")
         loader_btn.setObjectName("Ghost")
         loader_btn.setCursor(Qt.PointingHandCursor)
-        loader_btn.clicked.connect(self.main.open_loader_dialog)
+        loader_btn.setToolTip("前往加载器页面安装或分配 Fabric / Forge / NeoForge")
+        loader_btn.clicked.connect(lambda: self.main.switch_page("loaders"))
         header.addWidget(loader_btn)
         outer.addLayout(header)
 
@@ -161,11 +162,11 @@ class ModsPage(QWidget):
         self.count_label.setObjectName("Tiny")
         toolbar_layout.addWidget(self.count_label)
 
-        download_btn = QPushButton("下载 Mod")
+        download_btn = QPushButton("下载内容")
         download_btn.setObjectName("Primary")
         download_btn.setIcon(icons.icon("download", "#FFFFFF", 15))
         download_btn.setCursor(Qt.PointingHandCursor)
-        download_btn.setToolTip("从 Modrinth 或 CurseForge 在线下载 Mod")
+        download_btn.setToolTip("从 Modrinth 或 CurseForge 下载 Mod、整合包、材质与光影")
         download_btn.clicked.connect(self.main.open_mod_download)
         toolbar_layout.addWidget(download_btn)
 
@@ -241,8 +242,22 @@ class ModsPage(QWidget):
         isolated = bool(
             self.main.selected_version and self.main.config.version_isolation
         )
+        profile = (
+            self.main.loader_profile_for(self.main.selected_version)
+            if self.main.selected_version
+            else None
+        )
+        summary = next(
+            (v for v in self.main.versions if v.id == self.main.selected_version),
+            None,
+        )
+        loader_name = profile.loader if profile else (
+            summary.loader if summary else ""
+        )
+        loader_note = f" · {loader_name}" if loader_name else " · 原版"
         self.version_label.setText(
-            f"当前版本：{version} · {'独立目录' if isolated else '公共目录'}"
+            f"当前版本：{version}{loader_note} · "
+            f"{'独立目录' if isolated else '公共目录'}"
         )
         if self.main.selected_version:
             self.empty_title.setText(f"{self.main.selected_version} 的 mods 文件夹是空的")

@@ -60,7 +60,7 @@ def main() -> int:
     app = QApplication(sys.argv[:1])
     app.setApplicationName(APP_NAME)
     app.setApplicationDisplayName(APP_NAME)
-    app.setOrganizationName("StellarLauncher")
+    app.setOrganizationName("DarkittenLauncher")
     app.setWindowIcon(icons.app_icon())
     app.setFont(QFont("Microsoft YaHei UI", 9))
     app.setQuitOnLastWindowClosed(True)

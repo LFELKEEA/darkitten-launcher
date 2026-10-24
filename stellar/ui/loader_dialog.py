@@ -41,7 +41,8 @@ class LoaderDialog(StyledDialog):
 
         intro = QLabel(
             "为已安装的原版游戏添加 Fabric、NeoForge 或 Forge。"
-            "安装完成后，新版本会自动出现在首页的版本列表中。"
+            "加载器会单独保存到“加载器”页面，并自动绑定到选择的游戏版本；"
+            "之后也可以把它分配给其他同基础版本的游戏。"
         )
         intro.setObjectName("DialogText")
         intro.setWordWrap(True)
@@ -384,12 +385,27 @@ class LoaderDialog(StyledDialog):
         if success:
             self.progress.setValue(100)
             self.progress_text.setText("安装完成")
-            self.main.config.last_version = version_id
-            self.main.config.save()
-            self.main.selected_version = version_id
             self.main.refresh_versions()
-            self.main.home_page.select_version(version_id)
-            self.main.toast(f"{version_id} 已安装", "success")
+            profile = next(
+                (v for v in self.main.versions if v.id == version_id), None
+            )
+            base_id = (
+                profile.base_id
+                if profile and profile.base_id
+                else str(self.base_combo.currentData() or "")
+            )
+            if profile and profile.is_loader_profile and base_id:
+                self.main.config.bind_loader(base_id, version_id)
+                self.main.config.last_version = base_id
+                self.main.config.save()
+                self.main.select_version(base_id)
+            elif base_id:
+                self.main.select_version(base_id)
+            self.main.refresh_versions()
+            self.main.toast(
+                f"{version_id} 已安装，并绑定到 {base_id or '游戏版本'}",
+                "success",
+            )
             QTimer.singleShot(450, self.accept)
         else:
             self.progress_text.setText(message)

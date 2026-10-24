@@ -12,6 +12,7 @@ MODRINTH_API = "https://api.modrinth.com/v2"
 ProgressCallback = Callable[[int, str], None]
 
 LOADER_KEYS = {"Fabric": "fabric", "Forge": "forge", "NeoForge": "neoforge"}
+PROJECT_TYPES = {"mod", "modpack", "resourcepack", "shader"}
 
 
 class ModrinthError(Exception):
@@ -42,9 +43,14 @@ def search_mods(
     game_version: str = "",
     limit: int = 20,
     offset: int = 0,
+    project_type: str = "mod",
 ) -> dict[str, Any]:
-    facets: list[list[str]] = [["project_type:mod"]]
-    key = _loader_key(loader)
+    kind = str(project_type or "mod").strip().lower()
+    if kind not in PROJECT_TYPES:
+        kind = "mod"
+    facets: list[list[str]] = [[f"project_type:{kind}"]]
+    # 只有 Mod 受加载器约束；材质、光影和整合包不按加载器过滤。
+    key = _loader_key(loader) if kind == "mod" else ""
     if key:
         facets.append([f"categories:{key}"])
     if game_version:
@@ -177,10 +183,14 @@ def fetch_project(project_id: str) -> dict[str, Any]:
 
 
 def fetch_mod_versions(
-    project_id: str, loader: str = "", game_version: str = ""
+    project_id: str,
+    loader: str = "",
+    game_version: str = "",
+    content_type: str = "mod",
 ) -> list[dict[str, Any]]:
     params: dict[str, str] = {}
-    key = _loader_key(loader)
+    # 材质与光影的版本文件不声明 Fabric/Forge 加载器，不能按加载器过滤。
+    key = _loader_key(loader) if str(content_type or "mod") == "mod" else ""
     if key:
         params["loaders"] = json.dumps([key])
     if game_version:

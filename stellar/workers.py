@@ -33,6 +33,7 @@ from .packs import (
     inspect_pack,
 )
 from .modrinth_pack import import_modrinth_pack
+from .curseforge_pack import import_curseforge_pack
 from .version_zip import import_version_zip
 from .migration import (
     MigrationCancelled,
@@ -154,10 +155,12 @@ class LaunchWorker(QObject):
         account,
         server_address: str = "",
         parent: QObject | None = None,
+        instance_id: str = "",
     ) -> None:
         super().__init__(parent)
         self.game_dir = Path(game_dir)
         self.version_id = version_id
+        self.instance_id = str(instance_id or version_id)
         self.cfg = copy.deepcopy(cfg)
         self.installs = list(installs or [])
         self.account = copy.deepcopy(account)
@@ -200,6 +203,7 @@ class LaunchWorker(QObject):
                 self.installs,
                 account=account,
                 server_address=self.server_address,
+                instance_id=self.instance_id,
             )
             if self._cancelled():
                 self.cancelled.emit()
@@ -494,6 +498,77 @@ class ModrinthPackImportWorker(QObject):
     def _run(self) -> None:
         try:
             result = import_modrinth_pack(
+                self.pack_path,
+                self.game_dir,
+                self.version_id,
+                java_path=self.java_path,
+                overwrite=self.overwrite,
+                resume=self.resume,
+                isolated=self.isolated,
+                source=self.source,
+                threads=self.threads,
+                progress_cb=lambda p, m: self.progress.emit(p, m),
+                log_cb=lambda m: self.log_line.emit(m),
+                cancel_event=self.cancel_event,
+            )
+        except Exception as exc:
+            if self.cancel_event.is_set():
+                self.finished.emit(False, "导入已取消", "")
+            else:
+                self.finished.emit(False, str(exc), "")
+        else:
+            self.finished.emit(
+                True,
+                f"已下载 {result.downloaded_files} 个文件，"
+                f"导入 {result.imported_files} 个文件"
+                + (
+                    f"，跳过 {result.skipped_files} 个已存在文件"
+                    if result.skipped_files
+                    else ""
+                ),
+                result.version_id,
+            )
+
+
+class CurseForgePackImportWorker(QObject):
+    progress = Signal(int, str)
+    log_line = Signal(str)
+    finished = Signal(bool, str, str)
+
+    def __init__(
+        self,
+        pack_path: Path,
+        game_dir: Path,
+        version_id: str,
+        java_path: str = "",
+        overwrite: bool = False,
+        resume: bool = False,
+        isolated: bool = True,
+        source: str = "official",
+        threads: int = 8,
+        parent: QObject | None = None,
+    ) -> None:
+        super().__init__(parent)
+        self.pack_path = Path(pack_path)
+        self.game_dir = Path(game_dir)
+        self.version_id = version_id
+        self.java_path = str(java_path or "")
+        self.overwrite = bool(overwrite)
+        self.resume = bool(resume)
+        self.isolated = bool(isolated)
+        self.source = source
+        self.threads = max(1, min(16, int(threads)))
+        self.cancel_event = threading.Event()
+
+    def start(self) -> None:
+        threading.Thread(target=self._run, daemon=True).start()
+
+    def cancel(self) -> None:
+        self.cancel_event.set()
+
+    def _run(self) -> None:
+        try:
+            result = import_curseforge_pack(
                 self.pack_path,
                 self.game_dir,
                 self.version_id,
@@ -1034,6 +1109,7 @@ class ModSearchWorker(QObject):
         limit: int = 20,
         parent=None,
         source: str = "modrinth",
+        content_type: str = "mod",
     ) -> None:
         super().__init__(parent)
         self.query = query
@@ -1042,6 +1118,7 @@ class ModSearchWorker(QObject):
         self.offset = offset
         self.limit = limit
         self.source = str(source or "modrinth").lower()
+        self.content_type = str(content_type or "mod").lower()
 
     def start(self) -> None:
         threading.Thread(target=self._run, daemon=True).start()
@@ -1053,13 +1130,17 @@ class ModSearchWorker(QObject):
                 if self.source == "curseforge"
                 else search_mods
             )
-            data = search(
-                self.query,
-                loader=self.loader,
-                game_version=self.game_version,
-                limit=self.limit,
-                offset=self.offset,
-            )
+            kwargs = {
+                "loader": self.loader,
+                "game_version": self.game_version,
+                "limit": self.limit,
+                "offset": self.offset,
+            }
+            if self.source == "curseforge":
+                kwargs["content_type"] = self.content_type
+            else:
+                kwargs["project_type"] = self.content_type
+            data = search(self.query, **kwargs)
         except Exception as exc:
             self.ready.emit(None, str(exc), self.offset)
         else:
@@ -1148,12 +1229,14 @@ class ModVersionsWorker(QObject):
         game_version: str,
         parent=None,
         source: str = "modrinth",
+        content_type: str = "mod",
     ) -> None:
         super().__init__(parent)
         self.project_id = project_id
         self.loader = loader
         self.game_version = game_version
         self.source = str(source or "modrinth").lower()
+        self.content_type = str(content_type or "mod").lower()
 
     def start(self) -> None:
         threading.Thread(target=self._run, daemon=True).start()
@@ -1166,7 +1249,10 @@ class ModVersionsWorker(QObject):
                 else fetch_mod_versions
             )
             data = fetch(
-                self.project_id, self.loader, self.game_version
+                self.project_id,
+                self.loader,
+                self.game_version,
+                content_type=self.content_type,
             )
         except Exception as exc:
             self.ready.emit([], str(exc))

@@ -28,6 +28,18 @@ MCIM_CDN_HOST = "mod.mcimirror.top"
 FORGE_CDN_HOSTS = ("mediafilez.forgecdn.net", "media.forgecdn.net")
 GAME_ID = 432
 CLASS_ID_MODS = 6
+CLASS_IDS = {
+    "mod": CLASS_ID_MODS,
+    "modpack": 4471,
+    "resourcepack": 12,
+    "shader": 6552,
+}
+CONTENT_PATHS = {
+    CLASS_ID_MODS: "mc-mods",
+    4471: "modpacks",
+    12: "texture-packs",
+    6552: "shaders",
+}
 PAGE_SIZE_MAX = 50
 
 LOADER_TYPES = {
@@ -67,6 +79,19 @@ def _loader_key(loader: str) -> str:
 
 def _loader_type(loader: str) -> int | None:
     return LOADER_TYPES.get(_loader_key(loader))
+
+
+def _class_id(content_type: str) -> int:
+    kind = str(content_type or "mod").strip().lower()
+    return CLASS_IDS.get(kind, CLASS_ID_MODS)
+
+
+def _content_type(class_id: Any) -> str:
+    value = _as_int(class_id, CLASS_ID_MODS)
+    for key, known in CLASS_IDS.items():
+        if known == value:
+            return key
+    return "mod"
 
 
 def _api_sources() -> list[tuple[str, dict[str, str]]]:
@@ -144,8 +169,9 @@ def _project_url(data: dict) -> str:
     if isinstance(links, dict):
         url = str(links.get("websiteUrl") or "")
     if not url and data.get("slug"):
+        path = CONTENT_PATHS.get(_as_int(data.get("classId"), CLASS_ID_MODS), "mc-mods")
         url = (
-            "https://www.curseforge.com/minecraft/mc-mods/"
+            f"https://www.curseforge.com/minecraft/{path}/"
             + urllib.parse.quote(str(data.get("slug")), safe="")
         )
     return url
@@ -229,10 +255,11 @@ def _gallery(data: dict) -> list[dict[str, str]]:
 
 def normalize_hit(data: dict) -> dict[str, Any]:
     """把 CurseForge 搜索结果转成界面使用的摘要结构。"""
+    kind = _content_type(data.get("classId"))
     return {
         "project_id": str(data.get("id") or ""),
         "slug": str(data.get("slug") or ""),
-        "title": str(data.get("name") or data.get("slug") or "未知 Mod"),
+        "title": str(data.get("name") or data.get("slug") or "未知项目"),
         "description": str(data.get("summary") or ""),
         "author": _author_name(data),
         "downloads": data.get("downloadCount") or 0,
@@ -240,6 +267,7 @@ def normalize_hit(data: dict) -> dict[str, Any]:
         "icon_url": _logo_url(data),
         "project_url": _project_url(data),
         "date_modified": str(data.get("dateModified") or ""),
+        "content_type": kind,
         "source": "curseforge",
         "source_label": "CurseForge",
     }
@@ -331,7 +359,10 @@ def _required_dependencies(file: dict) -> list[dict[str, Any]]:
 
 
 def normalize_file(
-    file: dict, project_slug: str = "", project_url: str = ""
+    file: dict,
+    project_slug: str = "",
+    project_url: str = "",
+    content_type: str = "mod",
 ) -> dict[str, Any]:
     """把 CurseForge 文件转成 Modrinth 风格的版本字典。"""
     filename = Path(str(file.get("fileName") or "").replace("\\", "/")).name
@@ -342,8 +373,9 @@ def normalize_file(
     download_url = str(file.get("downloadUrl") or "")
     page_url = project_url
     if project_slug and file_id:
+        path = CONTENT_PATHS.get(_class_id(content_type), "mc-mods")
         page_url = (
-            "https://www.curseforge.com/minecraft/mc-mods/"
+            f"https://www.curseforge.com/minecraft/{path}/"
             f"{urllib.parse.quote(project_slug, safe='')}/files/{file_id}"
         )
     release_type = _as_int(file.get("releaseType"), 1)
@@ -365,6 +397,7 @@ def normalize_file(
         "loaders": _file_loaders(file),
         "source": "curseforge",
         "source_label": "CurseForge",
+        "content_type": str(content_type or "mod"),
         "page_url": page_url,
         "file_date": str(file.get("fileDate") or ""),
         "download_count": file.get("downloadCount") or 0,
@@ -378,13 +411,17 @@ def search_mods(
     game_version: str = "",
     limit: int = 20,
     offset: int = 0,
+    content_type: str = "mod",
 ) -> dict[str, Any]:
     text = str(query or "").strip()
+    kind = str(content_type or "mod").strip().lower()
+    if kind not in CLASS_IDS:
+        kind = "mod"
     page_size = max(1, min(PAGE_SIZE_MAX, int(limit)))
     index = max(0, int(offset))
     params: dict[str, Any] = {
         "gameId": GAME_ID,
-        "classId": CLASS_ID_MODS,
+        "classId": CLASS_IDS[kind],
         "index": index,
         "pageSize": page_size,
         "sortField": 11 if text else 2,
@@ -397,7 +434,7 @@ def search_mods(
         params["sortOrder"] = "desc"
     if game_version:
         params["gameVersion"] = str(game_version).strip()
-    loader_type = _loader_type(loader)
+    loader_type = _loader_type(loader) if kind == "mod" else None
     if loader_type is not None:
         params["modLoaderType"] = loader_type
     payload = _request_json("/mods/search", params)
@@ -433,6 +470,24 @@ def fetch_project(project_id: str) -> dict[str, Any]:
     return normalize_project(data)
 
 
+def fetch_file(
+    project_id: str, file_id: str, content_type: str = "mod"
+) -> dict[str, Any]:
+    """读取单个文件的下载地址与校验信息，供整合包导入使用。"""
+    project_id = str(project_id or "").strip()
+    file_id = str(file_id or "").strip()
+    if not project_id or not file_id:
+        raise CurseForgeError("缺少 CurseForge 文件 ID")
+    payload = _request_json(
+        f"/mods/{urllib.parse.quote(project_id, safe='')}/files/"
+        f"{urllib.parse.quote(file_id, safe='')}"
+    )
+    data = _extract_data(payload)
+    if not isinstance(data, dict) or not data.get("id"):
+        raise CurseForgeError("CurseForge 文件详情无法识别")
+    return normalize_file(data, content_type=content_type)
+
+
 def fetch_projects(project_ids: list[str]) -> dict[str, dict[str, Any]]:
     """批量读取前置项目；单个失败不影响其他项目。"""
     ids = list(
@@ -461,15 +516,21 @@ def fetch_projects(project_ids: list[str]) -> dict[str, dict[str, Any]]:
 
 
 def fetch_mod_versions(
-    project_id: str, loader: str = "", game_version: str = ""
+    project_id: str,
+    loader: str = "",
+    game_version: str = "",
+    content_type: str = "mod",
 ) -> list[dict[str, Any]]:
     project_id = str(project_id or "").strip()
+    kind = str(content_type or "mod").strip().lower()
+    if kind not in CLASS_IDS:
+        kind = "mod"
     if not project_id:
         raise CurseForgeError("缺少 CurseForge 项目 ID")
     params: dict[str, Any] = {"index": 0, "pageSize": PAGE_SIZE_MAX}
     if game_version:
         params["gameVersion"] = str(game_version).strip()
-    loader_type = _loader_type(loader)
+    loader_type = _loader_type(loader) if kind == "mod" else None
     if loader_type is not None:
         params["modLoaderType"] = loader_type
     payload = _request_json(
@@ -488,12 +549,12 @@ def fetch_mod_versions(
         file_id = str(file.get("id") or "")
         if not file_id or file_id in seen:
             continue
-        version = normalize_file(file)
+        version = normalize_file(file, content_type=kind)
         if not version["files"][0]["filename"]:
             continue
         if game_version and game_version not in version["game_versions"]:
             continue
-        if key and key not in version["loaders"]:
+        if kind == "mod" and key and key not in version["loaders"]:
             continue
         seen.add(file_id)
         versions.append(version)

@@ -193,9 +193,14 @@ def prepare_launch(
     java_info: JavaInfo | None = None,
     account: Account | None = None,
     server_address: str = "",
+    instance_id: str = "",
 ) -> LaunchPlan:
     game_dir = Path(game_dir)
-    run_dir = version_game_dir(game_dir, version_id, cfg.version_isolation)
+    # version_id 决定用哪套加载器/依赖启动；instance_id 决定存档、Mod、
+    # 材质和光影放在哪个游戏版本目录。分离后同一个加载器可以服务多个实例。
+    run_dir = version_game_dir(
+        game_dir, instance_id or version_id, cfg.version_isolation
+    )
     account = account or Account.offline(cfg.player_name.strip())
 
     if account.is_msa:

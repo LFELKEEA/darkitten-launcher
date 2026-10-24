@@ -17,6 +17,11 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from ..curseforge_pack import (
+    CurseForgePackInfo,
+    inspect_curseforge_pack,
+    looks_like_curseforge_pack,
+)
 from ..modrinth_pack import (
     ModrinthPackInfo,
     inspect_modrinth_pack,
@@ -36,6 +41,7 @@ from ..packs import (
 from ..paths import version_game_dir
 from ..versions import version_json_path
 from ..workers import (
+    CurseForgePackImportWorker,
     ModrinthPackImportWorker,
     PackExportWorker,
     PackFetchWorker,
@@ -326,10 +332,14 @@ class PackImportDialog(StyledDialog):
     def __init__(self, main, initial_path: Path | str | None = None) -> None:
         super().__init__(main, "领养整合包", "package", colors()["accent"], width=640)
         self.main = main
-        self._info: PackInfo | ModrinthPackInfo | None = None
+        self._info: PackInfo | ModrinthPackInfo | CurseForgePackInfo | None = None
         self._kind = ""
         self._worker: (
-            PackImportWorker | ModrinthPackImportWorker | PackFetchWorker | None
+            PackImportWorker
+            | ModrinthPackImportWorker
+            | CurseForgePackImportWorker
+            | PackFetchWorker
+            | None
         ) = None
         self._mode = "idle"
         self._attempted_version_id = ""
@@ -337,7 +347,8 @@ class PackImportDialog(StyledDialog):
 
         intro = QLabel(
             "把别人打包好的猫窝搬回来。选择本地 .dklpack、Modrinth "
-            "整合包（.mrpack / .zip），或粘贴下载链接，本喵会补齐原版与依赖。"
+            "整合包（.mrpack / .zip）或 CurseForge 整合包（.zip），"
+            "也可以粘贴下载链接，本喵会补齐原版与依赖。"
         )
         intro.setObjectName("DialogText")
         intro.setWordWrap(True)
@@ -481,7 +492,7 @@ class PackImportDialog(StyledDialog):
         self._info = None
         self._kind = ""
         dkl_error: Exception | None = None
-        info: PackInfo | ModrinthPackInfo
+        info: PackInfo | ModrinthPackInfo | CurseForgePackInfo
         try:
             info = inspect_pack(path)
         except Exception as exc:
@@ -500,6 +511,16 @@ class PackImportDialog(StyledDialog):
                     self.import_btn.setEnabled(False)
                     return
                 self._kind = "modrinth"
+            elif looks_like_curseforge_pack(path):
+                try:
+                    info = inspect_curseforge_pack(path)
+                except Exception as exc:
+                    self._show_error(f"CurseForge 整合包无法导入：{exc}")
+                    self.preview.setVisible(False)
+                    self.import_options.setVisible(False)
+                    self.import_btn.setEnabled(False)
+                    return
+                self._kind = "curseforge"
             else:
                 self._show_error(str(dkl_error or "无法识别这个整合包"))
                 self.preview.setVisible(False)
@@ -527,6 +548,12 @@ class PackImportDialog(StyledDialog):
                 f"下载约 {human_size(info.total_bytes)} · "
                 f"压缩包 {human_size(info.archive_bytes)}"
             )
+        elif self._kind == "curseforge":
+            self.preview_meta.setText(
+                f"来自 CurseForge · 在线下载 {len(info.files)} 个文件 · "
+                f"覆盖文件 {human_size(info.total_bytes)} · "
+                f"压缩包 {human_size(info.archive_bytes)}"
+            )
         else:
             created = (
                 info.created_at[:19].replace("T", " ")
@@ -551,7 +578,7 @@ class PackImportDialog(StyledDialog):
         default_id = unique_version_id(self.main.config.game_path, info.name)
         self.name_edit.setText(default_id)
         hint = "默认使用整合包名称；如果已存在同名版本会自动加序号。"
-        if self._kind == "modrinth":
+        if self._kind in ("modrinth", "curseforge"):
             hint += (
                 f" 导入时会安装 Minecraft {info.minecraft_version}"
                 + (
@@ -623,7 +650,11 @@ class PackImportDialog(StyledDialog):
         self._hide_error()
         self._begin_busy("import")
         if self._kind == "modrinth":
-            worker: PackImportWorker | ModrinthPackImportWorker = (
+            worker: (
+                PackImportWorker
+                | ModrinthPackImportWorker
+                | CurseForgePackImportWorker
+            ) = (
                 ModrinthPackImportWorker(
                     self._info.path,
                     self.main.config.game_path,
@@ -636,6 +667,19 @@ class PackImportDialog(StyledDialog):
                     threads=self.main.config.download_threads,
                     parent=self,
                 )
+            )
+        elif self._kind == "curseforge":
+            worker = CurseForgePackImportWorker(
+                self._info.path,
+                self.main.config.game_path,
+                target,
+                java_path=self.main.config.java_path,
+                overwrite=self.overwrite.isChecked(),
+                resume=resume,
+                isolated=self.main.config.version_isolation,
+                source=self.main.config.download_source,
+                threads=self.main.config.download_threads,
+                parent=self,
             )
         else:
             worker = PackImportWorker(

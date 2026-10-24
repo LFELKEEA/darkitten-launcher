@@ -217,8 +217,8 @@ class HomePage(QWidget):
         layout.addLayout(header)
 
         tip = QLabel(
-            "双击启动 · 交换箭头迁移存档/Mod · 纸箱按钮打包 · 垃圾桶删除版本 · "
-            "也可以直接把 .zip / .dklpack / .mrpack 拖进窗口"
+            "双击启动 · 齿轮选择原版/加载器 · 交换箭头迁移存档/Mod · "
+            "纸箱按钮打包 · 垃圾桶删除版本 · 也可以直接把 .zip / .dklpack / .mrpack 拖进窗口"
         )
         tip.setObjectName("Tiny")
         layout.addWidget(tip)
@@ -348,7 +348,7 @@ class HomePage(QWidget):
 
     # ------------------------------------------------------------------
     def refresh_versions(self) -> None:
-        versions: list[VersionSummary] = list(self.main.versions)
+        versions: list[VersionSummary] = list(self.main.game_version_summaries())
         self.version_count.setText(f"{len(versions)} 个版本")
 
         had_selection = self._selected
@@ -388,7 +388,15 @@ class HomePage(QWidget):
 
         row_widgets: list[VersionRow] = []
         for summary in versions:
-            row = VersionRow(summary, selected=(summary.id == target))
+            profile = self.main.loader_profile_for(summary.id)
+            bound_loader = ""
+            if profile:
+                bound_loader = profile.loader or profile.id
+            row = VersionRow(
+                summary,
+                selected=(summary.id == target),
+                bound_loader=bound_loader,
+            )
             row.clicked.connect(self.select_version)
             row.double_clicked.connect(self._launch_version)
             row.delete_requested.connect(self.main.delete_version)
@@ -396,6 +404,7 @@ class HomePage(QWidget):
             row.migrate_requested.connect(
                 lambda version_id: self.main.open_migration_dialog(version_id)
             )
+            row.settings_requested.connect(self.main.open_version_settings)
             row_widgets.append(row)
             self._version_rows[summary.id] = row
             self.version_layout.insertWidget(self.version_layout.count() - 1, row)
@@ -429,10 +438,13 @@ class HomePage(QWidget):
         if not summary:
             return
         self.main.config.last_version = self._selected
-        display_type = summary.loader or summary.type_name
+        profile = self.main.loader_profile_for(summary.id)
+        loader_name = profile.loader if profile else summary.loader
+        display_type = loader_name or summary.type_name
+        suffix = "（绑定加载器）" if profile else ""
         java_text = f" · Java {summary.java_major}+" if summary.java_major else ""
         self.hero_sub.setText(
-            f"Minecraft {summary.id} · {display_type}{java_text}"
+            f"Minecraft {summary.id} · {display_type}{suffix}{java_text}"
         )
         self.hero_title.setText(
             f"今天也要去捣乱吗，{self.main.display_name()}？"
@@ -442,8 +454,9 @@ class HomePage(QWidget):
     def _refresh_status(self) -> None:
         if not self._selected:
             return
+        profile_id, _instance_id = self.main.launch_profile(self._selected)
         try:
-            resolved = resolve_version(self.main.config.game_path, self._selected)
+            resolved = resolve_version(self.main.config.game_path, profile_id)
             missing = check_installation(
                 self.main.config.game_path, resolved, check_assets=False
             )

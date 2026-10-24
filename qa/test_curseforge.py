@@ -102,6 +102,12 @@ class FakeMain(QWidget):
     def open_path(self, _path) -> None:
         pass
 
+    def game_version_summaries(self):
+        return list(self.versions)
+
+    def loader_profile_for(self, _version_id):
+        return None
+
 
 def unit_tests() -> bool:
     ok = True

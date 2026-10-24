@@ -50,6 +50,11 @@ class VersionSummary:
     java_major: int = 0
     error: str = ""
     folder_mtime: float = 0.0
+    parent_id: str = ""
+    base_id: str = ""
+    # 纯加载器配置：自身是加载器版本，直接继承一个原版游戏版本。
+    # 整合包实例通常会再继承一层加载器，因此不会被误判成加载器。
+    is_loader_profile: bool = False
 
     @property
     def type_name(self) -> str:
@@ -58,6 +63,35 @@ class VersionSummary:
     @property
     def display_type(self) -> str:
         return self.loader or self.type_name
+
+    @property
+    def loader_version(self) -> str:
+        """从版本名里提取加载器版本，失败时返回空字符串。"""
+        value = self.id
+        lower = value.lower()
+        markers = (
+            ("fabric-loader-", ""),
+            ("quilt-loader-", ""),
+        )
+        for marker, _ in markers:
+            if lower.startswith(marker):
+                rest = value[len(marker) :]
+                return rest.rsplit("-", 1)[0] if "-" in rest else rest
+        if "-forge-" in lower:
+            return value.split("-forge-", 1)[1]
+        if lower.startswith("neoforge-"):
+            return value[len("neoforge-") :]
+        if "-neoforge-" in lower:
+            return value.split("-neoforge-", 1)[1]
+        return ""
+
+
+def game_versions(versions: Iterable[VersionSummary]) -> list[VersionSummary]:
+    return [item for item in versions if not item.is_loader_profile]
+
+
+def loader_profiles(versions: Iterable[VersionSummary]) -> list[VersionSummary]:
+    return [item for item in versions if item.is_loader_profile]
 
 
 @dataclass
@@ -622,6 +656,27 @@ def scan_versions(game_dir: Path) -> list[VersionSummary]:
             summary.loader = detect_loader(
                 [str(d.get("id", "")) for d in chain], main_class, libs
             )
+            summary.parent_id = str(child.get("inheritsFrom") or "")
+            summary.base_id = str(chain[0].get("id") or folder.name)
+            if summary.loader and summary.parent_id:
+                try:
+                    parent_chain = load_chain(game_dir, summary.parent_id)
+                    parent_main = ""
+                    for data in reversed(parent_chain):
+                        if data.get("mainClass"):
+                            parent_main = str(data["mainClass"])
+                            break
+                    parent_libs: list[dict[str, Any]] = []
+                    for data in parent_chain:
+                        parent_libs.extend(data.get("libraries") or [])
+                    parent_loader = detect_loader(
+                        [str(d.get("id", "")) for d in parent_chain],
+                        parent_main,
+                        parent_libs,
+                    )
+                except Exception:
+                    parent_loader = ""
+                summary.is_loader_profile = not parent_loader
             for data in reversed(chain):
                 java_version = data.get("javaVersion") or {}
                 try:

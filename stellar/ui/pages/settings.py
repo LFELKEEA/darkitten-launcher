@@ -523,15 +523,15 @@ class SettingsPage(QWidget):
         update_url_layout = QHBoxLayout(update_url_box)
         update_url_layout.setContentsMargins(0, 0, 0, 0)
         update_url_layout.setSpacing(6)
-        self.update_url_edit = QLineEdit(self.main.config.update_url)
+        self.update_url_edit = QLineEdit(DEFAULT_UPDATE_URL)
         self.update_url_edit.setMinimumWidth(330)
-        self.update_url_edit.setPlaceholderText(DEFAULT_UPDATE_URL)
-        self.update_url_edit.editingFinished.connect(self._save_update_url)
+        self.update_url_edit.setReadOnly(True)
+        self.update_url_edit.setToolTip("更新源固定为 Darkitten Launcher 官方 GitHub Pages 地址")
         update_url_layout.addWidget(self.update_url_edit)
         layout.addWidget(
             self._row(
                 "更新源",
-                "默认连接本机下载站。部署到公网后，把这里改成你的 update.json 地址。",
+                "固定使用 GitHub Pages 官方更新清单，不再请求旧的本机或临时托管地址。",
                 update_url_box,
             )
         )
@@ -811,13 +811,17 @@ class SettingsPage(QWidget):
         self._update_java_requirement()
 
     def _update_java_requirement(self) -> None:
+        profile_id, _instance_id = self.main.launch_profile(
+            self.main.selected_version
+        )
         summary = next(
-            (v for v in self.main.versions if v.id == self.main.selected_version),
+            (v for v in self.main.versions if v.id == profile_id),
             None,
         )
         if summary and summary.java_major and self.main.java_installs:
             self.java_hint.setText(
-                f"当前版本 {summary.id} 需要 Java {summary.java_major}+，"
+                f"当前版本 {self.main.selected_version or summary.id} 需要 Java "
+                f"{summary.java_major}+，"
                 f"已检测到 {len(self.main.java_installs)} 个 Java。"
             )
 
@@ -970,7 +974,7 @@ class SettingsPage(QWidget):
         self.update_auto_switch.setChecked(
             bool(self.main.config.update_auto_check)
         )
-        self.update_url_edit.setText(self.main.config.update_url)
+        self.update_url_edit.setText(DEFAULT_UPDATE_URL)
 
     def _check_updates(self) -> None:
         self.main.check_for_updates(manual=True)
@@ -987,18 +991,6 @@ class SettingsPage(QWidget):
             "启动时会自动检查更新" if checked else "已关闭启动时自动检查更新",
             "success",
         )
-
-    def _save_update_url(self) -> None:
-        value = self.update_url_edit.text().strip() or DEFAULT_UPDATE_URL
-        self.update_url_edit.setText(value)
-        if value == self.main.config.update_url:
-            return
-        self.main.config.update_url = value
-        self.main.config.save()
-        self.main.update_state_text = "更新源已修改，尚未检查"
-        self.main.update_state_kind = "idle"
-        self.refresh_update_state()
-        self.main.toast("更新源已保存", "success")
 
     def on_show(self) -> None:
         self.refresh_account()

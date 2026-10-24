@@ -921,22 +921,27 @@ class VersionRow(QFrame):
     delete_requested = Signal(str)
     export_requested = Signal(str)
     migrate_requested = Signal(str)
+    settings_requested = Signal(str)
 
     def __init__(
         self,
         summary: VersionSummary,
         selected: bool = False,
         parent: QWidget | None = None,
+        bound_loader: str = "",
     ) -> None:
         super().__init__(parent)
         self.summary = summary
+        self.bound_loader = bound_loader
         self.setObjectName("SelectRow")
         self.setAttribute(Qt.WA_StyledBackground, True)
         self.setCursor(Qt.PointingHandCursor)
         self.setFixedHeight(60)
         self.setProperty("selected", "true" if selected else "false")
 
-        accent = LOADER_COLORS.get(summary.loader, colors()["accent"])
+        accent = LOADER_COLORS.get(
+            bound_loader or summary.loader, colors()["accent"]
+        )
         if summary.error:
             accent = colors()["red"]
 
@@ -956,15 +961,20 @@ class VersionRow(QFrame):
         name = QLabel(summary.id)
         name.setStyleSheet("font-weight: 700; font-size: 13px;")
         title.addWidget(name)
-        kind = summary.loader or summary.type_name
-        badge_kind = "purple" if summary.loader else ("green" if summary.type == "release" else "orange")
+        loader_name = bound_loader or summary.loader
+        kind = loader_name or summary.type_name
+        badge_kind = "purple" if loader_name else ("green" if summary.type == "release" else "orange")
         title.addWidget(badge(kind, badge_kind))
+        if bound_loader:
+            title.addWidget(badge("已绑定", "blue"))
         if summary.error:
             title.addWidget(badge("损坏", "red"))
         title.addStretch(1)
         info.addLayout(title)
 
         meta_parts = []
+        if bound_loader:
+            meta_parts.append(f"加载器 {bound_loader}")
         if summary.release_time:
             meta_parts.append(summary.release_time[:10])
         if summary.java_major:
@@ -983,6 +993,14 @@ class VersionRow(QFrame):
             check.setPixmap(icons.pixmap("check", colors()["accent"], 18))
         check.setFixedWidth(20)
         layout.addWidget(check)
+
+        settings_btn = icon_button(
+            "settings", "版本设置：选择原版或已安装的加载器", colors()["muted"], 28, 15
+        )
+        settings_btn.clicked.connect(
+            lambda _=False: self.settings_requested.emit(self.summary.id)
+        )
+        layout.addWidget(settings_btn)
 
         export_btn = icon_button("package", "打包此版本（含 mods / 配置）", colors()["muted"], 28, 15)
         export_btn.clicked.connect(
@@ -1003,6 +1021,7 @@ class VersionRow(QFrame):
         layout.addWidget(delete_btn)
 
         transparent_children(self)
+        settings_btn.setAttribute(Qt.WA_TransparentForMouseEvents, False)
         export_btn.setAttribute(Qt.WA_TransparentForMouseEvents, False)
         migrate_btn.setAttribute(Qt.WA_TransparentForMouseEvents, False)
         delete_btn.setAttribute(Qt.WA_TransparentForMouseEvents, False)

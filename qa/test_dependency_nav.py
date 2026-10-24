@@ -23,6 +23,9 @@ class FakeMain(QWidget):
         self.selected_version = ""
         self.messages: list[tuple[str, str]] = []
 
+    def game_version_summaries(self):
+        return list(self.versions)
+
     def toast(self, text: str, kind: str = "info") -> None:
         self.messages.append((text, kind))
 

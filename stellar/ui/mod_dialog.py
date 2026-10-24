@@ -28,6 +28,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from ..config import APP_DIR
 from ..modrinth import primary_file, required_dependencies
 from ..versions import resolve_version
 from ..workers import (
@@ -63,6 +64,23 @@ COMMON_VERSIONS = [
 ]
 
 LOADER_LABELS = {"fabric": "Fabric", "neoforge": "NeoForge", "forge": "Forge"}
+CONTENT_LABELS = {
+    "mod": "Mod",
+    "modpack": "整合包",
+    "resourcepack": "材质",
+    "shader": "光影",
+}
+CONTENT_FOLDERS = {
+    "mod": "mods",
+    "resourcepack": "resourcepacks",
+    "shader": "shaderpacks",
+}
+MODRINTH_PATHS = {
+    "mod": "mod",
+    "modpack": "modpack",
+    "resourcepack": "resourcepack",
+    "shader": "shader",
+}
 PAGE_SIZE = 5
 FORUM_HOME = "https://klpbbs.com/"
 _MAX_CACHE = 80
@@ -278,7 +296,7 @@ class ModResultRow(QFrame):
         title_row = QHBoxLayout()
         title_row.setSpacing(6)
         self.title_label = _ElidedLabel(
-            str(hit.get("title") or hit.get("slug") or "未知 Mod")
+            str(hit.get("title") or hit.get("slug") or "未知项目")
         )
         self.title_label.setStyleSheet("font-weight: 700; font-size: 12px;")
         title_row.addWidget(self.title_label, 1)
@@ -340,6 +358,8 @@ class ModBrowserDialog(StyledDialog):
         self._total = 0
         self._polling = False
         self._source = "modrinth"
+        self._content_type = "mod"
+        self._pack_download_dir: Path | None = None
         self._selected_project = ""
         self._project: dict | None = None
         self._hit: dict | None = None
@@ -365,6 +385,7 @@ class ModBrowserDialog(StyledDialog):
         self.mc_combo.activated.connect(lambda _: self._on_context_changed())
         self.mc_combo.lineEdit().editingFinished.connect(self._on_context_changed)
         self.loader_tabs.changed.connect(lambda _: self._on_context_changed())
+        self._apply_content_mode()
         QTimer.singleShot(0, lambda: self._search(0))
 
     def reject(self) -> None:
@@ -404,6 +425,7 @@ class ModBrowserDialog(StyledDialog):
         loader_label = QLabel("加载器")
         loader_label.setFixedWidth(46)
         loader_label.setStyleSheet("font-weight: 700; font-size: 12px;")
+        self._loader_label = loader_label
         self.loader_tabs = SegmentedControl()
         self.loader_tabs.add_item("Fabric", "fabric")
         self.loader_tabs.add_item("NeoForge", "neoforge")
@@ -435,8 +457,19 @@ class ModBrowserDialog(StyledDialog):
         self.body.addWidget(context)
 
     def _build_search(self) -> None:
-        search_row = QHBoxLayout()
-        search_row.setSpacing(8)
+        type_row = QHBoxLayout()
+        type_row.setSpacing(8)
+        type_label = QLabel("内容")
+        type_label.setObjectName("Tiny")
+        self.type_tabs = SegmentedControl()
+        self.type_tabs.add_item("Mod", "mod")
+        self.type_tabs.add_item("整合包", "modpack")
+        self.type_tabs.add_item("材质", "resourcepack")
+        self.type_tabs.add_item("光影", "shader")
+        self.type_tabs.changed.connect(self._set_content_type)
+        type_row.addWidget(type_label)
+        type_row.addWidget(self.type_tabs)
+        type_row.addStretch(1)
         source_label = QLabel("下载源")
         source_label.setObjectName("Tiny")
         self.source_tabs = SegmentedControl()
@@ -446,8 +479,12 @@ class ModBrowserDialog(StyledDialog):
         self.source_tabs.setToolTip(
             "CurseForge 通过 MCIM 镜像访问；文件下载优先走镜像 CDN。"
         )
-        search_row.addWidget(source_label)
-        search_row.addWidget(self.source_tabs)
+        type_row.addWidget(source_label)
+        type_row.addWidget(self.source_tabs)
+        self.body.addLayout(type_row)
+
+        search_row = QHBoxLayout()
+        search_row.setSpacing(8)
         self.search = QLineEdit()
         self.search.setPlaceholderText("搜索 Mod 名称、作者或关键词，留空则浏览热门 Mod…")
         self.search.setClearButtonEnabled(True)
@@ -472,26 +509,52 @@ class ModBrowserDialog(StyledDialog):
     def _source_name(self) -> str:
         return "CurseForge" if self._source == "curseforge" else "Modrinth"
 
-    def _set_source(self, source: str) -> None:
-        source = "curseforge" if source == "curseforge" else "modrinth"
-        self.source_tabs.set_value(source)
-        if source == self._source:
-            return
-        self._source = source
-        self.search.setPlaceholderText(
-            "搜索 CurseForge Mod 名称或关键词，留空则浏览热门 Mod…"
-            if source == "curseforge"
-            else "搜索 Mod 名称、作者或关键词，留空则浏览热门 Mod…"
-        )
-        if source == "curseforge":
-            self.source_note.setText(
-                "CurseForge 数据与文件镜像由 MCIM 提供；"
-                "若作者关闭第三方下载，会在详情里给出 CurseForge 页面。"
+    def _content_label(self) -> str:
+        return CONTENT_LABELS.get(self._content_type, "Mod")
+
+    def _update_search_placeholder(self) -> None:
+        label = self._content_label()
+        source = self._source_name()
+        if self._content_type == "modpack":
+            self.search.setPlaceholderText(
+                f"搜索 {source} 整合包名称或关键词，留空则浏览热门整合包…"
             )
-            self.source_note.setVisible(True)
         else:
-            self.source_note.setVisible(False)
-            self.source_note.setText("")
+            self.search.setPlaceholderText(
+                f"搜索 {source} {label}名称、作者或关键词，留空则浏览热门{label}…"
+            )
+
+    def _set_content_type(self, content_type: str) -> None:
+        kind = str(content_type or "mod").lower()
+        if kind not in CONTENT_LABELS:
+            kind = "mod"
+        self.type_tabs.set_value(kind)
+        if kind == self._content_type:
+            return
+        self._content_type = kind
+        self.title_label.setText(f"下载 {CONTENT_LABELS[kind]}")
+        self._apply_content_mode()
+        self._reset_results()
+        self._search(0)
+
+    def _apply_content_mode(self) -> None:
+        is_mod = self._content_type == "mod"
+        self._loader_label.setVisible(is_mod)
+        self.loader_tabs.setVisible(is_mod)
+        self.loader_btn.setVisible(is_mod)
+        self._update_search_placeholder()
+        if self._content_type == "modpack":
+            self._folder_btn.setText("打开整合包缓存")
+        else:
+            self._folder_btn.setText(
+                f"打开 {CONTENT_FOLDERS.get(self._content_type, 'mods')} 文件夹"
+            )
+        if self._download_worker is None:
+            self.download_btn.setText(self._download_button_text())
+        self._sync_download_button()
+        self._update_context()
+
+    def _reset_results(self) -> None:
         self._page = 0
         self._selected_project = ""
         self._project = None
@@ -504,6 +567,24 @@ class ModBrowserDialog(StyledDialog):
         self.dep_bar.clear()
         self._render_results(loading=True)
         self._clear_detail()
+
+    def _set_source(self, source: str) -> None:
+        source = "curseforge" if source == "curseforge" else "modrinth"
+        self.source_tabs.set_value(source)
+        if source == self._source:
+            return
+        self._source = source
+        self._update_search_placeholder()
+        if source == "curseforge":
+            self.source_note.setText(
+                "CurseForge 数据与文件镜像由 MCIM 提供；"
+                "若作者关闭第三方下载，会在详情里给出 CurseForge 页面。"
+            )
+            self.source_note.setVisible(True)
+        else:
+            self.source_note.setVisible(False)
+            self.source_note.setText("")
+        self._reset_results()
         self._search(0)
 
     def _build_split(self) -> None:
@@ -800,9 +881,12 @@ class ModBrowserDialog(StyledDialog):
     def _installed_versions(self) -> list[tuple[str, str, str]]:
         items: list[tuple[str, str, str]] = []
         seen: set[tuple[str, str, str]] = set()
-        for summary in self.main.versions:
+        for summary in self.main.game_version_summaries():
             base = summary.id
             loader = summary.loader
+            if not loader:
+                profile = self.main.loader_profile_for(summary.id)
+                loader = profile.loader if profile else ""
             try:
                 chain = resolve_version(
                     self.main.config.game_path, summary.id
@@ -854,6 +938,9 @@ class ModBrowserDialog(StyledDialog):
         self.mc_combo.blockSignals(False)
 
         loader = (selected.loader if selected else "").lower()
+        if selected and not loader:
+            profile = self.main.loader_profile_for(selected.id)
+            loader = (profile.loader if profile else "").lower()
         loader = {"neoforge": "neoforge", "forge": "forge", "fabric": "fabric"}.get(
             loader, "fabric"
         )
@@ -862,43 +949,85 @@ class ModBrowserDialog(StyledDialog):
 
     def _update_context(self) -> None:
         mc = self.mc_combo.currentText().strip()
-        loader = self.loader_tabs.current()
-        loader_name = LOADER_LABELS.get(loader, loader)
-        matches = [
-            version_id
-            for base, name, version_id in self._installed_versions()
-            if base == mc and name == loader_name
-        ]
-        if matches:
-            target = (
-                self.main.selected_version
-                if self.main.selected_version in matches
-                else matches[0]
-            )
-            self._target_version_id = target
-            if self.main.config.version_isolation:
-                self.context_label.setText(
-                    f"将下载到版本 {target} 的独立 mods 文件夹：versions/{target}/mods"
-                )
-            else:
-                self.context_label.setText(
-                    f"本地已有 Minecraft {mc} · {loader_name}。"
-                    "版本隔离已关闭，Mod 会放入公共 mods 文件夹。"
-                )
-            self.context_label.setStyleSheet(f"color: {colors()['green']};")
-        else:
+        kind = self._content_type
+        if kind == "modpack":
             self._target_version_id = ""
-            if self.main.config.version_isolation:
-                self.context_label.setText(
-                    f"本地还没有 Minecraft {mc} 的 {loader_name} 版本，"
-                    "无法确定独立 mods 目录。请先点击“安装加载器”。"
+            self.context_label.setText(
+                f"整合包会以 Minecraft {mc} 为基础创建新的游戏版本，"
+                "加载器与整合包文件由清单自动决定，不会覆盖现有版本。"
+            )
+            self.context_label.setStyleSheet(f"color: {colors()['green']};")
+        elif kind in ("resourcepack", "shader"):
+            folder = CONTENT_FOLDERS[kind]
+            label = CONTENT_LABELS[kind]
+            matches = [
+                version_id
+                for base, _name, version_id in self._installed_versions()
+                if base == mc
+            ]
+            if matches:
+                target = (
+                    self.main.selected_version
+                    if self.main.selected_version in matches
+                    else matches[0]
                 )
+                self._target_version_id = target
+                if self.main.config.version_isolation:
+                    self.context_label.setText(
+                        f"将下载到版本 {target} 的独立 {folder} 文件夹："
+                        f"versions/{target}/{folder}"
+                    )
+                else:
+                    self.context_label.setText(
+                        f"本地已有 Minecraft {mc}。版本隔离已关闭，"
+                        f"{label}会放入公共 {folder} 文件夹。"
+                    )
+                self.context_label.setStyleSheet(f"color: {colors()['green']};")
             else:
+                self._target_version_id = ""
                 self.context_label.setText(
-                    f"本地还没有 Minecraft {mc} 的 {loader_name} 版本。"
-                    "可以先安装加载器，否则下载的 Mod 不会被加载。"
+                    f"本地还没有 Minecraft {mc} 的游戏版本，"
+                    f"无法确定 {folder} 目录。请先在“下载”页面安装游戏版本。"
                 )
-            self.context_label.setStyleSheet(f"color: {colors()['orange']};")
+                self.context_label.setStyleSheet(f"color: {colors()['orange']};")
+        else:
+            loader = self.loader_tabs.current()
+            loader_name = LOADER_LABELS.get(loader, loader)
+            matches = [
+                version_id
+                for base, name, version_id in self._installed_versions()
+                if base == mc and name == loader_name
+            ]
+            if matches:
+                target = (
+                    self.main.selected_version
+                    if self.main.selected_version in matches
+                    else matches[0]
+                )
+                self._target_version_id = target
+                if self.main.config.version_isolation:
+                    self.context_label.setText(
+                        f"将下载到版本 {target} 的独立 mods 文件夹：versions/{target}/mods"
+                    )
+                else:
+                    self.context_label.setText(
+                        f"本地已有 Minecraft {mc} · {loader_name}。"
+                        "版本隔离已关闭，Mod 会放入公共 mods 文件夹。"
+                    )
+                self.context_label.setStyleSheet(f"color: {colors()['green']};")
+            else:
+                self._target_version_id = ""
+                if self.main.config.version_isolation:
+                    self.context_label.setText(
+                        f"本地还没有 Minecraft {mc} 的 {loader_name} 版本，"
+                        "无法确定独立 mods 目录。请先到“加载器”页面安装并绑定加载器。"
+                    )
+                else:
+                    self.context_label.setText(
+                        f"本地还没有 Minecraft {mc} 的 {loader_name} 版本。"
+                        "可以先安装加载器，否则下载的 Mod 不会被加载。"
+                    )
+                self.context_label.setStyleSheet(f"color: {colors()['orange']};")
         if hasattr(self, "download_btn"):
             self._sync_download_button()
 
@@ -931,6 +1060,8 @@ class ModBrowserDialog(StyledDialog):
             return False
         if not primary_file(version):
             return False
+        if self._content_type == "modpack":
+            return True
         if self.main.config.version_isolation and not self._target_version_id:
             return False
         return True
@@ -942,16 +1073,25 @@ class ModBrowserDialog(StyledDialog):
         else:
             self.download_btn.setEnabled(self._can_download())
 
-    def _target_mods_dir(self) -> Path:
+    def _target_dir(self) -> Path:
         target = self._target_version_id or self.main.selected_version
+        if self._content_type == "resourcepack":
+            return self.main.config.resourcepacks_path(target)
+        if self._content_type == "shader":
+            return self.main.config.shaderpacks_path(target)
         return self.main.config.mods_path(target)
 
     def _open_folder(self) -> None:
-        path = self._target_mods_dir()
+        if self._content_type == "modpack":
+            folder = "整合包缓存"
+            path = APP_DIR / "cache" / "packs"
+        else:
+            folder = CONTENT_FOLDERS.get(self._content_type, "mods")
+            path = self._target_dir()
         try:
             path.mkdir(parents=True, exist_ok=True)
         except OSError as exc:
-            self.main.toast(f"无法创建 mods 文件夹：{exc}", "error")
+            self.main.toast(f"无法创建 {folder} 文件夹：{exc}", "error")
             return
         self.main.open_path(path)
 
@@ -981,7 +1121,7 @@ class ModBrowserDialog(StyledDialog):
             self.status_label.setText("请先填写 MC 版本")
             return
         page = max(0, int(page))
-        loader = self.loader_tabs.current()
+        loader = self.loader_tabs.current() if self._content_type == "mod" else ""
         offset = page * self._page_size
         self._polling = True
         self.search_btn.setEnabled(False)
@@ -999,6 +1139,7 @@ class ModBrowserDialog(StyledDialog):
             self._page_size,
             self,
             source=self._source,
+            content_type=self._content_type,
         )
         self._search_worker = worker
         worker.ready.connect(
@@ -1016,10 +1157,14 @@ class ModBrowserDialog(StyledDialog):
         self._polling = False
         self.search_btn.setEnabled(True)
         current_mc = self.mc_combo.currentText().strip()
+        expected_loader = (
+            self.loader_tabs.current() if self._content_type == "mod" else ""
+        )
         if (
-            worker.loader != self.loader_tabs.current()
+            worker.loader != expected_loader
             or worker.game_version != current_mc
             or worker.source != self._source
+            or worker.content_type != self._content_type
         ):
             QTimer.singleShot(60, lambda: self._search(0))
             return
@@ -1069,7 +1214,10 @@ class ModBrowserDialog(StyledDialog):
             hint.setAlignment(Qt.AlignCenter)
             self.results_layout.insertWidget(0, hint)
         elif not self._hits:
-            hint = QLabel("没有找到匹配的 Mod，换个关键词试试。\n也可以到苦力怕论坛搜索。")
+            hint = QLabel(
+                f"没有找到匹配的{self._content_label()}，换个关键词试试。\n"
+                "也可以到苦力怕论坛搜索。"
+            )
             hint.setObjectName("Muted")
             hint.setWordWrap(True)
             hint.setAlignment(Qt.AlignCenter)
@@ -1144,7 +1292,9 @@ class ModBrowserDialog(StyledDialog):
             row.set_selected(row.project_id == project_id)
         same = self._project is not None and str(self._project.get("id") or "") == project_id
 
-        self.detail_title.setText(str(hit.get("title") or hit.get("slug") or "Mod"))
+        self.detail_title.setText(
+            str(hit.get("title") or hit.get("slug") or self._content_label())
+        )
         author = str(hit.get("author") or "")
         categories = ", ".join((hit.get("categories") or [])[:3])
         meta_parts = []
@@ -1198,8 +1348,9 @@ class ModBrowserDialog(StyledDialog):
         else:
             fallback_url = str(hit.get("project_url") or "")
             if not fallback_url and hit.get("slug"):
+                path = MODRINTH_PATHS.get(self._content_type, "mod")
                 fallback_url = (
-                    f"https://modrinth.com/mod/{hit.get('slug')}"
+                    f"https://modrinth.com/{path}/{hit.get('slug')}"
                     if self._source == "modrinth"
                     else ""
                 )
@@ -1225,10 +1376,11 @@ class ModBrowserDialog(StyledDialog):
 
         versions_worker = ModVersionsWorker(
             project_id,
-            self.loader_tabs.current(),
+            self.loader_tabs.current() if self._content_type == "mod" else "",
             self.mc_combo.currentText().strip(),
             self,
             source=self._source,
+            content_type=self._content_type,
         )
         self._versions_worker = versions_worker
         versions_worker.ready.connect(
@@ -1337,7 +1489,8 @@ class ModBrowserDialog(StyledDialog):
         else:
             slug = str(data.get("slug") or "")
             if slug:
-                links.append(("Modrinth", f"https://modrinth.com/mod/{slug}"))
+                path = MODRINTH_PATHS.get(self._content_type, "mod")
+                links.append(("Modrinth", f"https://modrinth.com/{path}/{slug}"))
         for key, label in (
             ("source_url", "源码"),
             ("issues_url", "问题"),
@@ -1371,8 +1524,9 @@ class ModBrowserDialog(StyledDialog):
         self.links_layout.addStretch(1)
 
     def _clear_detail(self, message: str = "") -> None:
+        label = self._content_label()
         self.detail_scroll.verticalScrollBar().setValue(0)
-        self.detail_title.setText("选择一个 Mod 查看详细信息")
+        self.detail_title.setText(f"选择一个{label}查看详细信息")
         self.detail_author.setText("从左侧搜索结果中选择项目。")
         self.detail_desc.setText(message)
         self.downloads_badge.setText("0 下载")
@@ -1383,7 +1537,7 @@ class ModBrowserDialog(StyledDialog):
         self._update_badges()
         self.version_combo.clear()
         self.version_combo.setEnabled(False)
-        self.version_combo.addItem("请选择一个 Mod", "")
+        self.version_combo.addItem(f"请选择一个{label}", "")
         self._sync_download_button()
         self.dep_label.setText("")
         self._nav_stack.clear()
@@ -1400,7 +1554,7 @@ class ModBrowserDialog(StyledDialog):
         self.gallery_next.setEnabled(False)
         self.gallery_flip.setEnabled(False)
         self.gallery_open_btn.setEnabled(False)
-        self.gallery_preview.set_message("选择 Mod 后显示预览图")
+        self.gallery_preview.set_message(f"选择{label}后显示预览图")
         self.gallery_caption_label.setText("")
         self.body_excerpt.setText("")
         for label in (
@@ -1545,10 +1699,17 @@ class ModBrowserDialog(StyledDialog):
                 return
             if not data:
                 self.version_combo.addItem("没有适配当前版本的文件", "")
-                self.dep_label.setText(
-                    "该 Mod 没有同时适配所选 Minecraft 版本和加载器的文件，"
-                    "可以尝试切换加载器或游戏版本。"
-                )
+                if self._content_type == "mod":
+                    detail = (
+                        "该 Mod 没有同时适配所选 Minecraft 版本和加载器的文件，"
+                        "可以尝试切换加载器或游戏版本。"
+                    )
+                else:
+                    detail = (
+                        f"该{self._content_label()}没有适配所选 Minecraft 版本的文件，"
+                        "可以尝试切换游戏版本。"
+                    )
+                self.dep_label.setText(detail)
                 self.dep_label.setStyleSheet(f"color: {colors()['orange']};")
                 self._sync_download_button()
                 return
@@ -1611,7 +1772,17 @@ class ModBrowserDialog(StyledDialog):
             parts.append(
                 "该文件未开放第三方下载，请点击上方 CurseForge 页面手动下载"
             )
-        if visible:
+        if self._content_type != "mod":
+            visible = []
+            deps = []
+            if downloadable:
+                if self._content_type == "modpack":
+                    parts.append("下载后会打开导入窗口，自动创建新的游戏版本")
+                else:
+                    parts.append(
+                        f"下载到 {CONTENT_FOLDERS.get(self._content_type, 'mods')} 文件夹"
+                    )
+        elif visible:
             parts.append(f"需要 {len(visible)} 个前置 Mod，点击下方按钮直接下载")
         elif deps:
             parts.append(f"声明了 {len(deps)} 个必需前置，请确认已安装")
@@ -1728,6 +1899,12 @@ class ModBrowserDialog(StyledDialog):
         self._pending_version_id = version_id
         self._select_project(project_id, hit, keep_nav=True)
 
+    def _download_button_text(self) -> str:
+        if self._content_type == "modpack":
+            return "下载并导入整合包"
+        folder = CONTENT_FOLDERS.get(self._content_type, "mods")
+        return f"下载到 {folder}"
+
     def _set_download_button(self, downloading: bool) -> None:
         if downloading:
             self.download_btn.setObjectName("Danger")
@@ -1736,7 +1913,7 @@ class ModBrowserDialog(StyledDialog):
             self.download_btn.setEnabled(True)
         else:
             self.download_btn.setObjectName("Primary")
-            self.download_btn.setText("下载到 mods")
+            self.download_btn.setText(self._download_button_text())
             self.download_btn.setIcon(icons.icon("download", "#FFFFFF", 15))
             self.download_btn.setEnabled(self._can_download())
         repolish(self.download_btn)
@@ -1757,17 +1934,30 @@ class ModBrowserDialog(StyledDialog):
                 "error",
             )
             return
-        if self.main.config.version_isolation and not self._target_version_id:
-            self.main.toast("请先安装匹配版本的加载器，再下载 Mod", "error")
-            return
-        mods_dir = self._target_mods_dir()
+        if self._content_type == "modpack":
+            target_dir = APP_DIR / "cache" / "packs"
+            self._pack_download_dir = target_dir
+            progress_text = "准备下载整合包…"
+        else:
+            if self.main.config.version_isolation and not self._target_version_id:
+                self.main.toast(
+                    f"请先准备一个 Minecraft {self.mc_combo.currentText().strip()} "
+                    "游戏版本，再下载",
+                    "error",
+                )
+                return
+            target_dir = self._target_dir()
+            self._pack_download_dir = None
+            progress_text = (
+                f"准备下载到 {target_dir.parent.name}/{target_dir.name}…"
+            )
         self.progress.setValue(0)
-        self.progress_text.setText(f"准备下载到 {mods_dir.parent.name}/mods…")
+        self.progress_text.setText(progress_text)
         self.progress_box.setVisible(True)
         self.adjustSize()
         worker = ModDownloadWorker(
             version,
-            mods_dir,
+            target_dir,
             threads=self.main.config.download_threads,
             parent=self.main,
         )
@@ -1783,11 +1973,16 @@ class ModBrowserDialog(StyledDialog):
 
     def _on_download_finished(self, success: bool, message: str, filename: str) -> None:
         self._download_worker = None
+        pack_dir = self._pack_download_dir
+        self._pack_download_dir = None
         self._set_download_button(False)
         if success:
             self.progress.setValue(100)
             self.progress_text.setText(f"已保存 {filename}")
             self.main.toast(f"已下载 {filename}", "success")
+            if pack_dir is not None:
+                self._open_pack_import(pack_dir / filename)
+                return
             if hasattr(self.main, "mods_page"):
                 self.main.mods_page.refresh_mods()
         elif "取消" in str(message):
@@ -1796,3 +1991,16 @@ class ModBrowserDialog(StyledDialog):
         else:
             self.progress_text.setText(message)
             self.main.toast(f"下载失败：{message}", "error")
+
+    def _open_pack_import(self, path: Path) -> None:
+        if not path.is_file():
+            self.main.toast("整合包文件没有保存成功，请重试", "error")
+            return
+        from .pack_dialog import PackImportDialog
+
+        self.progress_text.setText("整合包下载完成，正在打开导入窗口…")
+        dialog = PackImportDialog(self.main, initial_path=path)
+        dialog.exec()
+        if dialog.imported_version:
+            self.main.refresh_versions()
+            self.main.select_version(dialog.imported_version)
