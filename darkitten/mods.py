@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import hashlib
+import io
 import json
+import re
 import tomllib
 import zipfile
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from .descriptions import has_chinese, local_mod_zh_intro, project_zh_intro
@@ -157,54 +159,294 @@ def _clean(value: object, fallback: str = "") -> str:
     return text
 
 
-def _fabric_meta(
-    zf: zipfile.ZipFile,
-) -> tuple[str, str, str, str] | None:
-    for meta_name in ("fabric.mod.json", "quilt.mod.json"):
-        try:
-            raw = zf.read(meta_name)
-        except KeyError:
-            continue
-        try:
-            data = json.loads(raw.decode("utf-8"))
-        except Exception:
-            continue
-        if meta_name == "quilt.mod.json":
-            data = data.get("quilt_loader") or {}
-        name = _clean(data.get("name") or data.get("id"))
-        version = _clean(data.get("version"))
+NEOFORGE_SERVICE_MARKERS = (
+    "META-INF/services/net.neoforged.neoforgespi.locating.IModLocator",
+    "META-INF/services/net.neoforged.neoforgespi.locating.IModFileCandidateLocator",
+    "META-INF/services/net.neoforged.neoforgespi.transformation.ClassProcessorProvider",
+)
+FORGE_SERVICE_MARKERS = (
+    "META-INF/services/cpw.mods.modlauncher.api.ITransformationService",
+    "META-INF/services/net.minecraftforge.fml.loading.moddiscovery.IModLocator",
+    "META-INF/services/net.minecraftforge.forgespi.locating.IModLocator",
+)
+LOADER_ORDER = ("NeoForge", "Forge", "Quilt", "Fabric")
+_NESTED_PREFIXES = ("META-INF/jarjar/", "META-INF/jar-jar/", "META-INF/jars/")
+_MAX_NESTED_JARS = 8
+_MAX_NESTED_BYTES = 32 * 1024 * 1024
+
+
+@dataclass
+class JarDeclarations:
+    """一个 JAR 内声明的加载器与原始元数据。"""
+
+    loaders: list[str] = field(default_factory=list)
+    fabric: list[dict] = field(default_factory=list)
+    quilt: list[dict] = field(default_factory=list)
+    forge: list[dict] = field(default_factory=list)
+    neoforge: list[dict] = field(default_factory=list)
+    icon_bytes: bytes = b""
+    nested: bool = False
+    nested_provides: dict[str, str] = field(default_factory=dict)
+
+    @property
+    def has_metadata(self) -> bool:
+        return bool(self.fabric or self.quilt or self.forge or self.neoforge)
+
+
+def _norm_modid(value: object) -> str:
+    return re.sub(r"[^a-z0-9]", "", str(value or "").lower())
+
+
+def _has_version_number(value: object) -> bool:
+    return bool(re.search(r"\d", str(value or "")))
+
+
+def _zip_json(zf: zipfile.ZipFile, name: str) -> dict | None:
+    try:
+        raw = zf.read(name)
+    except (KeyError, OSError, RuntimeError):
+        return None
+    try:
+        data = json.loads(raw.decode("utf-8"))
+    except (ValueError, UnicodeDecodeError):
+        return None
+    return data if isinstance(data, dict) else None
+
+
+def _zip_toml(zf: zipfile.ZipFile, name: str) -> dict | None:
+    try:
+        raw = zf.read(name)
+    except (KeyError, OSError, RuntimeError):
+        return None
+    try:
+        data = tomllib.loads(raw.decode("utf-8", errors="replace"))
+    except (ValueError, TypeError):
+        return None
+    return data if isinstance(data, dict) else None
+
+
+def _forge_modids(data: dict | None) -> set[str]:
+    mods = (data or {}).get("mods") or []
+    if not isinstance(mods, list):
+        return set()
+    return {
+        _norm_modid(mod.get("modId"))
+        for mod in mods
+        if isinstance(mod, dict) and _norm_modid(mod.get("modId"))
+    }
+
+
+def _loaders_from(names: set[str], decl: JarDeclarations) -> list[str]:
+    loaders: list[str] = []
+    if decl.neoforge:
+        loaders.append("NeoForge")
+    if decl.forge:
+        loaders.append("Forge")
+    if decl.quilt:
+        loaders.append("Quilt")
+    if decl.fabric:
+        loaders.append("Fabric")
+    if not decl.forge and not decl.neoforge:
+        if any(marker in names for marker in NEOFORGE_SERVICE_MARKERS):
+            loaders.append("NeoForge")
+        if any(marker in names for marker in FORGE_SERVICE_MARKERS):
+            loaders.append("Forge")
+    return [loader for loader in LOADER_ORDER if loader in loaders]
+
+
+def _declarations_from_zip(
+    zf: zipfile.ZipFile, *, with_icon: bool = False
+) -> JarDeclarations:
+    names = set(zf.namelist())
+    decl = JarDeclarations()
+
+    fabric = _zip_json(zf, "fabric.mod.json")
+    quilt_raw = _zip_json(zf, "quilt.mod.json")
+    quilt = None
+    if quilt_raw:
+        value = quilt_raw.get("quilt_loader") or {}
+        quilt = value if isinstance(value, dict) else None
+    forge = _zip_toml(zf, "META-INF/mods.toml")
+    neoforge = _zip_toml(zf, "META-INF/neoforge.mods.toml")
+
+    forge_ids = _forge_modids(forge) | _forge_modids(neoforge)
+    if (
+        fabric
+        and forge_ids
+        and _norm_modid(fabric.get("id")) not in forge_ids
+        and not _has_version_number(fabric.get("version"))
+    ):
+        # JourneyMap 等 Forge/NeoForge 模组会故意放一个“not a fabric mod”
+        # 的 fabric.mod.json，用来在 Fabric 环境里报错。它不能当作加载器依据。
+        fabric = None
+
+    if fabric:
+        decl.fabric.append(fabric)
+    if quilt:
+        decl.quilt.append(quilt)
+    if forge:
+        decl.forge.append(forge)
+    if neoforge:
+        decl.neoforge.append(neoforge)
+    decl.loaders = _loaders_from(names, decl)
+    if with_icon:
+        _icon = jar_identity(decl)[3]
+        if _icon:
+            decl.icon_bytes = _read_icon_from_jar(zf, _icon)
+    return decl
+
+
+def jar_identity(decl: JarDeclarations) -> tuple[str, str, str, str]:
+    """返回 JAR 的名称、版本、简介和图标路径。"""
+    for data in decl.neoforge + decl.forge:
+        mods = data.get("mods") or []
+        if isinstance(mods, list) and mods and isinstance(mods[0], dict):
+            mod = mods[0]
+            return (
+                _clean(mod.get("displayName") or mod.get("modId")),
+                _clean(mod.get("version") or data.get("version")),
+                _clean(mod.get("description") or data.get("description")),
+                _clean(mod.get("logoFile") or mod.get("iconFile")),
+            )
+    for data in decl.quilt + decl.fabric:
         description = data.get("description", "")
         if isinstance(description, dict):
             description = description.get("text", "")
-        description = _clean(description)
         icon = data.get("icon")
         if not icon and isinstance(data.get("metadata"), dict):
             icon = data["metadata"].get("icon")
-        return name, version, description, _icon_field(icon)
-    return None
-
-
-def _forge_meta(zf: zipfile.ZipFile) -> tuple[str, str, str, str] | None:
-    for meta_name in ("META-INF/neoforge.mods.toml", "META-INF/mods.toml"):
-        try:
-            raw = zf.read(meta_name)
-        except KeyError:
-            continue
-        try:
-            data = tomllib.loads(raw.decode("utf-8", errors="replace"))
-        except Exception:
-            continue
-        mods = data.get("mods") or []
-        if not isinstance(mods, list) or not mods:
-            continue
-        mod = mods[0] if isinstance(mods[0], dict) else {}
-        name = _clean(
-            mod.get("displayName") or mod.get("modId") or data.get("modId")
+        return (
+            _clean(data.get("name") or data.get("id")),
+            _clean(data.get("version")),
+            _clean(description),
+            _icon_field(icon),
         )
-        version = _clean(mod.get("version") or data.get("version"))
-        description = _clean(mod.get("description") or data.get("description"))
-        return name, version, description, _clean(mod.get("logoFile"))
-    return None
+    return "", "", "", ""
+
+
+def _nested_jar_entries(
+    zf: zipfile.ZipFile, names: set[str]
+) -> list[tuple[str, str]]:
+    entries: list[tuple[str, str]] = []
+    for meta_name in (
+        "META-INF/jarjar/metadata.json",
+        "META-INF/jar-jar/metadata.json",
+    ):
+        data = _zip_json(zf, meta_name)
+        if not data:
+            continue
+        jars = data.get("jars") or []
+        if not isinstance(jars, list):
+            continue
+        for item in jars:
+            if not isinstance(item, dict):
+                continue
+            path = str(item.get("path") or "").strip()
+            if not path:
+                continue
+            version = ""
+            version_info = item.get("version")
+            if isinstance(version_info, dict):
+                version = _clean(version_info.get("artifactVersion"))
+            entries.append((path, version))
+    listed = {path for path, _version in entries}
+    for name in sorted(names):
+        if (
+            name.startswith(_NESTED_PREFIXES)
+            and name.lower().endswith(".jar")
+            and name not in listed
+        ):
+            entries.append((name, ""))
+
+    result: list[tuple[str, str]] = []
+    seen: set[str] = set()
+    for path, version in entries:
+        if path in seen or path not in names:
+            continue
+        seen.add(path)
+        result.append((path, version))
+    return result
+
+
+def _declaration_modids(decl: JarDeclarations) -> list[str]:
+    modids: list[str] = []
+    for data in decl.fabric + decl.quilt:
+        modid = _clean(data.get("id"))
+        if modid:
+            modids.append(modid)
+        provides = data.get("provides")
+        if isinstance(provides, list):
+            modids.extend(_clean(item) for item in provides if _clean(item))
+    for data in decl.forge + decl.neoforge:
+        mods = data.get("mods") or []
+        if not isinstance(mods, list):
+            continue
+        for mod in mods:
+            if isinstance(mod, dict) and _clean(mod.get("modId")):
+                modids.append(_clean(mod.get("modId")))
+    return list(dict.fromkeys(modids))
+
+
+def _merge_declarations(target: JarDeclarations, part: JarDeclarations) -> None:
+    target.fabric.extend(part.fabric)
+    target.quilt.extend(part.quilt)
+    target.forge.extend(part.forge)
+    target.neoforge.extend(part.neoforge)
+    loaders = set(target.loaders) | set(part.loaders)
+    target.loaders = [loader for loader in LOADER_ORDER if loader in loaders]
+    for modid, version in part.nested_provides.items():
+        target.nested_provides.setdefault(modid, version)
+    if part.icon_bytes and not target.icon_bytes:
+        target.icon_bytes = part.icon_bytes
+
+
+def read_jar_declarations(
+    zf: zipfile.ZipFile,
+    *,
+    with_icon: bool = False,
+    with_nested_provides: bool = False,
+) -> JarDeclarations:
+    """读取 JAR 元数据；仅有 jarjar 包装层时继续读取内嵌 JAR。"""
+    decl = _declarations_from_zip(zf, with_icon=with_icon)
+    root_has_metadata = decl.has_metadata
+    if root_has_metadata and not with_nested_provides:
+        return decl
+
+    names = set(zf.namelist())
+    total = 0
+    for path, artifact_version in _nested_jar_entries(zf, names)[
+        :_MAX_NESTED_JARS
+    ]:
+        try:
+            info = zf.getinfo(path)
+            if info.file_size <= 0 or info.file_size > _MAX_NESTED_BYTES:
+                continue
+            if total + info.file_size > _MAX_NESTED_BYTES:
+                break
+            data = zf.read(path)
+        except (KeyError, OSError, RuntimeError):
+            continue
+        total += len(data)
+        try:
+            with zipfile.ZipFile(io.BytesIO(data)) as inner:
+                part = _declarations_from_zip(
+                    inner, with_icon=with_icon and not root_has_metadata
+                )
+        except (zipfile.BadZipFile, OSError):
+            continue
+        if not part.has_metadata:
+            continue
+        version = jar_identity(part)[1]
+        if not version or version.startswith("${"):
+            version = artifact_version
+        for modid in _declaration_modids(part):
+            decl.nested_provides.setdefault(modid, version)
+        if not root_has_metadata:
+            _merge_declarations(decl, part)
+
+    if not root_has_metadata and decl.has_metadata:
+        decl.nested = True
+    return decl
 
 
 def _icon_field(value: object) -> str:
@@ -342,23 +584,21 @@ def read_mod(path: Path, with_meta: bool = True) -> ModInfo:
 
     try:
         with zipfile.ZipFile(path) as zf:
-            fabric = _fabric_meta(zf)
-            if fabric:
-                loader = "Fabric"
-                name = fabric[0] or name
-                version = fabric[1]
-                description = fabric[2]
-                icon_bytes = _read_icon_from_jar(zf, fabric[3])
+            decl = read_jar_declarations(zf, with_icon=True)
+            if decl.has_metadata:
+                meta_name, meta_version, meta_description, icon_path = jar_identity(
+                    decl
+                )
+                name = meta_name or name
+                version = meta_version
+                description = meta_description
+                if len(decl.loaders) > 1:
+                    loader = "多加载器"
+                elif decl.loaders:
+                    loader = decl.loaders[0]
+                icon_bytes = decl.icon_bytes or _read_icon_from_jar(zf, icon_path)
             else:
-                forge = _forge_meta(zf)
-                if forge:
-                    loader = "Forge"
-                    name = forge[0] or name
-                    version = forge[1]
-                    description = forge[2]
-                    icon_bytes = _read_icon_from_jar(zf, forge[3])
-                else:
-                    icon_bytes = _read_icon_from_jar(zf, "")
+                icon_bytes = _read_icon_from_jar(zf, "")
     except (zipfile.BadZipFile, OSError):
         pass
 

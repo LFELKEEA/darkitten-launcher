@@ -1,14 +1,12 @@
 from __future__ import annotations
 
-import json
 import re
-import tomllib
 import zipfile
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from .mods import list_mods
+from .mods import jar_identity, list_mods, read_jar_declarations
 
 PLATFORM_IDS = {
     "minecraft",
@@ -41,8 +39,14 @@ class ModDescriptor:
     modids: list[str] = field(default_factory=list)
     version: str = ""
     loader: str = ""
+    loaders: list[str] = field(default_factory=list)
     dependencies: list[ModDependency] = field(default_factory=list)
+    dependencies_by_loader: dict[str, list[ModDependency]] = field(
+        default_factory=dict
+    )
     conflicts: list[str] = field(default_factory=list)
+    conflicts_by_loader: dict[str, list[str]] = field(default_factory=dict)
+    nested_provides: dict[str, str] = field(default_factory=dict)
     valid: bool = True
     error: str = ""
 
@@ -82,6 +86,9 @@ def _dep_from_fabric(value: Any, modid: str) -> ModDependency:
 
 def _parse_fabric(data: dict) -> tuple[list[str], list[ModDependency], list[str]]:
     modids = [_clean(data.get("id"))] if _clean(data.get("id")) else []
+    provides = data.get("provides")
+    if isinstance(provides, list):
+        modids.extend(_clean(item) for item in provides if _clean(item))
     deps: list[ModDependency] = []
     depends = data.get("depends")
     if isinstance(depends, dict):
@@ -114,6 +121,7 @@ def _parse_forge(
         if isinstance(mod, dict) and _clean(mod.get("modId")):
             modids.append(_clean(mod.get("modId")))
     deps: list[ModDependency] = []
+    conflicts: list[str] = []
     raw_deps = data.get("dependencies")
     if isinstance(raw_deps, dict):
         for _owner, items in raw_deps.items():
@@ -125,9 +133,20 @@ def _parse_forge(
                 modid = _clean(item.get("modId"))
                 if not modid or modid.lower() in PLATFORM_IDS:
                     continue
-                mandatory = item.get("mandatory", True)
-                if isinstance(mandatory, str):
-                    mandatory = mandatory.strip().lower() != "false"
+                dep_type = _clean(item.get("type")).lower()
+                if dep_type == "incompatible":
+                    conflicts.append(modid)
+                    continue
+                if dep_type == "optional":
+                    mandatory = False
+                elif dep_type == "discouraged":
+                    mandatory = False
+                elif dep_type == "required":
+                    mandatory = True
+                else:
+                    mandatory = item.get("mandatory", True)
+                    if isinstance(mandatory, str):
+                        mandatory = mandatory.strip().lower() != "false"
                 deps.append(
                     ModDependency(
                         modid=modid,
@@ -139,7 +158,7 @@ def _parse_forge(
                         reason=_clean(item.get("ordering")),
                     )
                 )
-    return modids, deps, []
+    return modids, deps, conflicts
 
 
 def describe_mod(path: Path) -> ModDescriptor:
@@ -147,57 +166,52 @@ def describe_mod(path: Path) -> ModDescriptor:
     result = ModDescriptor(path=path, name=path.name)
     try:
         with zipfile.ZipFile(path) as zf:
-            names = set(zf.namelist())
-            if "fabric.mod.json" in names:
-                data = json.loads(zf.read("fabric.mod.json").decode("utf-8"))
-                result.loader = "Fabric"
-                result.name = _clean(data.get("name") or data.get("id") or path.name)
-                result.version = _clean(data.get("version"))
-                (
-                    result.modids,
-                    result.dependencies,
-                    result.conflicts,
-                ) = _parse_fabric(data)
+            decl = read_jar_declarations(zf, with_nested_provides=True)
+            if not decl.has_metadata:
                 return result
-            if "quilt.mod.json" in names:
-                raw = json.loads(zf.read("quilt.mod.json").decode("utf-8"))
-                data = raw.get("quilt_loader") or {}
-                result.loader = "Quilt"
-                result.name = _clean(data.get("id") or path.name)
-                result.version = _clean(data.get("version"))
-                (
-                    result.modids,
-                    result.dependencies,
-                    result.conflicts,
-                ) = _parse_fabric(data)
-                return result
-            for meta_name, loader in (
-                ("META-INF/neoforge.mods.toml", "NeoForge"),
-                ("META-INF/mods.toml", "Forge"),
-            ):
-                if meta_name not in names:
-                    continue
-                data = tomllib.loads(
-                    zf.read(meta_name).decode("utf-8", errors="replace")
-                )
-                result.loader = loader
-                mods = data.get("mods") or []
-                if isinstance(mods, list) and mods:
-                    first = mods[0] if isinstance(mods[0], dict) else {}
-                    result.name = _clean(
-                        first.get("displayName")
-                        or first.get("modId")
-                        or path.name
+            name, version, _description, _icon = jar_identity(decl)
+            result.name = name or path.name
+            result.version = version
+            result.loaders = list(decl.loaders)
+            if len(decl.loaders) > 1:
+                result.loader = "多加载器"
+            elif decl.loaders:
+                result.loader = decl.loaders[0]
+
+            groups = (
+                ("fabric", decl.fabric),
+                ("quilt", decl.quilt),
+                ("neoforge", decl.neoforge),
+                ("forge", decl.forge),
+            )
+            for key, entries in groups:
+                for data in entries:
+                    if key in ("fabric", "quilt"):
+                        modids, deps, conflicts = _parse_fabric(data)
+                    else:
+                        modids, deps, conflicts = _parse_forge(data)
+                    result.modids.extend(modids)
+                    result.dependencies_by_loader.setdefault(key, []).extend(
+                        deps
                     )
-                    result.version = _clean(
-                        first.get("version") or data.get("version")
+                    result.conflicts_by_loader.setdefault(key, []).extend(
+                        conflicts
                     )
-                (
-                    result.modids,
-                    result.dependencies,
-                    result.conflicts,
-                ) = _parse_forge(data)
-                return result
+
+            result.modids = list(dict.fromkeys(result.modids))
+            result.nested_provides = dict(decl.nested_provides)
+            seen_deps: set[tuple[str, str, bool]] = set()
+            for key, _entries in groups:
+                for dep in result.dependencies_by_loader.get(key, []):
+                    marker = (dep.modid.lower(), dep.version_range, dep.mandatory)
+                    if marker in seen_deps:
+                        continue
+                    seen_deps.add(marker)
+                    result.dependencies.append(dep)
+            for key, _entries in groups:
+                for conflict in result.conflicts_by_loader.get(key, []):
+                    if conflict not in result.conflicts:
+                        result.conflicts.append(conflict)
     except (zipfile.BadZipFile, OSError, ValueError, UnicodeDecodeError) as exc:
         result.valid = False
         result.error = str(exc)
@@ -301,6 +315,39 @@ def _dependency_side_applies(side: str) -> bool:
     return str(side or "").upper() not in ("SERVER",)
 
 
+def _metadata_keys(target_loader: str, available: dict[str, Any]) -> list[str]:
+    wanted = str(target_loader or "").strip().lower()
+    if wanted == "neoforge":
+        return ["neoforge"] if "neoforge" in available else ["forge"]
+    if wanted == "forge":
+        return ["forge"]
+    if wanted == "quilt":
+        return ["quilt", "fabric"]
+    if wanted == "fabric":
+        return ["fabric"]
+    return ["fabric", "quilt", "neoforge", "forge"]
+
+
+def _owner_dependencies(
+    owner: ModDescriptor, target_loader: str
+) -> list[ModDependency]:
+    if not owner.dependencies_by_loader:
+        return owner.dependencies
+    deps: list[ModDependency] = []
+    for key in _metadata_keys(target_loader, owner.dependencies_by_loader):
+        deps.extend(owner.dependencies_by_loader.get(key, []))
+    return deps
+
+
+def _owner_conflicts(owner: ModDescriptor, target_loader: str) -> list[str]:
+    if not owner.conflicts_by_loader:
+        return owner.conflicts
+    conflicts: list[str] = []
+    for key in _metadata_keys(target_loader, owner.conflicts_by_loader):
+        conflicts.extend(owner.conflicts_by_loader.get(key, []))
+    return conflicts
+
+
 def scan_mod_issues(
     mods_dir: Path,
     *,
@@ -315,9 +362,10 @@ def scan_mod_issues(
         descriptors.append(describe_mod(mod.path))
 
     issues: list[ModIssue] = []
-    loader_groups: dict[str, list[ModDescriptor]] = {}
-    provided: dict[str, ModDescriptor] = {}
+    provided: dict[str, tuple[ModDescriptor, str]] = {}
     duplicates: dict[str, list[ModDescriptor]] = {}
+    fabric_only: list[ModDescriptor] = []
+    forge_only: list[ModDescriptor] = []
 
     for desc in descriptors:
         if not desc.valid:
@@ -330,23 +378,40 @@ def scan_mod_issues(
                 )
             )
             continue
-        if desc.loader:
-            loader_groups.setdefault(desc.loader, []).append(desc)
+        families: set[str] = set()
+        for loader in desc.loaders:
+            if loader in ("Fabric", "Quilt"):
+                families.add("fabric")
+            elif loader in ("Forge", "NeoForge"):
+                families.add("forge")
+        if families == {"fabric"}:
+            fabric_only.append(desc)
+        elif families == {"forge"}:
+            forge_only.append(desc)
         if not desc.modids:
             issues.append(
                 ModIssue(
                     "warning",
                     "缺少 Mod ID",
-                    f"{desc.name} 没有声明 modId，加载器可能无法识别它。",
+                    "这个文件没有声明 modId，加载器可能无法识别它。",
                     desc.path.name,
                 )
             )
         for modid in desc.modids:
             key = modid.lower()
             if key in provided:
-                duplicates.setdefault(key, [provided[key]]).append(desc)
+                duplicates.setdefault(key, [provided[key][0]]).append(desc)
             else:
-                provided[key] = desc
+                provided[key] = (desc, desc.version)
+
+    for desc in descriptors:
+        if not desc.valid:
+            continue
+        for modid, version in desc.nested_provides.items():
+            key = modid.lower()
+            if key in provided:
+                continue
+            provided[key] = (desc, version)
 
     for modid, group in duplicates.items():
         names = "、".join(sorted({item.name for item in group}))
@@ -361,14 +426,13 @@ def scan_mod_issues(
             )
         )
 
-    real_loaders = {
-        loader: items
-        for loader, items in loader_groups.items()
-        if items and loader in ("Fabric", "Quilt", "Forge", "NeoForge")
-    }
-    if len(real_loaders) > 1:
+    if fabric_only and forge_only:
+        counts: dict[str, int] = {}
+        for desc in fabric_only + forge_only:
+            label = desc.loaders[0]
+            counts[label] = counts.get(label, 0) + 1
         summary = "、".join(
-            f"{loader} {len(items)} 个" for loader, items in real_loaders.items()
+            f"{loader} {count} 个" for loader, count in counts.items()
         )
         issues.append(
             ModIssue(
@@ -386,9 +450,15 @@ def scan_mod_issues(
             "forge": {"forge"},
             "neoforge": {"neoforge"},
         }.get(wanted, {wanted})
-        for loader, items in real_loaders.items():
-            if loader.lower() in compatible:
+        mismatched: dict[str, list[ModDescriptor]] = {}
+        for desc in descriptors:
+            if not desc.valid or not desc.loaders:
                 continue
+            supported = {loader.lower() for loader in desc.loaders}
+            if supported & compatible:
+                continue
+            mismatched.setdefault(desc.loaders[0], []).append(desc)
+        for loader, items in mismatched.items():
             names = "、".join(item.name for item in items[:4])
             issues.append(
                 ModIssue(
@@ -403,14 +473,19 @@ def scan_mod_issues(
     for owner in descriptors:
         if not owner.valid:
             continue
-        for dep in owner.dependencies:
+        seen_deps: set[tuple[str, str, bool]] = set()
+        for dep in _owner_dependencies(owner, target_loader):
+            marker = (dep.modid.lower(), dep.version_range, dep.mandatory)
+            if marker in seen_deps:
+                continue
+            seen_deps.add(marker)
             if not _dependency_side_applies(dep.side):
                 continue
             key = dep.modid.lower()
             if key in PLATFORM_IDS:
                 continue
-            provider = provided.get(key)
-            if provider is None:
+            entry = provided.get(key)
+            if entry is None:
                 if dep.mandatory:
                     issues.append(
                         ModIssue(
@@ -423,32 +498,38 @@ def scan_mod_issues(
                         )
                     )
                 continue
+            provider, provider_version = entry
             if (
                 dep.version_range
-                and provider.version
-                and not version_in_range(provider.version, dep.version_range)
+                and provider_version
+                and not version_in_range(provider_version, dep.version_range)
             ):
                 issues.append(
                     ModIssue(
                         "warning",
                         "前置版本不匹配",
                         f"{owner.name} 要求 {dep.modid} {dep.version_range}，"
-                        f"当前安装的是 {provider.version}。",
+                        f"当前安装的是 {provider_version}。",
                         owner.path.name,
                         [provider.path.name],
                     )
                 )
 
-        for conflict in owner.conflicts:
+        seen_conflicts: set[str] = set()
+        for conflict in _owner_conflicts(owner, target_loader):
             key = str(conflict or "").strip().lower()
-            if key in provided and provided[key] is not owner:
+            if not key or key in seen_conflicts:
+                continue
+            seen_conflicts.add(key)
+            entry = provided.get(key)
+            if entry is not None and entry[0] is not owner:
                 issues.append(
                     ModIssue(
                         "warning",
                         "声明了冲突",
                         f"{owner.name} 声明与「{conflict}」冲突，两个 Mod 目前同时启用。",
                         owner.path.name,
-                        [provided[key].path.name],
+                        [entry[0].path.name],
                     )
                 )
 

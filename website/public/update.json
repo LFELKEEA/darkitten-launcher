@@ -1,23 +1,23 @@
 {
-  "version": "1.9.24",
+  "version": "1.9.25",
   "released": "2026-10-24",
   "notes": [
-    "新增皮肤库：可以保存多套 64×64 或 64×32 皮肤，带缩略图、模型标记和使用中状态；支持逐张导入、一次选择多张、拖入多张 PNG，重复文件按 SHA-256 自动去重。",
-    "皮肤库支持“使用 / 重命名 / 移除”；移除优先进入回收站，不会改动你最初导入的 PNG；旧版本的单张本地皮肤会在首次打开皮肤页时自动迁入皮肤库。",
-    "离线模式现在可以在游戏内使用皮肤：启动时自动在 127.0.0.1 启动本地 Yggdrasil 皮肤服务，并通过 authlib-injector 注入皮肤属性，不需要安装 Mod，原版、Forge、Fabric 与 NeoForge 都能使用。",
-    "离线皮肤支持 Classic / Slim 模型，64×32 旧版皮肤会自动固定为 Classic；皮肤页会明确显示“离线皮肤已启用”，启动游戏后由本地服务加载。",
-    "第一次使用离线皮肤时会自动下载 authlib-injector 1.2.8（约 350 KB），支持官方、BMCLAPI、GitHub 与镜像回退，并校验 SHA-256；下载失败不会阻止游戏启动，只会提示离线皮肤暂不可用。",
-    "修复取消启动时可能遗留本地皮肤服务的问题：参数构建完成后取消启动会立即关闭服务并释放端口。",
-    "已完成真实 authlib-injector 1.2.8 联调：组件能正常读取本地服务元数据；新增皮肤库、离线皮肤服务、启动参数注入、签名校验和取消清理的回归测试。"
+    "修复 NeoForge 实例中的加载器误判：JourneyMap 等模组内置的“not a fabric mod”提示文件、CustomSkinLoader 的通用引导 JAR 不再被当成 Fabric，环境检查不会误报“加载器不匹配”或“加载器混装”。",
+    "加载器识别改为综合 neoforge.mods.toml、mods.toml、Fabric / Quilt 元数据以及 Forge / NeoForge 引导服务文件；同一个 JAR 支持多个加载器时按“多加载器”处理，不再拆开误判。",
+    "修复 Forge / NeoForge 依赖类型解析：type=\"optional\" 的可选前置不再被当成必需前置，JEI 不会再误报缺少 mezz_config_gui。",
+    "支持读取 jarjar 内嵌 JAR 的 Mod 元数据：mezz_config 这类 standalone 包装 JAR 现在能正确识别 modId 与版本，不再出现“缺少 Mod ID”和连锁的“缺少必需前置”。",
+    "内嵌依赖会参与前置检查，并支持 ${file.jarVersion} 回退到 jarjar 的 artifactVersion；JourneyMap 自带的 commonnetworking 不会再被误报缺失。",
+    "Mod 列表的加载器标签同步修正：NeoForge 模组不再显示成 Forge，同时包含 Fabric / Forge / NeoForge 的通用 JAR 显示为“多加载器”。",
+    "补充环境检查回归测试：覆盖伪装 Fabric 元数据、通用引导 JAR、standalone 包装、内嵌前置、可选依赖与加载器混装等场景。"
   ],
-  "download_url": "downloads/DKL-1.9.24-update.zip",
+  "download_url": "downloads/DKL-1.9.25-update.zip",
   "page_url": "index.html",
-  "source_url": "downloads/DarkittenLauncher-1.9.24-source.zip",
-  "source_txt_url": "downloads/DarkittenLauncher-1.9.24-source.txt",
-  "sha256": "02eba6ae48428bc41137bba299018be404504d3b736acddc1be9f9f95bf19953",
-  "size": 1119032,
-  "source_sha256": "19fe99036a363f663c79cd84f2e552da417bc69f67287303e558a6eaa922a5bd",
-  "source_size": 1940997,
-  "source_txt_sha256": "345a2ac5104174146b88ffe9f24c39615b11a546a205cbcfe3151ad2d5132937",
-  "source_txt_size": 2420768
+  "source_url": "downloads/DarkittenLauncher-1.9.25-source.zip",
+  "source_txt_url": "downloads/DarkittenLauncher-1.9.25-source.txt",
+  "sha256": "b589af99b3f09a891cc44643837fa2bf1210a853f9c8f4516ee7dd129fcea3a2",
+  "size": 1121759,
+  "source_sha256": "95f5669b936b70ae8aff8d4462e71e024971dc00cacfa052391dc026e39705ed",
+  "source_size": 1946815,
+  "source_txt_sha256": "f2a657e59b67537fba486426b4d0c646cbff1b5ca7a200b830fea98864ba1151",
+  "source_txt_size": 2447691
 }

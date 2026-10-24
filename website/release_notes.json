@@ -1,4 +1,13 @@
 {
+  "1.9.25": [
+    "修复 NeoForge 实例中的加载器误判：JourneyMap 等模组内置的“not a fabric mod”提示文件、CustomSkinLoader 的通用引导 JAR 不再被当成 Fabric，环境检查不会误报“加载器不匹配”或“加载器混装”。",
+    "加载器识别改为综合 neoforge.mods.toml、mods.toml、Fabric / Quilt 元数据以及 Forge / NeoForge 引导服务文件；同一个 JAR 支持多个加载器时按“多加载器”处理，不再拆开误判。",
+    "修复 Forge / NeoForge 依赖类型解析：type=\"optional\" 的可选前置不再被当成必需前置，JEI 不会再误报缺少 mezz_config_gui。",
+    "支持读取 jarjar 内嵌 JAR 的 Mod 元数据：mezz_config 这类 standalone 包装 JAR 现在能正确识别 modId 与版本，不再出现“缺少 Mod ID”和连锁的“缺少必需前置”。",
+    "内嵌依赖会参与前置检查，并支持 ${file.jarVersion} 回退到 jarjar 的 artifactVersion；JourneyMap 自带的 commonnetworking 不会再被误报缺失。",
+    "Mod 列表的加载器标签同步修正：NeoForge 模组不再显示成 Forge，同时包含 Fabric / Forge / NeoForge 的通用 JAR 显示为“多加载器”。",
+    "补充环境检查回归测试：覆盖伪装 Fabric 元数据、通用引导 JAR、standalone 包装、内嵌前置、可选依赖与加载器混装等场景。"
+  ],
   "1.9.24": [
     "新增皮肤库：可以保存多套 64×64 或 64×32 皮肤，带缩略图、模型标记和使用中状态；支持逐张导入、一次选择多张、拖入多张 PNG，重复文件按 SHA-256 自动去重。",
     "皮肤库支持“使用 / 重命名 / 移除”；移除优先进入回收站，不会改动你最初导入的 PNG；旧版本的单张本地皮肤会在首次打开皮肤页时自动迁入皮肤库。",
