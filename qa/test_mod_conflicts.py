@@ -203,6 +203,17 @@ def test_version_ranges() -> None:
         ("2.0.0", "^1.20.1", False),
         ("1.20.1", "*", True),
         ("1.20.1", "", True),
+        ("0.8.15-beta.1+mc1.21.11", "0.8.x", True),
+        ("0.9.0", "0.8.x", False),
+        ("1.20", "1.20.x", True),
+        ("1.20.1", "1.20.*", True),
+        ("1.20.1", ">=1.20 <1.21", True),
+        ("1.21", ">=1.20 <1.21", False),
+        ("1.10.5", "<=1.10.7", True),
+        ("1.10.8", "<=1.10.7", False),
+        ("0.141.6", "<0.140.0", False),
+        ("1.20", "[1.20]", True),
+        ("1.20.1", "[1.20]", False),
     ]
     for version, spec, expected in cases:
         actual = version_in_range(version, spec)
@@ -267,6 +278,105 @@ def test_duplicates_and_conflicts() -> None:
     check("duplicate-related", len(duplicate.related) == 2, str(duplicate.related))
 
 
+def test_conflict_ranges() -> None:
+    work = Path(tempfile.mkdtemp(prefix="dkl-conflicts-ranges-"))
+    fabric_jar(
+        work / "sodium.jar",
+        "sodium",
+        name="Sodium",
+        version="0.8.15-beta.1+mc1.21.11",
+        breaks={"iris": "<=1.10.7", "fabric-api": "<0.140.0"},
+    )
+    fabric_jar(
+        work / "iris.jar",
+        "iris",
+        name="Iris",
+        version="1.10.8+mc1.21.11",
+        depends={"minecraft": ">=1.20", "sodium": ["0.8.x"]},
+    )
+    fabric_jar(
+        work / "fabric-api.jar",
+        "fabric-api",
+        name="Fabric API",
+        version="0.141.6+1.21.11",
+    )
+    issues, _ = scan_mod_issues(work, target_loader="Fabric")
+    check("conflict-range-newer-ok", not issues, str(titles(issues)))
+
+    fabric_jar(
+        work / "iris-old.jar",
+        "iris",
+        name="Iris Old",
+        version="1.10.6+mc1.21.11",
+        depends={"minecraft": ">=1.20", "sodium": ["0.8.x"]},
+    )
+    (work / "iris.jar").unlink()
+    issues_old, _ = scan_mod_issues(work, target_loader="Fabric")
+    conflict = next(
+        item for item in issues_old if item.title == "声明了冲突"
+    )
+    check("conflict-range-old-flagged", "iris" in conflict.message, conflict.message)
+    check("conflict-range-installed-version", "1.10.6" in conflict.message, conflict.message)
+
+    fabric_jar(
+        work / "iris-x.jar",
+        "iris",
+        name="Iris X",
+        version="1.10.8+mc1.21.11",
+        depends={"minecraft": ">=1.20", "sodium": ["0.8.x"]},
+    )
+    (work / "iris-old.jar").unlink()
+    issues_x, _ = scan_mod_issues(work, target_loader="Fabric")
+    check("conflict-range-wildcard-ok", not issues_x, str(titles(issues_x)))
+
+
+def test_many_nested_modules() -> None:
+    work = Path(tempfile.mkdtemp(prefix="dkl-conflicts-nested-many-"))
+    nested: list[tuple[str, bytes, str]] = []
+    for index in range(12):
+        buffer = io.BytesIO()
+        with zipfile.ZipFile(buffer, "w") as inner:
+            inner.writestr(
+                "fabric.mod.json",
+                json.dumps(
+                    {
+                        "schemaVersion": 1,
+                        "id": f"nested_lib_{index}",
+                        "version": "1.0.0",
+                        "name": f"Nested {index}",
+                    }
+                ),
+            )
+        nested.append(
+            (f"META-INF/jars/nested-lib-{index}.jar", buffer.getvalue(), "1.0.0")
+        )
+    with zipfile.ZipFile(work / "bundle.jar", "w") as zf:
+        zf.writestr(
+            "fabric.mod.json",
+            json.dumps(
+                {
+                    "schemaVersion": 1,
+                    "id": "bundle",
+                    "version": "2.0.0",
+                    "depends": {
+                        "minecraft": ">=1.20",
+                        "nested_lib_11": "*",
+                    },
+                }
+            ),
+        )
+        for path, payload, _version in nested:
+            zf.writestr(path, payload)
+    issues, descriptors = scan_mod_issues(work, target_loader="Fabric")
+    check("nested-many-no-issues", not issues, str(titles(issues)))
+    desc = next(item for item in descriptors if item.modids == ["bundle"])
+    check(
+        "nested-many-provides",
+        desc.nested_provides.get("nested_lib_11") == "1.0.0",
+        str(sorted(desc.nested_provides)[-3:]),
+    )
+
+
 def test_loader_checks() -> None:
     work = Path(tempfile.mkdtemp(prefix="dkl-conflicts-loader-"))
     fabric_jar(work / "fabric-mod.jar", "fab", name="Fab")
@@ -285,6 +395,12 @@ def test_loader_checks() -> None:
     fabric_jar(clean / "fab.jar", "fab", name="Fab")
     issues_clean, _ = scan_mod_issues(clean, target_loader="Fabric")
     check("loader-clean", not issues_clean, str(titles(issues_clean)))
+    issues_optifine, _ = scan_mod_issues(clean, target_loader="OptiFine")
+    check(
+        "loader-optifine-no-mismatch",
+        "加载器不匹配" not in titles(issues_optifine),
+        str(titles(issues_optifine)),
+    )
 
 
 def test_invalid_jar_and_forge_dependencies() -> None:
@@ -540,6 +656,8 @@ def main() -> None:
     test_version_ranges()
     test_dependency_issues()
     test_duplicates_and_conflicts()
+    test_conflict_ranges()
+    test_many_nested_modules()
     test_loader_checks()
     test_invalid_jar_and_forge_dependencies()
     test_neoforge_stub_and_universal_loaders()

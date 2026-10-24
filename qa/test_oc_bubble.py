@@ -17,7 +17,6 @@ from darkitten.ui.widgets import ChibiCompanion, HeroArt
 
 PASS = 0
 FAIL = 0
-WRAP_FLAGS = Qt.AlignCenter | Qt.TextWordWrap
 
 
 def check(name: str, condition: bool, detail: str = "") -> None:
@@ -48,7 +47,9 @@ def check_hero_phrase(group: str, phrase: str) -> None:
     hero._phrase = phrase
     bubble, text_rect, font = hero._bubble_layout()
     metrics = QFontMetrics(font)
-    needed = metrics.boundingRect(text_rect.toRect(), WRAP_FLAGS, phrase)
+    _layout, lines, total_h, max_w = hero._bubble_text_lines(
+        font, phrase, text_rect.width()
+    )
     inside = (
         bubble.left() >= 4
         and bubble.top() >= 4
@@ -56,11 +57,17 @@ def check_hero_phrase(group: str, phrase: str) -> None:
         and bubble.bottom() <= hero.height() - 4
     )
     fits = (
-        needed.width() <= text_rect.width() + 1
-        and needed.height() <= text_rect.height() + 1
+        max_w <= text_rect.width() + 0.5
+        and total_h <= text_rect.height() + 0.5
     )
     check(f"hero-{group}-inside", inside, phrase)
-    check(f"hero-{group}-fits", fits, phrase)
+    check(f"hero-{group}-fits", fits, f"{max_w:.1f}x{total_h:.1f} in {text_rect.width():.1f}x{text_rect.height():.1f}")
+    # 上下各留出至少 1px 的余量，避免字形上下沿贴边被裁切。
+    check(
+        f"hero-{group}-vertical-pad",
+        text_rect.height() - total_h >= 1.0,
+        f"pad={text_rect.height() - total_h:.1f}",
+    )
     if group == "normal":
         one_line = metrics.horizontalAdvance(phrase) <= text_rect.width() + 1
         check("hero-normal-one-line", one_line, phrase)

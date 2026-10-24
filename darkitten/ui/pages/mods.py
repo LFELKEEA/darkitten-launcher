@@ -20,6 +20,12 @@ from PySide6.QtWidgets import (
 
 from ...mod_updates import ModUpdate
 from ...mods import ModInfo, forget_mod_meta, list_mods, toggle_mod
+from ...mod_repair import (
+    RepairError,
+    delete_repair_backup,
+    latest_repair,
+    restore_repair,
+)
 from ...workers import (
     DeleteWorker,
     ModConflictCheckWorker,
@@ -221,6 +227,7 @@ class ModsPage(QWidget):
         self._health_issues = []
         self._health_descriptors = []
         self._health_auto = False
+        self._repair_backup = None
         self._filter = "all"
         self._build()
         self.main.versions_changed.connect(self._update_version_label)
@@ -338,6 +345,27 @@ class ModsPage(QWidget):
         toolbar_layout.addWidget(refresh_btn)
         outer.addWidget(toolbar)
 
+        self.repair_banner = Card(soft=True)
+        self.repair_banner.setVisible(False)
+        banner_layout = QHBoxLayout(self.repair_banner)
+        banner_layout.setContentsMargins(13, 9, 13, 9)
+        banner_layout.setSpacing(9)
+        self.repair_label = QLabel("")
+        self.repair_label.setWordWrap(True)
+        self.repair_label.setObjectName("Tiny")
+        banner_layout.addWidget(self.repair_label, 1)
+        self.repair_restore_btn = QPushButton("还原备份")
+        self.repair_restore_btn.setObjectName("Secondary")
+        self.repair_restore_btn.setCursor(Qt.PointingHandCursor)
+        self.repair_restore_btn.clicked.connect(self._restore_repair)
+        banner_layout.addWidget(self.repair_restore_btn)
+        self.repair_delete_btn = QPushButton("删除备份")
+        self.repair_delete_btn.setObjectName("Ghost")
+        self.repair_delete_btn.setCursor(Qt.PointingHandCursor)
+        self.repair_delete_btn.clicked.connect(self._delete_repair)
+        banner_layout.addWidget(self.repair_delete_btn)
+        outer.addWidget(self.repair_banner)
+
         card = Card()
         card_layout = QVBoxLayout(card)
         card_layout.setContentsMargins(14, 12, 14, 12)
@@ -432,6 +460,7 @@ class ModsPage(QWidget):
         self.refresh_mods()
 
     def refresh_mods(self) -> None:
+        self._refresh_repair_banner()
         self._mods = list_mods(self._mods_dir())
         query = self.search.text().strip().lower()
         visible = []
@@ -643,9 +672,23 @@ class ModsPage(QWidget):
             self.main.toast(f"环境检查失败：{error}", "error")
             return
         if not self._health_auto:
-            ModHealthDialog(
-                self, self._health_issues, self._health_descriptors
-            ).exec()
+            self._open_health_dialog()
+
+    def _open_health_dialog(self) -> None:
+        game_version, loader = self._game_context()
+        dialog = ModHealthDialog(
+            self,
+            self._health_issues,
+            self._health_descriptors,
+            mods_dir=self._mods_dir(),
+            game_version=game_version,
+            loader=loader,
+            version_id=self.main.selected_version or "",
+        )
+        dialog.exec()
+        if dialog.repair_backup is not None:
+            self.refresh_mods()
+            self._check_health(auto=True)
 
     def _show_health(self) -> None:
         if self._health_worker is not None:
@@ -653,11 +696,88 @@ class ModsPage(QWidget):
             self.main.toast("正在检查 Mod 环境，稍等一下", "info")
             return
         if self._health_issues or not self._mods:
-            ModHealthDialog(
-                self, self._health_issues, self._health_descriptors
-            ).exec()
+            self._open_health_dialog()
             return
         self._check_health(auto=False)
+
+    def _refresh_repair_banner(self) -> None:
+        backup = latest_repair(self._mods_dir())
+        self._repair_backup = backup
+        self.repair_banner.setVisible(backup is not None)
+        if backup is None:
+            return
+        count = len(backup.files)
+        messages = {
+            "pending": f"修复备份里有 {count} 个文件。启动一次游戏，确认正常后再删除备份。",
+            "launched": f"修复备份正在等待游戏验证（{count} 个文件）。游戏正常退出后即可删除。",
+            "verified": f"游戏已正常运行，修复备份里的 {count} 个文件可以删除了。",
+            "failed": f"上次启动异常退出，建议先还原这 {count} 个文件再排查。",
+            "partial": f"有 {count} 个备份文件未能全部还原，请检查同名文件后再处理。",
+        }
+        self.repair_label.setText(
+            messages.get(backup.state, f"修复备份中有 {count} 个文件。")
+        )
+        can_delete = backup.state == "verified"
+        self.repair_delete_btn.setEnabled(can_delete)
+        self.repair_delete_btn.setToolTip(
+            "删除后备份会移入回收站"
+            if can_delete
+            else "先启动一次游戏并正常退出，确认没有问题后才能删除备份"
+        )
+
+    def _restore_repair(self) -> None:
+        backup = self._repair_backup or latest_repair(self._mods_dir())
+        if backup is None:
+            return
+        details = "\n".join(f"· {item.name}" for item in backup.files[:10])
+        if len(backup.files) > 10:
+            details += f"\n…另有 {len(backup.files) - 10} 个文件"
+        confirm = ConfirmDialog(
+            self,
+            "还原修复备份",
+            f"将把 {len(backup.files)} 个文件移回 mods 文件夹。"
+            "如果目标位置已有同名文件，会保留现有文件，不会覆盖。",
+            primary_text="还原",
+            icon_name="warning",
+            details=details,
+        )
+        if not confirm.exec():
+            return
+        restored, conflicts = restore_repair(backup)
+        self.refresh_mods()
+        self._check_health(auto=True)
+        if conflicts:
+            self.main.toast(
+                f"已还原 {len(restored)} 个文件，{len(conflicts)} 个同名文件未覆盖",
+                "error",
+            )
+        else:
+            self.main.toast(f"已还原 {len(restored)} 个文件", "success")
+
+    def _delete_repair(self) -> None:
+        backup = self._repair_backup or latest_repair(self._mods_dir())
+        if backup is None:
+            return
+        if backup.state != "verified":
+            self.main.toast("请先启动一次游戏，确认正常后再删除备份", "info")
+            return
+        confirm = ConfirmDialog(
+            self,
+            "删除修复备份",
+            f"游戏已经正常运行过，确认删除这份包含 {len(backup.files)} 个文件的"
+            "备份吗？备份会被移入系统回收站。",
+            primary_text="移入回收站",
+            icon_name="warning",
+        )
+        if not confirm.exec():
+            return
+        try:
+            delete_repair_backup(backup)
+        except (RepairError, OSError) as exc:
+            self.main.toast(f"删除备份失败：{exc}", "error")
+            return
+        self.refresh_mods()
+        self.main.toast("修复备份已移入回收站", "success")
 
     def _delete_mod(self, mod: ModInfo) -> None:
         if self._delete_worker is not None:

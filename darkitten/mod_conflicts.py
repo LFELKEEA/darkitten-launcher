@@ -22,6 +22,13 @@ PLATFORM_IDS = {
     "mixinextras",
 }
 
+LOADER_FAMILIES = {
+    "fabric": {"fabric"},
+    "quilt": {"fabric", "quilt"},
+    "forge": {"forge"},
+    "neoforge": {"neoforge"},
+}
+
 
 @dataclass
 class ModDependency:
@@ -30,6 +37,12 @@ class ModDependency:
     mandatory: bool = True
     side: str = ""
     reason: str = ""
+
+
+@dataclass
+class ModConflict:
+    modid: str
+    version_range: str = ""
 
 
 @dataclass
@@ -44,8 +57,10 @@ class ModDescriptor:
     dependencies_by_loader: dict[str, list[ModDependency]] = field(
         default_factory=dict
     )
-    conflicts: list[str] = field(default_factory=list)
-    conflicts_by_loader: dict[str, list[str]] = field(default_factory=dict)
+    conflicts: list[ModConflict] = field(default_factory=list)
+    conflicts_by_loader: dict[str, list[ModConflict]] = field(
+        default_factory=dict
+    )
     nested_provides: dict[str, str] = field(default_factory=dict)
     valid: bool = True
     error: str = ""
@@ -84,7 +99,20 @@ def _dep_from_fabric(value: Any, modid: str) -> ModDependency:
     return ModDependency(modid=modid, version_range=version_range)
 
 
-def _parse_fabric(data: dict) -> tuple[list[str], list[ModDependency], list[str]]:
+def _fabric_conflict(value: Any, modid: str) -> ModConflict:
+    version_range = ""
+    if isinstance(value, str):
+        version_range = value
+    elif isinstance(value, list):
+        version_range = " || ".join(str(item) for item in value if item)
+    elif isinstance(value, dict):
+        version_range = _clean(value.get("version") or value.get("versions"))
+    return ModConflict(modid=modid, version_range=version_range.strip())
+
+
+def _parse_fabric(
+    data: dict,
+) -> tuple[list[str], list[ModDependency], list[ModConflict]]:
     modids = [_clean(data.get("id"))] if _clean(data.get("id")) else []
     provides = data.get("provides")
     if isinstance(provides, list):
@@ -105,23 +133,36 @@ def _parse_fabric(data: dict) -> tuple[list[str], list[ModDependency], list[str]
             if not modid or modid.lower() in PLATFORM_IDS:
                 continue
             deps.append(_dep_from_fabric(item, modid))
-    conflicts: list[str] = []
+    conflicts: list[ModConflict] = []
     for key in ("breaks", "conflicts"):
         raw = data.get(key)
         if isinstance(raw, dict):
-            conflicts.extend(_clean(item) for item in raw if _clean(item))
+            for modid, value in raw.items():
+                modid = _clean(modid)
+                if not modid or modid.lower() in PLATFORM_IDS:
+                    continue
+                conflicts.append(_fabric_conflict(value, modid))
+        elif isinstance(raw, list):
+            for item in raw:
+                if isinstance(item, dict):
+                    modid = _clean(item.get("id") or item.get("modid"))
+                    if not modid or modid.lower() in PLATFORM_IDS:
+                        continue
+                    conflicts.append(_fabric_conflict(item, modid))
+                elif _clean(item):
+                    conflicts.append(ModConflict(modid=_clean(item)))
     return modids, deps, conflicts
 
 
 def _parse_forge(
     data: dict,
-) -> tuple[list[str], list[ModDependency], list[str]]:
+) -> tuple[list[str], list[ModDependency], list[ModConflict]]:
     modids: list[str] = []
     for mod in data.get("mods") or []:
         if isinstance(mod, dict) and _clean(mod.get("modId")):
             modids.append(_clean(mod.get("modId")))
     deps: list[ModDependency] = []
-    conflicts: list[str] = []
+    conflicts: list[ModConflict] = []
     raw_deps = data.get("dependencies")
     if isinstance(raw_deps, dict):
         for _owner, items in raw_deps.items():
@@ -135,7 +176,15 @@ def _parse_forge(
                     continue
                 dep_type = _clean(item.get("type")).lower()
                 if dep_type == "incompatible":
-                    conflicts.append(modid)
+                    conflicts.append(
+                        ModConflict(
+                            modid=modid,
+                            version_range=_clean(
+                                item.get("versionRange")
+                                or item.get("version")
+                            ),
+                        )
+                    )
                     continue
                 if dep_type == "optional":
                     mandatory = False
@@ -208,18 +257,28 @@ def describe_mod(path: Path) -> ModDescriptor:
                         continue
                     seen_deps.add(marker)
                     result.dependencies.append(dep)
+            seen_conflicts: set[tuple[str, str]] = set()
             for key, _entries in groups:
                 for conflict in result.conflicts_by_loader.get(key, []):
-                    if conflict not in result.conflicts:
-                        result.conflicts.append(conflict)
+                    marker = (conflict.modid.lower(), conflict.version_range)
+                    if marker in seen_conflicts:
+                        continue
+                    seen_conflicts.add(marker)
+                    result.conflicts.append(conflict)
     except (zipfile.BadZipFile, OSError, ValueError, UnicodeDecodeError) as exc:
         result.valid = False
         result.error = str(exc)
     return result
 
 
+def _numeric_core(value: str) -> str:
+    text = str(value or "").strip().lstrip("vV=")
+    match = re.match(r"(\d+(?:\.\d+)*)", text)
+    return match.group(1) if match else text
+
+
 def _version_parts(value: str) -> tuple[int, ...]:
-    parts = re.findall(r"\d+", str(value or ""))
+    parts = re.findall(r"\d+", _numeric_core(value))
     return tuple(int(item) for item in parts[:4]) if parts else ()
 
 
@@ -232,81 +291,145 @@ def _compare_versions(left: str, right: str) -> int:
     return (a > b) - (a < b)
 
 
-def _range_chunks(text: str):
-    """把「>=1.20 || [1.21,1.22)」拆成单个条件，保留带空格的 Maven 区间。"""
+def _version_tokens(value: str) -> list[str]:
+    text = str(value or "").strip().lower().lstrip("vV=")
+    return [item for item in re.split(r"[.\-_+]", text) if item]
+
+
+def _wildcard_match(version: str, pattern: str) -> bool | None:
+    """匹配 0.8.x / 1.20.* 这类通配版本；不是通配模式时返回 None。"""
+    parts = _version_tokens(pattern)
+    if not any(item in ("x", "*") for item in parts):
+        return None
+    if not parts:
+        return None
+    version_parts = _version_tokens(version)
+    if len(version_parts) < len(parts):
+        version_parts += ["0"] * (len(parts) - len(version_parts))
+    for expected, actual in zip(parts, version_parts):
+        if expected in ("x", "*"):
+            return True
+        expected_num = re.match(r"\d+", expected)
+        actual_num = re.match(r"\d+", actual)
+        if expected_num and actual_num:
+            if int(expected_num.group()) != int(actual_num.group()):
+                return False
+            continue
+        if expected != actual:
+            return False
+    return len(version_parts) >= len(parts)
+
+
+def _match_interval(version: str, chunk: str) -> bool:
+    match = re.match(
+        r"^([\[(])\s*([^,\])]*)\s*(?:,\s*([^,\])]*)\s*)?([\])])$",
+        chunk,
+    )
+    if not match:
+        return False
+    left_bracket, low, high, right_bracket = match.groups()
+    if high is None:
+        # Maven 的 [1.2.3] 表示精确版本。
+        if left_bracket != "[" or right_bracket != "]":
+            return False
+        return _compare_versions(version, low) == 0
+    if low:
+        cmp = _compare_versions(version, low)
+        if cmp < 0 or (cmp == 0 and left_bracket == "("):
+            return False
+    if high:
+        cmp = _compare_versions(version, high)
+        if cmp > 0 or (cmp == 0 and right_bracket == ")"):
+            return False
+    return True
+
+
+def _range_groups(text: str):
+    """把「>=1.20 || [1.21,1.22)」拆成若干组，组内空格表示 AND。"""
     for raw in re.split(r"\s*\|\|\s*", text):
         raw = raw.strip()
         if not raw:
             continue
         if raw.startswith(("[", "(")):
-            yield raw
+            yield [raw]
             continue
         # 先合并「>= 1.20」这类运算符与值之间的空格，再按空格拆分条件。
-        raw = re.sub(r"(>=|<=|>|<|=|~|\^)\s+", r"\1", raw)
-        for token in raw.split():
-            if token:
-                yield token
+        raw = re.sub(r"(>=|<=|>|<|=|~|\^|!=)\s+", r"\1", raw)
+        tokens = [token for token in re.split(r"[\s,]+", raw) if token]
+        if tokens:
+            yield tokens
+
+
+def _match_token(version: str, token: str) -> bool:
+    token = token.strip()
+    if not token or token == "*":
+        return True
+    if token.startswith(("[", "(")):
+        return _match_interval(version, token)
+    if token.startswith(("[", "(", "]")):
+        return False
+
+    wildcard = _wildcard_match(version, token)
+    if wildcard is not None:
+        return wildcard
+
+    operator = ""
+    for prefix in ("!=", ">=", "<=", ">", "<", "=", "~", "^"):
+        if token.startswith(prefix):
+            operator = prefix
+            token = token[len(prefix) :].strip()
+            break
+    if not token:
+        return True
+    if token.endswith("+"):
+        return _compare_versions(version, token[:-1]) >= 0
+
+    cmp = _compare_versions(version, token)
+    if operator in ("!=",):
+        return cmp != 0
+    if operator == ">=":
+        return cmp >= 0
+    if operator == ">":
+        return cmp > 0
+    if operator == "<=":
+        return cmp <= 0
+    if operator == "<":
+        return cmp < 0
+    if operator == "=":
+        return cmp == 0 or _numeric_core(version) == _numeric_core(token)
+    if operator == "~":
+        target = _version_parts(token)
+        actual = _version_parts(version)
+        width = min(2, len(target))
+        return cmp >= 0 and actual[:width] == target[:width]
+    if operator == "^":
+        target = _version_parts(token)
+        actual = _version_parts(version)
+        if not target or not actual or cmp < 0:
+            return False
+        if target[0] > 0:
+            return actual[0] == target[0]
+        if len(target) > 1 and target[1] > 0:
+            return actual[:2] == target[:2]
+        return actual[:3] == target[:3]
+    actual_core = _numeric_core(version)
+    token_core = _numeric_core(token)
+    if actual_core == token_core:
+        return True
+    # 1.2 可以匹配 1.2.3，但不能把 1.20 当成 1.2 的前缀。
+    return actual_core.startswith(token_core + ".")
 
 
 def version_in_range(version: str, version_range: str) -> bool:
-    """支持 Maven 区间、单区间和简单前缀；无法解析时放行，避免误报。"""
+    """支持 Maven 区间、通配符和空格 AND；无法解析时放行，避免误报。"""
     text = str(version_range or "").strip()
     if not text or text in ("*", "any"):
         return True
     version = str(version or "").strip()
     if not version:
         return True
-    for chunk in _range_chunks(text):
-        chunk = chunk.strip()
-        if not chunk or chunk == "*":
-            return True
-        if chunk.startswith("[") or chunk.startswith("("):
-            match = re.match(r"^([\[(])\s*([^,\])]*)\s*,\s*([^,\])]*)\s*([\])])$", chunk)
-            if not match:
-                continue
-            left_bracket, low, high, right_bracket = match.groups()
-            if low:
-                cmp = _compare_versions(version, low)
-                if cmp < 0 or (cmp == 0 and left_bracket == "("):
-                    continue
-            if high:
-                cmp = _compare_versions(version, high)
-                if cmp > 0 or (cmp == 0 and right_bracket == ")"):
-                    continue
-            return True
-            # continue 表示这个区间不匹配，尝试下一个区间。
-        if chunk.startswith(("[", "(", "]")):
-            continue
-        operator = ""
-        for prefix in (">=", "<=", ">", "<", "=", "~", "^"):
-            if chunk.startswith(prefix):
-                operator = prefix
-                chunk = chunk[len(prefix) :].strip()
-                break
-        cmp = _compare_versions(version, chunk)
-        if operator:
-            if operator == ">=" and cmp < 0:
-                continue
-            if operator == ">" and cmp <= 0:
-                continue
-            if operator == "<=" and cmp > 0:
-                continue
-            if operator == "<" and cmp >= 0:
-                continue
-            if operator == "=" and cmp != 0:
-                continue
-            if operator == "~" and (
-                _version_parts(version)[:2] != _version_parts(chunk)[:2]
-            ):
-                continue
-            if operator == "^" and (
-                _version_parts(version)[:1] != _version_parts(chunk)[:1]
-            ):
-                continue
-            return True
-        if version == chunk or version.startswith(chunk):
-            return True
-        if cmp == 0:
+    for group in _range_groups(text):
+        if all(_match_token(version, token) for token in group):
             return True
     return False
 
@@ -339,10 +462,12 @@ def _owner_dependencies(
     return deps
 
 
-def _owner_conflicts(owner: ModDescriptor, target_loader: str) -> list[str]:
+def _owner_conflicts(
+    owner: ModDescriptor, target_loader: str
+) -> list[ModConflict]:
     if not owner.conflicts_by_loader:
         return owner.conflicts
-    conflicts: list[str] = []
+    conflicts: list[ModConflict] = []
     for key in _metadata_keys(target_loader, owner.conflicts_by_loader):
         conflicts.extend(owner.conflicts_by_loader.get(key, []))
     return conflicts
@@ -444,15 +569,14 @@ def scan_mod_issues(
         )
     if target_loader:
         wanted = target_loader.strip().lower()
-        compatible = {
-            "fabric": {"fabric"},
-            "quilt": {"fabric", "quilt"},
-            "forge": {"forge"},
-            "neoforge": {"neoforge"},
-        }.get(wanted, {wanted})
+        compatible = LOADER_FAMILIES.get(wanted)
         mismatched: dict[str, list[ModDescriptor]] = {}
+        if not compatible:
+            # OptiFine / LiteLoader 等不是 Mod 加载器，不能把普通 Mod
+            # 全部判成“加载器不匹配”。
+            compatible = set()
         for desc in descriptors:
-            if not desc.valid or not desc.loaders:
+            if not compatible or not desc.valid or not desc.loaders:
                 continue
             supported = {loader.lower() for loader in desc.loaders}
             if supported & compatible:
@@ -515,23 +639,35 @@ def scan_mod_issues(
                     )
                 )
 
-        seen_conflicts: set[str] = set()
+        seen_conflicts: set[tuple[str, str]] = set()
         for conflict in _owner_conflicts(owner, target_loader):
-            key = str(conflict or "").strip().lower()
-            if not key or key in seen_conflicts:
+            key = str(conflict.modid or "").strip().lower()
+            marker = (key, conflict.version_range)
+            if not key or key in PLATFORM_IDS or marker in seen_conflicts:
                 continue
-            seen_conflicts.add(key)
+            seen_conflicts.add(marker)
             entry = provided.get(key)
-            if entry is not None and entry[0] is not owner:
-                issues.append(
-                    ModIssue(
-                        "warning",
-                        "声明了冲突",
-                        f"{owner.name} 声明与「{conflict}」冲突，两个 Mod 目前同时启用。",
-                        owner.path.name,
-                        [entry[0].path.name],
-                    )
+            if entry is None or entry[0] is owner:
+                continue
+            provider, provider_version = entry
+            # 只在已安装版本落入声明的不兼容区间时提示，否则 Sodium
+            # 对旧版 Iris / fabric-api 的 breaks 会被误报成当前冲突。
+            if not version_in_range(provider_version, conflict.version_range):
+                continue
+            range_text = (
+                f" {conflict.version_range}" if conflict.version_range else ""
+            )
+            current = f"（当前 {provider_version}）" if provider_version else ""
+            issues.append(
+                ModIssue(
+                    "warning",
+                    "声明了冲突",
+                    f"{owner.name} 声明与「{conflict.modid}」{range_text} 冲突"
+                    f"{current}，两个 Mod 目前同时启用。",
+                    owner.path.name,
+                    [provider.path.name],
                 )
+            )
 
     order = {"error": 0, "warning": 1, "info": 2}
     issues.sort(key=lambda item: (order.get(item.severity, 3), item.title))

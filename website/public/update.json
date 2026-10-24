@@ -1,19 +1,25 @@
 {
-  "version": "1.10.1",
+  "version": "1.10.2",
   "released": "2026-10-24",
   "notes": [
-    "修复窗口缩小时顶栏拥挤：导航标签不再被裁切或互相重叠，窗口按钮与账户入口保持完整。",
-    "窗口较窄时自动收起品牌名和账户文字，只保留图标；放大窗口后自动恢复，顶栏高度始终保持一致。",
-    "修复顶栏下载图标在 14px 下偏移并被裁切的问题，空闲时图标在按钮内居中显示。"
+    "修复启动页 OC 对话字号异常与文字被裁切：气泡会按内容自动换行，长句也能完整显示。",
+    "皮肤 3D 预览会随窗口高度自动缩放，小窗口首屏也能看到完整模型与操作按钮。",
+    "3D 预览新增行走、奔跑、潜行、挥手、坐下、转圈等动作，切换后会持续播放。",
+    "皮肤页新增 LittleSkin 皮肤站入口，可以直接前往挑选或上传皮肤。",
+    "修复环境检查误报：Fabric API 内嵌的网络与注册表模块不再被误判为缺少前置；Sodium、Iris、Fabric API 的冲突声明会按实际安装版本判断，新版组合不会再被误报。",
+    "环境检查窗口会明确显示当前游戏版本、实际加载器和已启用的 Mod 数量，便于确认检查对象。",
+    "新增环境冲突一键解决：重复 modId、加载器不匹配和声明的冲突会把冲突文件移到备份目录，不再直接禁用或删除。",
+    "修复前会保留完整备份，可以随时一键还原；缺少前置或版本不符等无法靠移出文件解决的问题会单独提示。",
+    "启动一次游戏并正常退出后，Mod 页面才会开放删除备份；删除时移入系统回收站，避免误删。"
   ],
-  "download_url": "downloads/DKL-1.10.1-update.zip",
+  "download_url": "downloads/DKL-1.10.2-update.zip",
   "page_url": "index.html",
-  "source_url": "downloads/DarkittenLauncher-1.10.1-source.zip",
-  "source_txt_url": "downloads/DarkittenLauncher-1.10.1-source.txt",
-  "sha256": "9ae572b3293da7dba442a7b577bfb21afbd13161dfe0448bf3ecaa33fa8aa6a1",
-  "size": 879674,
-  "source_sha256": "4dc6c4fe58019ae7c7a69bc599f8427c3be29659d3652d7766622e54e41042c1",
-  "source_size": 882304,
-  "source_txt_sha256": "1f0a081a6388b77767586bc7bbd701447f5af1b6dbb4dfc6b3c5b97ca13f9c73",
-  "source_txt_size": 1929165
+  "source_url": "downloads/DarkittenLauncher-1.10.2-source.zip",
+  "source_txt_url": "downloads/DarkittenLauncher-1.10.2-source.txt",
+  "sha256": "d9fb98b6d2e058403e46ffbb6c084a92894d4b9d8a4957e96d2d12b9fed84c8a",
+  "size": 891287,
+  "source_sha256": "bd26695cd944fd947ac40f37fecf55a5701c63a6c3c9b9976040b846709d2e21",
+  "source_size": 893959,
+  "source_txt_sha256": "0a0d5e63711a984a600f286d7fb2465c54474096c22b4da5b30f90c0bb2a110a",
+  "source_txt_size": 1975589
 }

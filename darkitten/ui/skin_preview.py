@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+import time
 from dataclasses import dataclass
 
 from PySide6.QtCore import QPointF, QRect, QRectF, QSize, Qt, QTimer
@@ -96,6 +97,51 @@ def rotate_model_point(
     return x1, y2, z2
 
 
+def _rotate_about_x(
+    point: tuple[float, float, float],
+    pivot: tuple[float, float, float],
+    degrees: float,
+) -> tuple[float, float, float]:
+    x, y, z = point[0] - pivot[0], point[1] - pivot[1], point[2] - pivot[2]
+    angle = math.radians(degrees)
+    cos_a, sin_a = math.cos(angle), math.sin(angle)
+    return (
+        x + pivot[0],
+        y * cos_a - z * sin_a + pivot[1],
+        y * sin_a + z * cos_a + pivot[2],
+    )
+
+
+def _rotate_about_y(
+    point: tuple[float, float, float],
+    pivot: tuple[float, float, float],
+    degrees: float,
+) -> tuple[float, float, float]:
+    x, y, z = point[0] - pivot[0], point[1] - pivot[1], point[2] - pivot[2]
+    angle = math.radians(degrees)
+    cos_a, sin_a = math.cos(angle), math.sin(angle)
+    return (
+        x * cos_a + z * sin_a + pivot[0],
+        y + pivot[1],
+        -x * sin_a + z * cos_a + pivot[2],
+    )
+
+
+def _rotate_about_z(
+    point: tuple[float, float, float],
+    pivot: tuple[float, float, float],
+    degrees: float,
+) -> tuple[float, float, float]:
+    x, y, z = point[0] - pivot[0], point[1] - pivot[1], point[2] - pivot[2]
+    angle = math.radians(degrees)
+    cos_a, sin_a = math.cos(angle), math.sin(angle)
+    return (
+        x * cos_a - y * sin_a + pivot[0],
+        x * sin_a + y * cos_a + pivot[1],
+        z + pivot[2],
+    )
+
+
 def _region_has_alpha(image: QImage, u: int, v: int, w: int, h: int) -> bool:
     if image.isNull():
         return False
@@ -119,9 +165,19 @@ class SkinPreviewWidget(QWidget):
     不依赖 OpenGL / numpy，支持拖动旋转、滚轮缩放、双击复位和翻面动画。
     """
 
+    ACTIONS = (
+        ("idle", "待机"),
+        ("walk", "行走"),
+        ("run", "奔跑"),
+        ("sneak", "潜行"),
+        ("wave", "挥手"),
+        ("sit", "坐下"),
+        ("spin", "转圈"),
+    )
+
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
-        self.setMinimumSize(300, 360)
+        self.setMinimumSize(240, 260)
         self.setMouseTracking(True)
         self.setFocusPolicy(Qt.StrongFocus)
         self._image = default_skin()
@@ -139,6 +195,11 @@ class SkinPreviewWidget(QWidget):
         self._anim_from = 0.0
         self._anim_to = 0.0
         self._anim_progress = 1.0
+        self._action = "idle"
+        self._action_started = time.monotonic()
+        self._action_timer = QTimer(self)
+        self._action_timer.setInterval(33)
+        self._action_timer.timeout.connect(self.update)
         self._mirror_left_arm = False
         self._mirror_left_leg = False
         self._arm_width = 4
@@ -146,7 +207,28 @@ class SkinPreviewWidget(QWidget):
 
     # ------------------------------------------------------------------
     def sizeHint(self) -> QSize:
-        return QSize(420, 470)
+        return QSize(380, 380)
+
+    def showEvent(self, event) -> None:
+        super().showEvent(event)
+        self._action_timer.start()
+
+    def hideEvent(self, event) -> None:
+        self._action_timer.stop()
+        super().hideEvent(event)
+
+    def set_action(self, action: str) -> None:
+        action = str(action or "idle").lower()
+        if action not in {key for key, _label in self.ACTIONS}:
+            action = "idle"
+        self._action = action
+        self._action_started = time.monotonic()
+        if self.isVisible():
+            self._action_timer.start()
+        self.update()
+
+    def action(self) -> str:
+        return self._action
 
     def set_skin(self, image: QImage, legacy: bool = False) -> None:
         self._image = image.convertToFormat(QImage.Format_ARGB32) if not image.isNull() else default_skin()
@@ -206,6 +288,74 @@ class SkinPreviewWidget(QWidget):
             self._animation.stop()
             self._yaw = ((self._yaw + 180.0) % 360.0) - 180.0
         self.update()
+
+    def _pose(self) -> dict[str, float]:
+        """按当前动作计算各关节角度；纯计算，方便测试直接断言。"""
+        elapsed = max(0.0, time.monotonic() - self._action_started)
+        pose = {
+            "head_x": 0.0,
+            "head_y": 0.0,
+            "body_x": 0.0,
+            "arm_l": 0.0,
+            "arm_r": 0.0,
+            "arm_r_z": 0.0,
+            "leg_l": 0.0,
+            "leg_r": 0.0,
+            "bob": 0.0,
+            "shift": 0.0,
+            "yaw": 0.0,
+        }
+        if self._action == "walk":
+            stride = math.sin(elapsed * 5.2)
+            pose["arm_l"] = -30.0 * stride
+            pose["arm_r"] = 30.0 * stride
+            pose["leg_l"] = 28.0 * stride
+            pose["leg_r"] = -28.0 * stride
+            pose["bob"] = abs(math.sin(elapsed * 5.2)) * 0.7
+            pose["head_y"] = 3.0 * math.sin(elapsed * 2.6)
+        elif self._action == "run":
+            stride = math.sin(elapsed * 8.4)
+            pose["arm_l"] = -48.0 * stride
+            pose["arm_r"] = 48.0 * stride
+            pose["leg_l"] = 42.0 * stride
+            pose["leg_r"] = -42.0 * stride
+            pose["body_x"] = -8.0
+            pose["head_x"] = 4.0
+            pose["bob"] = abs(math.sin(elapsed * 8.4)) * 1.2
+        elif self._action == "sneak":
+            pose["body_x"] = -16.0
+            pose["head_x"] = 12.0
+            pose["arm_l"] = -10.0
+            pose["arm_r"] = -10.0
+            pose["leg_l"] = -8.0
+            pose["leg_r"] = 8.0
+            pose["shift"] = -1.2
+            pose["head_y"] = 3.0 * math.sin(elapsed * 1.4)
+        elif self._action == "wave":
+            pose["arm_r_z"] = -152.0 + 13.0 * math.sin(elapsed * 7.5)
+            pose["arm_l"] = -3.0
+            pose["head_y"] = 5.0 * math.sin(elapsed * 1.8)
+            pose["head_x"] = -2.0
+        elif self._action == "sit":
+            pose["leg_l"] = -84.0
+            pose["leg_r"] = -88.0
+            pose["arm_l"] = -16.0
+            pose["arm_r"] = -16.0
+            pose["shift"] = -4.0
+            pose["head_y"] = 4.0 * math.sin(elapsed * 1.5)
+        elif self._action == "spin":
+            pose["yaw"] = (elapsed * 75.0) % 360.0
+            pose["arm_l"] = -6.0
+            pose["arm_r"] = 6.0
+            pose["bob"] = abs(math.sin(elapsed * 3.0)) * 0.4
+        else:
+            breath = math.sin(elapsed * 1.7)
+            pose["arm_l"] = -2.0 * breath
+            pose["arm_r"] = 2.0 * breath
+            pose["head_y"] = 4.0 * math.sin(elapsed * 0.7)
+            pose["head_x"] = 1.0 * math.sin(elapsed * 1.1)
+            pose["bob"] = 0.1 * breath
+        return pose
 
     # ------------------------------------------------------------------
     def _parts(self) -> list[_Part]:
@@ -285,11 +435,12 @@ class SkinPreviewWidget(QWidget):
             p.drawLine(0, y, width, y)
 
         # 以模型整体高 32 个单位计算缩放
+        pose = self._pose()
         base = min(width / 22.0, height / 38.0)
         scale = base * self._zoom
         cx = width * 0.5
         cy = height * 0.51
-        floor_y = cy + 16.2 * scale
+        floor_y = cy + (16.2 + pose["shift"]) * scale
 
         shadow = QRadialGradient(cx, floor_y, max(30.0, 8.4 * scale))
         shadow.setColorAt(0.0, QColor(15, 23, 42, 70))
@@ -300,13 +451,63 @@ class SkinPreviewWidget(QWidget):
 
         p.setBrush(Qt.NoBrush)
 
+        yaw = self._yaw + pose["yaw"]
+        arm_pivot = self._arm_width / 2.0 + 4.0
+
+        def pose_point(
+            point: tuple[float, float, float], name: str
+        ) -> tuple[float, float, float]:
+            if name in ("head", "body"):
+                if pose["body_x"]:
+                    angle = pose["body_x"] * (0.5 if name == "head" else 1.0)
+                    point = _rotate_about_x(point, (0.0, 24.0, 0.0), angle)
+                if name == "head":
+                    if pose["head_x"]:
+                        point = _rotate_about_x(
+                            point, (0.0, 24.0, 0.0), pose["head_x"]
+                        )
+                    if pose["head_y"]:
+                        point = _rotate_about_y(
+                            point, (0.0, 24.0, 0.0), pose["head_y"]
+                        )
+            elif name in ("right_arm", "left_arm"):
+                side = -1.0 if name == "right_arm" else 1.0
+                if pose["body_x"]:
+                    point = _rotate_about_x(
+                        point, (0.0, 24.0, 0.0), pose["body_x"] * 0.5
+                    )
+                if name == "right_arm" and pose["arm_r_z"]:
+                    point = _rotate_about_z(
+                        point,
+                        (-arm_pivot, 24.0, 0.0),
+                        pose["arm_r_z"],
+                    )
+                swing = pose["arm_r"] if name == "right_arm" else pose["arm_l"]
+                if swing:
+                    point = _rotate_about_x(
+                        point, (side * arm_pivot, 24.0, 0.0), swing
+                    )
+            elif name in ("right_leg", "left_leg"):
+                side = -1.0 if name == "right_leg" else 1.0
+                swing = pose["leg_r"] if name == "right_leg" else pose["leg_l"]
+                if swing:
+                    point = _rotate_about_x(
+                        point, (side * 2.0, 12.0, 0.0), swing
+                    )
+            if pose["shift"]:
+                point = (point[0], point[1] + pose["shift"], point[2])
+            return point
+
         def rotate(point: tuple[float, float, float]):
-            return rotate_model_point(point, self._yaw, self._pitch)
+            return rotate_model_point(point, yaw, self._pitch)
 
         def project(point: tuple[float, float, float]):
             x1, y2, depth = rotate(point)
             # rotate_model_point 已把原点移到人物中心，因此这里直接以 cy 投影。
-            return QPointF(cx + x1 * scale, cy - y2 * scale), depth
+            return QPointF(
+                cx + x1 * scale,
+                cy - (y2 + pose["bob"]) * scale,
+            ), depth
 
         faces: list[tuple[float, QPolygonF, QImage]] = []
         for part in self._parts():
@@ -335,7 +536,10 @@ class SkinPreviewWidget(QWidget):
                         _vec_add(_vec_add(fc, u_half), _vec_scale(v_half, -1)),
                         _vec_add(_vec_add(fc, _vec_scale(u_half, -1)), _vec_scale(v_half, -1)),
                     )
-                    projected = [project(point) for point in corners3d]
+                    projected = [
+                        project(pose_point(point, part.name))
+                        for point in corners3d
+                    ]
                     depth = sum(item[1] for item in projected) / 4.0
                     polygon = QPolygonF([item[0] for item in projected])
                     row = _face_rect(

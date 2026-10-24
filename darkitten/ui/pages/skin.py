@@ -69,6 +69,7 @@ from ..widgets import (
 
 SKIN_FORUM_URL = "https://klpbbs.com/forum.php?mod=forumdisplay&fid=54"
 FORUM_URL = "https://klpbbs.com/"
+LITTLESKIN_URL = "https://littleskin.cn/"
 
 
 def _rounded_face(image: QImage, size: int = 48) -> QPixmap:
@@ -227,7 +228,8 @@ class SkinPage(QWidget):
         outer.setContentsMargins(0, 0, 0, 0)
         outer.setSpacing(0)
 
-        scroll = QScrollArea()
+        self.scroll = QScrollArea()
+        scroll = self.scroll
         scroll.setWidgetResizable(True)
         scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         container = QWidget()
@@ -256,6 +258,13 @@ class SkinPage(QWidget):
 
         self.account_badge = badge("离线预览", "gray")
         header.addWidget(self.account_badge, 0, Qt.AlignTop)
+        littleskin_btn = QPushButton("LittleSkin 皮肤站")
+        littleskin_btn.setObjectName("Ghost")
+        littleskin_btn.setCursor(Qt.PointingHandCursor)
+        littleskin_btn.setToolTip("打开 LittleSkin 皮肤站，挑选或上传皮肤")
+        littleskin_btn.setIcon(icons.icon("globe", colors()["text2"], 15))
+        littleskin_btn.clicked.connect(lambda: self._open_url(LITTLESKIN_URL))
+        header.addWidget(littleskin_btn, 0, Qt.AlignTop)
         forum_btn = QPushButton("苦力怕论坛 · 皮肤版块")
         forum_btn.setObjectName("Ghost")
         forum_btn.setCursor(Qt.PointingHandCursor)
@@ -266,7 +275,7 @@ class SkinPage(QWidget):
 
         content = QHBoxLayout()
         content.setSpacing(14)
-        content.addWidget(self._build_preview_card())
+        content.addWidget(self._build_preview_card(), 0, Qt.AlignTop)
 
         right = QVBoxLayout()
         right.setSpacing(12)
@@ -280,6 +289,7 @@ class SkinPage(QWidget):
 
     def _build_preview_card(self) -> QWidget:
         card = Card()
+        self._preview_card = card
         card.setFixedWidth(438)
         layout = QVBoxLayout(card)
         layout.setContentsMargins(16, 14, 16, 14)
@@ -298,10 +308,16 @@ class SkinPage(QWidget):
 
         self.preview = SkinPreviewWidget()
         self.preview.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-        self.preview.setMinimumHeight(440)
+        self.preview.setMinimumHeight(240)
         layout.addWidget(self.preview, 1)
 
-        hint = QLabel("按住左键拖动旋转 · 滚轮缩放 · 双击复位")
+        self.action_control = SegmentedControl()
+        for key, label in SkinPreviewWidget.ACTIONS:
+            self.action_control.add_item(label, key)
+        self.action_control.changed.connect(self._on_preview_action)
+        layout.addWidget(self.action_control)
+
+        hint = QLabel("切换动作 · 拖动旋转 · 滚轮缩放 · 双击复位")
         hint.setObjectName("Tiny")
         hint.setAlignment(Qt.AlignCenter)
         layout.addWidget(hint)
@@ -323,6 +339,28 @@ class SkinPage(QWidget):
         controls.addStretch(1)
         layout.addLayout(controls)
         return card
+
+    def _on_preview_action(self, action: str) -> None:
+        self.preview.set_action(action)
+
+    def _fit_preview(self) -> None:
+        """按窗口高度收缩预览，保证小窗口首屏能看到完整模型。"""
+        if not hasattr(self, "preview") or not hasattr(self, "_preview_card"):
+            return
+        viewport = self.scroll.viewport()
+        height = viewport.height() if viewport.height() > 200 else self.height()
+        target = int(max(210, min(430, height - 350)))
+        if self.preview.height() != target:
+            self.preview.setFixedHeight(target)
+            self._preview_card.updateGeometry()
+        width = viewport.width() if viewport.width() > 300 else self.width()
+        card_width = int(max(300, min(438, width * 0.47)))
+        if self._preview_card.width() != card_width:
+            self._preview_card.setFixedWidth(card_width)
+
+    def resizeEvent(self, event) -> None:
+        super().resizeEvent(event)
+        self._fit_preview()
 
     def _build_account_card(self) -> QWidget:
         card = Card()
@@ -1169,6 +1207,7 @@ class SkinPage(QWidget):
         self.preview.update()
 
     def on_show(self) -> None:
+        self._fit_preview()
         self._refresh_library()
         self.refresh_account()
         account = self.main.current_account()

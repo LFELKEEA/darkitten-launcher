@@ -171,7 +171,9 @@ FORGE_SERVICE_MARKERS = (
 )
 LOADER_ORDER = ("NeoForge", "Forge", "Quilt", "Fabric")
 _NESTED_PREFIXES = ("META-INF/jarjar/", "META-INF/jar-jar/", "META-INF/jars/")
-_MAX_NESTED_JARS = 8
+# Fabric API 会把几十个模块塞进 META-INF/jars。限制太小会把后半个
+# fabric-api 误判成“缺少前置”，所以放宽到 64 个，字节上限仍然兜底。
+_MAX_NESTED_JARS = 64
 _MAX_NESTED_BYTES = 32 * 1024 * 1024
 
 

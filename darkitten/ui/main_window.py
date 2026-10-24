@@ -3,6 +3,7 @@ from __future__ import annotations
 import ctypes
 import os
 import sys
+import time
 import urllib.parse
 from ctypes import wintypes
 from datetime import datetime, timezone
@@ -44,6 +45,7 @@ from ..developer import developer_mode, feedback_table_url, set_developer_mode
 from ..feedback import FeedbackListWorker
 from ..updater import restart_executable, schedule_apply
 from ..java import pick_java
+from ..mod_repair import mark_repair_finished, mark_repair_launched
 from ..launch import (
     GameProcess,
     MissingFilesError,
@@ -281,6 +283,7 @@ class MainWindow(QWidget):
         self._launch_profile_id = ""
         self._running_version = ""
         self._running_profile_id = ""
+        self._game_started_at = 0.0
         self._safe_mode_mods_dir: Path | None = None
         self.game_process: GameProcess | None = None
         self.game_running = False
@@ -2603,6 +2606,13 @@ class MainWindow(QWidget):
             self._game_log_file = None
 
     def _game_started(self, pid: int) -> None:
+        self._game_started_at = time.monotonic()
+        try:
+            mark_repair_launched(self.config.mods_path(self._running_version))
+        except Exception:
+            pass
+        if hasattr(self, "mods_page"):
+            self.mods_page.refresh_mods()
         self.set_status(f"游戏运行中 · PID {pid}", "success")
         self.toast("游戏已启动", "success")
         self.game_state_changed.emit(True)
@@ -2622,6 +2632,16 @@ class MainWindow(QWidget):
 
     def _game_finished(self, code: int) -> None:
         was_closing = self._launch_closing
+        runtime = 0.0
+        if self._game_started_at > 0:
+            runtime = max(0.0, time.monotonic() - self._game_started_at)
+            try:
+                mark_repair_finished(
+                    self.config.mods_path(self._running_version), code, runtime
+                )
+            except Exception:
+                pass
+        self._game_started_at = 0.0
         self._restore_safe_mode_mods()
         self.game_running = False
         self._launch_closing = False
@@ -2651,3 +2671,5 @@ class MainWindow(QWidget):
             except Exception:
                 pass
             self._game_log_file = None
+        if hasattr(self, "mods_page"):
+            self.mods_page.refresh_mods()

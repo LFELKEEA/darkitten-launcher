@@ -26,6 +26,8 @@ from PySide6.QtGui import (
     QPen,
     QPolygonF,
     QRadialGradient,
+    QTextLayout,
+    QTextOption,
 )
 from PySide6.QtWidgets import (
     QAbstractButton,
@@ -830,31 +832,58 @@ class HeroArt(QWidget):
 
     @staticmethod
     def _bubble_font() -> QFont:
-        font = QFont("Microsoft YaHei UI", 8)
+        # 用像素字号而不是磅值，避免不同 DPI 下字被放大后挤出气泡。
+        font = QFont("Microsoft YaHei UI")
+        font.setPixelSize(12)
         font.setBold(True)
         return font
+
+    @staticmethod
+    def _bubble_text_lines(
+        font: QFont, text: str, width: float
+    ) -> tuple[QTextLayout, list, float, float]:
+        """按给定宽度排版台词，返回逐行对象、总行高和最宽行。"""
+        layout = QTextLayout(text, font)
+        option = QTextOption()
+        option.setWrapMode(QTextOption.WrapAtWordBoundaryOrAnywhere)
+        layout.setTextOption(option)
+        layout.beginLayout()
+        lines: list = []
+        while True:
+            line = layout.createLine()
+            if not line.isValid():
+                break
+            line.setLineWidth(max(1.0, float(width)))
+            lines.append(line)
+        layout.endLayout()
+        total_h = sum(float(line.height()) for line in lines)
+        max_w = max((float(line.naturalTextWidth()) for line in lines), default=0.0)
+        return layout, lines, total_h, max_w
 
     def _bubble_layout(self, lift: float = 0.0) -> tuple[QRectF, QRectF, QFont]:
         """按台词长度计算气泡与文字区域，长台词自动换行，避免被裁切。"""
         font = self._bubble_font()
         metrics = QFontMetrics(font)
         body = self._body_rect()
-        pad_x, pad_y = 10.0, 8.0
-        available_w = max(96.0, body.left() - 20.0)
-        max_text_w = max(56.0, available_w - pad_x * 2 - 4.0)
+        pad_x, pad_y = 9.0, 9.0
+        available_w = max(108.0, body.left() - 18.0)
+        max_text_w = max(76.0, available_w - pad_x * 2)
         natural_w = float(metrics.horizontalAdvance(self._phrase))
-        text_w = max(48.0, min(natural_w, max_text_w))
-        flags = Qt.AlignCenter | Qt.TextWordWrap
-        needed = metrics.boundingRect(
-            QRect(0, 0, max(1, int(math.ceil(text_w))), 1000),
-            flags,
-            self._phrase,
+        text_w = max(64.0, min(natural_w, max_text_w))
+        _layout, _lines, needed_h, needed_w = self._bubble_text_lines(
+            font, self._phrase, text_w
         )
         bubble_w = max(
-            96.0, min(available_w, needed.width() + pad_x * 2 + 4.0)
+            104.0,
+            min(available_w, max(needed_w, text_w) + pad_x * 2 + 2.0),
         )
-        bubble_h = max(37.0, float(needed.height()) + pad_y * 2)
-        bx = max(6.0, body.left() - bubble_w - 14.0)
+        # 气泡最终宽度可能比试排宽度略宽，按最终宽度重新排版一次。
+        final_text_w = max(1.0, bubble_w - pad_x * 2)
+        _layout, _lines, needed_h, _needed_w = self._bubble_text_lines(
+            font, self._phrase, final_text_w
+        )
+        bubble_h = max(40.0, needed_h + pad_y * 2 + 2.0)
+        bx = max(6.0, body.left() - bubble_w - 12.0)
         by = body.center().y() - bubble_h / 2.0 + lift * 0.6
         by = max(4.0, min(by, max(4.0, self.height() - bubble_h - 4.0)))
         bubble = QRectF(bx, by, bubble_w, bubble_h)
@@ -1013,11 +1042,20 @@ class HeroArt(QWidget):
             p.drawPolygon(tail)
             p.setPen(QPen(QColor("#7C1B31")))
             p.setFont(font)
-            p.drawText(
-                text_rect,
-                Qt.AlignCenter | Qt.TextWordWrap,
-                self._phrase,
+            # 逐行按基线绘制，行高取自 QTextLayout，避免 drawText 的
+            # 矩形裁切在部分 DPI 下切掉中文的上下沿。
+            _layout, lines, total_h, _max_w = self._bubble_text_lines(
+                font, self._phrase, text_rect.width()
             )
+            y = text_rect.top() + max(
+                0.0, (text_rect.height() - total_h) / 2.0
+            )
+            for line in lines:
+                x = text_rect.left() + max(
+                    0.0, (text_rect.width() - line.naturalTextWidth()) / 2.0
+                )
+                line.draw(p, QPointF(x, y))
+                y += line.height()
             p.setOpacity(1.0)
 
         p.end()
