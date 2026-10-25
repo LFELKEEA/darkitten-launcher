@@ -21,9 +21,13 @@ from typing import Callable
 from .config import APP_VERSION
 
 USER_AGENT = f"DarkittenLauncher/{APP_VERSION} (Minecraft Launcher)"
-CHUNK_SIZE = 1024 * 1024
+# 256 KiB 一块：既能保持吞吐，又能让“长时间无数据”看门狗及时拿到
+# 进度心跳。1 MiB 块在慢速链路上可能十几秒都读不满，会被误判为卡死。
+CHUNK_SIZE = 256 * 1024
 MIN_SEGMENT_SIZE = 1024 * 1024
 MIN_CONNECTION_SIZE = 512 * 1024
+DEFAULT_TIMEOUT = 8.0
+DEFAULT_STALL_TIMEOUT = 10.0
 
 # HTTP 长连接池。urllib 每发起一个请求都会重新完成一次 TCP + TLS 握手，
 # 安装原版时几千个资源文件会因此浪费大量时间；这里按主机复用连接。
@@ -192,6 +196,140 @@ def _release_connection(
         _idle_total += 1
 
 
+class _DownloadGuard:
+    """取消或长时间收不到数据时，主动断开当前下载的响应。
+
+    socket 的 timeout 只约束单次 recv；服务端如果每隔几十秒挤一点数据，
+    连接可以一直挂着。这里用独立线程盯着“最后一次收到数据”的时间，
+    超时或用户取消时关闭响应，让阻塞中的 read 立刻抛错返回。
+    """
+
+    def __init__(
+        self,
+        cancel_event: threading.Event | None,
+        stall_timeout: float = DEFAULT_STALL_TIMEOUT,
+    ) -> None:
+        self.cancel_event = cancel_event
+        self.stall_timeout = max(0.0, float(stall_timeout))
+        self._lock = threading.Lock()
+        self._responses: set[_GuardedResponse] = set()
+        self._last_activity = time.monotonic()
+        self._stop = threading.Event()
+        self._thread = threading.Thread(
+            target=self._watch, name="dkl-download-guard", daemon=True
+        )
+        self._thread.start()
+
+    def touch(self) -> None:
+        self._last_activity = time.monotonic()
+
+    def register(self, response: "_GuardedResponse") -> None:
+        with self._lock:
+            self._responses.add(response)
+        self.touch()
+        if self.cancel_event is not None and self.cancel_event.is_set():
+            self._abort()
+
+    def unregister(self, response: "_GuardedResponse") -> None:
+        with self._lock:
+            self._responses.discard(response)
+
+    def stop(self) -> None:
+        self._stop.set()
+
+    def _watch(self) -> None:
+        while not self._stop.wait(0.25):
+            if self.cancel_event is not None and self.cancel_event.is_set():
+                self._abort()
+                return
+            if (
+                self.stall_timeout > 0
+                and time.monotonic() - self._last_activity
+                >= self.stall_timeout
+            ):
+                self._last_activity = time.monotonic()
+                self._abort()
+
+    def _abort(self) -> None:
+        with self._lock:
+            responses = list(self._responses)
+        for response in responses:
+            try:
+                response.abort()
+            except Exception:
+                pass
+
+
+class _GuardedResponse:
+    """给下载响应加一层代理，关闭时自动从看门狗注销。"""
+
+    def __init__(self, response, guard: _DownloadGuard) -> None:
+        self._response = response
+        self._guard = guard
+        self._closed = False
+        guard.register(self)
+
+    @property
+    def status(self) -> int:
+        return int(getattr(self._response, "status", 200) or 200)
+
+    @property
+    def headers(self):
+        return self._response.headers
+
+    @property
+    def reason(self) -> str:
+        return str(getattr(self._response, "reason", "") or "")
+
+    @property
+    def url(self) -> str:
+        return str(getattr(self._response, "url", "") or "")
+
+    def geturl(self) -> str:
+        return self._response.geturl()
+
+    def read(self, amt: int | None = None) -> bytes:
+        return self._response.read(amt)
+
+    def readinto(self, buffer) -> int:
+        return self._response.readinto(buffer)
+
+    def isclosed(self) -> bool:
+        return self._response.isclosed()
+
+    def __enter__(self) -> "_GuardedResponse":
+        return self
+
+    def __exit__(self, exc_type, exc, tb) -> bool:
+        self.close()
+        return False
+
+    def close(self) -> None:
+        if self._closed:
+            return
+        self._closed = True
+        self._guard.unregister(self)
+        try:
+            self._response.close()
+        except Exception:
+            pass
+
+    def abort(self) -> None:
+        """看门狗专用：立即断开，不做连接回收和剩余数据排空。"""
+        if self._closed:
+            return
+        self._closed = True
+        self._guard.unregister(self)
+        abort = getattr(self._response, "abort", None)
+        if callable(abort):
+            abort()
+            return
+        try:
+            self._response.close()
+        except Exception:
+            pass
+
+
 class _PooledResponse:
     """把 http.client 响应包装成与 urllib 响应相近的上下文对象。"""
 
@@ -279,6 +417,32 @@ class _PooledResponse:
             except Exception:
                 pass
 
+    def abort(self) -> None:
+        """不排空剩余数据，直接关掉响应与连接，供取消看门狗调用。"""
+        if self._closed:
+            return
+        self._closed = True
+        conn = self._conn
+        self._conn = None
+        # 只 shutdown 底层 socket，不能先 resp.close()：响应正被工作线程
+        # 阻塞读取时，close() 会等待同一把缓冲读锁，看门狗反而被卡住。
+        sock = getattr(conn, "sock", None)
+        if sock is not None:
+            try:
+                sock.shutdown(socket.SHUT_RDWR)
+            except OSError:
+                pass
+            try:
+                sock.close()
+            except OSError:
+                pass
+            # HTTPConnection.close() 会去关共享的 buffered reader，工作线程
+            # 正阻塞在它上面时同样会死锁；这里只摘掉 socket 引用即可。
+            try:
+                conn.sock = None
+            except Exception:
+                pass
+
 
 def _urllib_open(url: str, timeout: float, headers: dict[str, str]):
     req = urllib.request.Request(url, headers=headers)
@@ -357,7 +521,10 @@ def _pooled_open(url: str, timeout: float, headers: dict[str, str]):
 
 
 def http_open(
-    url: str, timeout: float = 30, headers: dict[str, str] | None = None
+    url: str,
+    timeout: float = 30,
+    headers: dict[str, str] | None = None,
+    guard: _DownloadGuard | None = None,
 ):
     merged = {
         "User-Agent": USER_AGENT,
@@ -369,8 +536,12 @@ def http_open(
         merged.update(headers)
     scheme = urllib.parse.urlsplit(url).scheme.lower()
     if scheme in ("http", "https") and not _proxy_configured(scheme):
-        return _pooled_open(url, timeout, merged)
-    return _urllib_open(url, timeout, merged)
+        response = _pooled_open(url, timeout, merged)
+    else:
+        response = _urllib_open(url, timeout, merged)
+    if guard is not None:
+        return _GuardedResponse(response, guard)
+    return response
 
 
 def _check_cancel(cancel_event: threading.Event | None) -> None:
@@ -378,12 +549,16 @@ def _check_cancel(cancel_event: threading.Event | None) -> None:
         raise DownloadCancelled()
 
 
-def _probe(url: str, cancel_event: threading.Event | None) -> tuple[int, bool]:
+def _probe(
+    url: str,
+    cancel_event: threading.Event | None,
+    guard: _DownloadGuard | None = None,
+) -> tuple[int, bool]:
     """探测文件大小与是否支持 Range；失败时返回未知大小。"""
     _check_cancel(cancel_event)
     try:
         with http_open(
-            url, timeout=20, headers={"Range": "bytes=0-0"}
+            url, timeout=12, headers={"Range": "bytes=0-0"}, guard=guard
         ) as resp:
             status = int(getattr(resp, "status", 200) or 200)
             total = 0
@@ -399,6 +574,8 @@ def _probe(url: str, cancel_event: threading.Event | None) -> tuple[int, bool]:
             if status == 206:
                 try:
                     resp.read(1)
+                    if guard is not None:
+                        guard.touch()
                 except Exception:
                     pass
             return total, accept_ranges or status == 206
@@ -501,6 +678,8 @@ def _download_segment(
     cancel_event: threading.Event | None,
     on_bytes: Callable[[int], None],
     attempts: int = 3,
+    guard: _DownloadGuard | None = None,
+    timeout: float = DEFAULT_TIMEOUT,
 ) -> None:
     expected = end - start + 1
     last_error: Exception | None = None
@@ -516,8 +695,9 @@ def _download_segment(
             request_start = start + written
             with http_open(
                 url,
-                timeout=45,
+                timeout=timeout,
                 headers={"Range": f"bytes={request_start}-{end}"},
+                guard=guard,
             ) as resp:
                 if int(getattr(resp, "status", 200) or 200) != 206:
                     raise RangeUnsupported()
@@ -538,6 +718,8 @@ def _download_segment(
                         fp.write(chunk)
                         written += len(chunk)
                         remaining -= len(chunk)
+                        if guard is not None:
+                            guard.touch()
                         on_bytes(len(chunk))
             if written != expected:
                 raise TransferError(
@@ -558,6 +740,8 @@ def _download_segment(
             if attempt + 1 < attempts:
                 time.sleep(0.4 * (attempt + 1))
         except Exception as exc:
+            if cancel_event is not None and cancel_event.is_set():
+                raise DownloadCancelled() from None
             last_error = exc
             # 保留已写入的部分，下一次只补剩余字节，避免整段重下。
             if attempt + 1 < attempts:
@@ -572,6 +756,8 @@ def _download_single(
     cancel_event: threading.Event | None,
     on_bytes: Callable[[int], None],
     attempts: int = 3,
+    guard: _DownloadGuard | None = None,
+    timeout: float = DEFAULT_TIMEOUT,
 ) -> tuple[str, int]:
     last_error: Exception | None = None
     for attempt in range(attempts):
@@ -602,7 +788,9 @@ def _download_single(
         headers = {"Range": f"bytes={written}-"} if written else None
         mode = "ab" if written else "wb"
         try:
-            with http_open(url, timeout=45, headers=headers) as resp:
+            with http_open(
+                url, timeout=timeout, headers=headers, guard=guard
+            ) as resp:
                 status = int(getattr(resp, "status", 200) or 200)
                 if written and status == 200:
                     # 服务器不支持断点续传，只能从头覆盖。
@@ -636,6 +824,8 @@ def _download_single(
                         fp.write(chunk)
                         digest.update(chunk)
                         written += len(chunk)
+                        if guard is not None:
+                            guard.touch()
                         on_bytes(len(chunk))
                         if expected and written > expected:
                             raise TransferError("服务器返回了超出预期大小的数据")
@@ -648,13 +838,15 @@ def _download_single(
             # 保留半截文件，配合 .part.json 在下次启动时继续下载。
             raise
         except Exception as exc:
+            if cancel_event is not None and cancel_event.is_set():
+                raise DownloadCancelled() from None
             last_error = exc
             if attempt + 1 < attempts:
                 time.sleep(0.4 * (attempt + 1))
     raise TransferError(f"下载失败：{last_error}")
 
 
-def download_to_file(
+def _download_to_file_impl(
     url: str,
     dest: Path,
     *,
@@ -664,6 +856,8 @@ def download_to_file(
     progress_cb: BytesCallback | None = None,
     connections: int = 4,
     probe: bool | None = None,
+    timeout: float = DEFAULT_TIMEOUT,
+    guard: _DownloadGuard | None = None,
 ) -> int:
     """下载到目标文件，支持多连接分段、跨会话续传、取消与 SHA1 校验。
 
@@ -709,7 +903,7 @@ def download_to_file(
         ) and connections > 1 and (not total or total >= MIN_SEGMENT_SIZE)
 
         if should_probe:
-            probed, supports_range = _probe(url, cancel_event)
+            probed, supports_range = _probe(url, cancel_event, guard)
             total = total or probed
             if not probed:
                 supports_range = False
@@ -796,6 +990,8 @@ def download_to_file(
                             end,
                             cancel_event,
                             report,
+                            guard=guard,
+                            timeout=timeout,
                         )
                         for index, start, end in ranges
                     ]
@@ -841,7 +1037,13 @@ def download_to_file(
             hexdigest = digest.hexdigest()
         else:
             hexdigest, _written = _download_single(
-                url, part, total, cancel_event, report
+                url,
+                part,
+                total,
+                cancel_event,
+                report,
+                guard=guard,
+                timeout=timeout,
             )
 
         _check_cancel(cancel_event)
@@ -864,6 +1066,39 @@ def download_to_file(
             # 校验失败说明断点数据已损坏，不能继续复用。
             _remove_partial_state(part)
         raise
+
+
+def download_to_file(
+    url: str,
+    dest: Path,
+    *,
+    sha1: str = "",
+    size: int = 0,
+    cancel_event: threading.Event | None = None,
+    progress_cb: BytesCallback | None = None,
+    connections: int = 4,
+    probe: bool | None = None,
+    timeout: float = DEFAULT_TIMEOUT,
+    stall_timeout: float = DEFAULT_STALL_TIMEOUT,
+) -> int:
+    """下载到目标文件，带取消看门狗与长时间无数据保护。"""
+    cancel_event = cancel_event or threading.Event()
+    guard = _DownloadGuard(cancel_event, stall_timeout)
+    try:
+        return _download_to_file_impl(
+            url,
+            dest,
+            sha1=sha1,
+            size=size,
+            cancel_event=cancel_event,
+            progress_cb=progress_cb,
+            connections=connections,
+            probe=probe,
+            timeout=timeout,
+            guard=guard,
+        )
+    finally:
+        guard.stop()
 
 
 @dataclass

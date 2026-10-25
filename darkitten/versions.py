@@ -281,7 +281,16 @@ def library_artifact(lib: dict[str, Any]) -> Artifact | None:
     base = str(lib.get("url") or "https://libraries.minecraft.net/")
     if not base.endswith("/"):
         base += "/"
-    return Artifact(path=path, url=base + path, name=lib.get("name", ""))
+    # Fabric / Quilt 的 profile 不带 downloads 字段，只把大小与校验值写在
+    # 库条目顶层。丢掉它们会让安装进度少算这些文件，最后一个文件明明还
+    # 在下载，界面却已经显示 “xx/xx MB” 满了。
+    return Artifact(
+        path=path,
+        url=base + path,
+        sha1=str(lib.get("sha1") or ""),
+        size=int(lib.get("size") or 0),
+        name=lib.get("name", ""),
+    )
 
 
 def natives_classifier(lib: dict[str, Any]) -> str | None:

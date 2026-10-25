@@ -22,11 +22,10 @@ from ..config import APP_DIR
 from ..modrinth_pack import inspect_modrinth_pack, looks_like_modrinth_pack
 from ..packs import human_size, inspect_pack, normalize_version_id, unique_version_id
 from ..version_zip import VersionZipCandidate, VersionZipInfo, inspect_version_zip
-from ..versions import version_json_path
 from ..workers import PackFetchWorker, VersionZipImportWorker
 from . import icons
 from .dialogs import StyledDialog
-from .download_center import DownloadTask, TASK_SUCCESS
+from .download_center import TASK_CANCELLED, DownloadTask, TASK_SUCCESS
 from .widgets import badge, colors, local_archive_paths
 
 
@@ -379,16 +378,29 @@ class VersionZipDialog(StyledDialog):
         self.progress_box.setVisible(False)
         self.import_btn.setEnabled(True)
         self.import_btn.setText("重新导入")
-        message = task.error or task.message or "导入失败"
+        cancelled = task.status == TASK_CANCELLED
+        message = task.error or task.message or (
+            "导入已取消" if cancelled else "导入失败"
+        )
         target = normalize_version_id(self.name_edit.text())
-        if version_json_path(self.main.config.game_path, target).is_file():
+        target_dir = self.main.config.game_path / "versions" / target
+        if target and target_dir.exists():
             self._attempted_version_id = target
             message = (
-                f"{message}\n已保留版本骨架，可以再次点击“重新导入”继续补全；"
-                "已经解压的文件不会重复解压。"
+                f"{message}\n已保留已经解压的内容，"
+                "再次点击“重新导入”会接着补全；已完成的文件不会重复处理。"
+            )
+        if cancelled:
+            message = (
+                "导入已取消。\n已保留已经解压的内容，再次点击"
+                "“重新导入”会接着补全；已完成的文件不会重复处理。"
+                if target_dir.exists()
+                else "导入已取消。可以再次点击“重新导入”重新开始。"
             )
         self._show_error(message)
-        self.main.log(f"版本包任务失败：{message}")
+        self.main.log(
+            f"版本包任务{'已取消' if cancelled else '失败'}：{message}"
+        )
 
     def _download_url(self) -> None:
         if self._mode != "idle":
@@ -429,7 +441,7 @@ class VersionZipDialog(StyledDialog):
         resume = bool(
             self._attempted_version_id
             and self._attempted_version_id == target
-            and version_json_path(self.main.config.game_path, target).is_file()
+            and version_dir.exists()
         )
         if version_dir.exists() and not resume:
             suggestion = unique_version_id(self.main.config.game_path, target)
@@ -439,6 +451,8 @@ class VersionZipDialog(StyledDialog):
             )
             return
         self._hide_error()
+        # 记住本次尝试的目标，取消或失败后用同一个名字可以直接续传。
+        self._attempted_version_id = target
         self._begin_busy("import")
         worker = VersionZipImportWorker(
             self._info.path if self._info else Path(self.path_edit.text()),

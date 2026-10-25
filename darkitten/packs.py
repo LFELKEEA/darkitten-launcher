@@ -504,8 +504,9 @@ def import_pack(
     version_dir = game_dir / "versions" / version_id
     if version_dir.exists() and not resume:
         raise PackError(f"版本 {version_id} 已经存在，请换一个导入名称")
-    if resume and not version_json_path(game_dir, version_id).is_file():
-        raise PackError("上次导入的版本骨架不存在，请换一个导入名称重新开始")
+    if resume and not version_dir.exists():
+        # 上次取消得早，目录还没建出来；按全新导入继续即可。
+        resume = False
     progress = progress_cb or (lambda _p, _m: None)
     log = log_cb or (lambda _m: None)
     cancel = cancel_event or threading.Event()

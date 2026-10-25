@@ -123,15 +123,19 @@ def mirror_urls(url: str, source: str) -> list[str]:
         by_source = {OFFICIAL: url, BMCLAPI: mirrored}
         candidates.extend(by_source[item] for item in urls_order)
     elif mirrored:
-        bmcl_ok = is_source_usable(BMCLAPI)
+        # Forge / NeoForge / Fabric 的官方 Maven 在部分网络下会接受连接
+        # 却几乎不传数据。这里默认先走 BMCLAPI 镜像，只看熔断状态，
+        # 不再被清单测速结果（只测 Mojang 清单）误判拖回官方线路。
+        bmcl_ready = is_source_usable(BMCLAPI)
         if central and any(
             relative.startswith(prefix) for prefix in CENTRAL_FIRST_PREFIXES
         ):
-            candidates.extend([central, mirrored, url])
-        elif bmcl_ok:
+            candidates.extend(
+                [central, mirrored, url] if bmcl_ready else [central, url, mirrored]
+            )
+        elif bmcl_ready:
             candidates.extend([mirrored, central, url])
         else:
-            # 镜像被熔断时先走官方 Maven / Maven Central，避免反复超时。
             candidates.extend([url, central, mirrored])
     else:
         candidates.append(url)
@@ -554,6 +558,7 @@ class Installer:
         all_arts.sort(key=lambda art: max(0, int(art.size)), reverse=True)
         total = len(all_arts)
         total_bytes = sum(max(0, int(art.size)) for art in all_arts)
+        unknown_sizes = sum(1 for art in all_arts if int(art.size) <= 0)
         self.log(
             f"检查依赖库（{total} 个文件，"
             f"{total_bytes / 1024 / 1024:.1f} MB）"
@@ -567,6 +572,7 @@ class Installer:
             nonlocal done, done_bytes
             self._check_cancel()
             dest = libraries_dir(self.game_dir) / art.path
+            succeeded = False
             try:
                 if not (dest.exists() and not verify):
                     self._download_file(
@@ -580,6 +586,7 @@ class Installer:
                             art.size, self.segments
                         ),
                     )
+                succeeded = True
             except InstallCancelled:
                 raise
             except Exception as exc:
@@ -589,26 +596,39 @@ class Installer:
             finally:
                 with lock:
                     done += 1
-                    done_bytes += max(0, int(art.size))
+                    # 失败的文件没有真正写完，不能把它的完整大小记进
+                    # 已完成字节，否则最后一个文件还在重试时进度就先满了。
+                    if succeeded:
+                        done_bytes += max(0, int(art.size))
                     current = done
                     current_bytes = done_bytes
                 if total_bytes:
                     percent = self._stage_percent(
                         self.STAGE_LIBS, current_bytes, total_bytes
                     )
+                    if current < total:
+                        # 有文件大小未知时，字节进度可能先到 100；
+                        # 文件计数进度兜底，避免最后一个文件还在下载
+                        # 时进度条已经走满。
+                        percent = min(
+                            percent,
+                            self._stage_percent(
+                                self.STAGE_LIBS, current, total
+                            ),
+                        )
                 else:
                     percent = self._stage_percent(
                         self.STAGE_LIBS, current, total
                     )
-                self._set_progress(
-                    percent,
-                    f"下载依赖库 {current}/{total}"
-                    + (
+                detail = ""
+                if total_bytes and not unknown_sizes:
+                    detail = (
                         f" · {current_bytes / 1024 / 1024:.1f}"
                         f"/{total_bytes / 1024 / 1024:.1f} MB"
-                        if total_bytes
-                        else ""
-                    ),
+                    )
+                self._set_progress(
+                    percent,
+                    f"下载依赖库 {current}/{total}" + detail,
                 )
 
         if total:
