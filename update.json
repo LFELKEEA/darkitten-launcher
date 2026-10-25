@@ -1,23 +1,22 @@
 {
-  "version": "1.10.8",
+  "version": "1.11.0",
   "released": "2026-10-25",
   "notes": [
-    "加载器页面现在使用独立的 OC 互动台词，不再与模组页面重复：普通模式围绕 Fabric / Forge 选择、加载器绑定和版本继承展开，开发者模式也有单独的排查提示。",
-    "修复底部状态栏在导入 ZIP 时显示“正在安装”的问题：导入整合包、版本或本地内容时改为显示“导入整合包 xxx · 当前步骤”，右侧按钮同步变为“取消导入”，不再出现安装文案和下载速度。",
-    "导入结束后状态栏会正确收起进度条与取消按钮；如果后台仍有安装任务在进行，会自动恢复原来的安装进度与文案，不会被导入任务覆盖。",
-    "ZIP 整合包与版本包改为直接解压到对应的游戏版本文件夹，再就地识别和补齐资源，减少重复搬运与临时目录中转；放入内容后立即完成版本 JSON 写入，安装器只负责补齐缺失的原版、依赖库和资源。",
-    "ZIP 解压改为并行处理：默认最多 4 线程，小文件较多时自动降为 2 线程，并使用更大的复制缓冲区和目录缓存；实测 12000 个文件的版本包导入由约 18.4 秒降至约 14.0 秒，约快 24%。",
-    "压缩包结构检查加入缓存，同一文件重复导入或安装时不再反复读取整个 ZIP；进度更新改为节流刷新，导入过程中界面更流畅，取消操作也能更快生效。",
-    "本次只调整加载器页台词、底部状态栏与 ZIP 导入流程，已保存的游戏版本、Mod、配置、皮肤、账户、服务器与联机房间均保持不变。"
+    "修复导入整合包或版本时底栏文案被后台更新检查覆盖的问题：不会再出现“已是最新版本”和“取消导入”按钮同时显示的错位状态；导入进行期间底栏由当前导入任务独占，结束后自动恢复安装进度或空闲状态。",
+    "修复整合包导入进度被错误压缩到 3% 的问题：加载器安装阶段现在正确映射到总进度的 3%–45%，依赖库下载到 82/83 时会显示约 37%，不再长时间停在 3%。",
+    "优化依赖库下载顺序与连接数：先下载体积最大的依赖库，避免最后只剩一个几十 MB 的文件拖住整体进度；小于 1 MB 的文件使用单连接，1–4 MB 使用 2 连接，更大的使用 4 连接，并提升到最多 20 个并发文件，减少小文件反复握手和过量分段连接。",
+    "依赖库进度改为按已处理字节计算，并同时显示已完成 MB / 总 MB；进度条更平滑，完成后准确收尾到依赖库阶段节点。",
+    "设置页“下载站”按钮现在直接打开 https://lfelkeea.github.io/darkitten-launcher/，与更新清单保持一致，不再附带 index.html。",
+    "本次只调整底栏导入状态、整合包进度映射、依赖库下载调度与下载站地址，已保存的游戏版本、Mod、配置、皮肤、账户、服务器与联机房间均保持不变。"
   ],
-  "download_url": "downloads/DKL-1.10.8-update.zip",
-  "page_url": "index.html",
-  "source_url": "downloads/DarkittenLauncher-1.10.8-source.zip",
-  "source_txt_url": "downloads/DarkittenLauncher-1.10.8-source.txt",
-  "sha256": "5afbc15a66d42bc59ece6ef3c103a6ab598219eb3e0df15738d6843a14337a37",
-  "size": 903865,
-  "source_sha256": "12bc5174079bd9bca36f83474f77f4994af329b2f03cc5fcee67ed774fb9b89c",
-  "source_size": 906663,
-  "source_txt_sha256": "0c994d3a704945c7549868b0ca5af6ae031602f590321a21ee46b1a9616d8cdc",
-  "source_txt_size": 2024557
+  "download_url": "downloads/DKL-1.11.0-update.zip",
+  "page_url": "https://lfelkeea.github.io/darkitten-launcher/",
+  "source_url": "downloads/DarkittenLauncher-1.11.0-source.zip",
+  "source_txt_url": "downloads/DarkittenLauncher-1.11.0-source.txt",
+  "sha256": "e6ad2536020db893df8c7e4e87a25a1cba9655ecbcf464d46a2b7a267d10b7b6",
+  "size": 904520,
+  "source_sha256": "842c4cc4f21a86434a0957bd9337132033876e7f433246c2c34c84dedc6f09fe",
+  "source_size": 907318,
+  "source_txt_sha256": "dad8c5597af5ae2eda1c1b0d7478d73ef67fd06c5608c4147682e47862f12345",
+  "source_txt_size": 2026882
 }
