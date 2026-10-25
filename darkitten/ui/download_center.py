@@ -316,6 +316,31 @@ class DownloadCenter(QObject):
         self.tasks_changed.emit()
 
 
+class _ChipLabel(QLabel):
+    def __init__(self, text: str = "", parent: QWidget | None = None) -> None:
+        super().__init__(text, parent)
+        self._full_text = str(text or "")
+        self.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Preferred)
+
+    def setText(self, text: str) -> None:
+        self._full_text = str(text or "")
+        self._refresh()
+
+    def resizeEvent(self, event) -> None:
+        super().resizeEvent(event)
+        self._refresh()
+
+    def _refresh(self) -> None:
+        width = self.contentsRect().width()
+        if width <= 0:
+            QLabel.setText(self, self._full_text)
+            return
+        QLabel.setText(
+            self,
+            self.fontMetrics().elidedText(self._full_text, Qt.ElideRight, width),
+        )
+
+
 class DownloadTaskRow(QFrame):
     cancel_requested = Signal(int)
     import_requested = Signal(object)
@@ -368,7 +393,7 @@ class DownloadTaskRow(QFrame):
         self.progress.setFixedHeight(5)
         info.addWidget(self.progress)
 
-        target = QLabel(str(task.target))
+        target = _ChipLabel(str(task.target))
         target.setObjectName("Tiny")
         target.setToolTip(str(task.target))
         info.addWidget(target)
@@ -550,31 +575,6 @@ class DownloadTasksDialog(StyledDialog):
             return
         self.main.open_local_import(path)
         self.refresh()
-
-
-class _ChipLabel(QLabel):
-    def __init__(self, text: str = "", parent: QWidget | None = None) -> None:
-        super().__init__(text, parent)
-        self._full_text = str(text or "")
-        self.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Preferred)
-
-    def setText(self, text: str) -> None:
-        self._full_text = str(text or "")
-        self._refresh()
-
-    def resizeEvent(self, event) -> None:
-        super().resizeEvent(event)
-        self._refresh()
-
-    def _refresh(self) -> None:
-        width = self.contentsRect().width()
-        if width <= 0:
-            QLabel.setText(self, self._full_text)
-            return
-        QLabel.setText(
-            self,
-            self.fontMetrics().elidedText(self._full_text, Qt.ElideRight, width),
-        )
 
 
 class TopDownloadChip(QFrame):
