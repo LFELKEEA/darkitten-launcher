@@ -1,19 +1,22 @@
 {
-  "version": "1.10.6",
+  "version": "1.10.7",
   "released": "2026-10-25",
   "notes": [
-    "修复 3D 皮肤预览行走时手臂贴图错位：外层贴图改为贴合手臂基体绘制，不再按固定厚度向外膨胀，摆动时白色袖口和臂环不会脱离手臂悬在空中。",
-    "补上背面剔除：手臂和腿部摆动时，背向摄像机的面不再覆盖正面，腰侧与手腕附近的大块白色错误贴图消失。",
-    "待机、行走、转圈、拖拽旋转和皮肤库功能保持不变，本次只调整预览渲染，不影响游戏内皮肤和已保存的皮肤库。"
+    "恢复第二层皮肤（帽子层与身体/四肢外层）的立体外壳：头部每侧外扩 0.5 像素，身体、手臂和腿部每侧外扩 0.25 像素，与 Minecraft 及 skinview3d 的几何一致，外层皮肤不再因为与基体完全贴合而看起来“不显示”。",
+    "修正外层贴图区域检测与左臂镜像回退的宽度计算：之前少算了 3 像素，外层背面可能被误判为全透明，导致整层被跳过或左臂被错误镜像；现在会完整检查 64×64 皮肤的全部外层 UV 区域。",
+    "加入固定的前上方打光：正面 1.0、侧面 0.93、背面 0.90、底面 0.85，手腕、袖口、臂环和帽子层的转折边界重新清晰可辨，行走摆臂时不会再糊成一块白色。",
+    "保留背面剔除和“基体 + 外层”成组排序：手臂与腿部摆动时内层不会盖住外层，白色袖口和臂环保持在手臂表面，不会悬空或错位。",
+    "修复修改离线玩家名称后，首页账户卡仍显示旧名字、UUID 为空的问题：名称、头像、UUID 与正版/离线标识现在会立即同步，没有选中游戏版本时也能正确显示。",
+    "本次只调整 3D 预览渲染与账户卡显示，已保存的皮肤库、LittleSkin 登录、账户、游戏版本、Mod、服务器与全部设置均保持不变。"
   ],
-  "download_url": "downloads/DKL-1.10.6-update.zip",
+  "download_url": "downloads/DKL-1.10.7-update.zip",
   "page_url": "index.html",
-  "source_url": "downloads/DarkittenLauncher-1.10.6-source.zip",
-  "source_txt_url": "downloads/DarkittenLauncher-1.10.6-source.txt",
-  "sha256": "4d06d70d39f819e81cde6d7bacdc366fa8863264da79a6736046accd2025388b",
-  "size": 899285,
-  "source_sha256": "06116a81e7723c2a176636745f16ae1a1f249393cc06ba3b3e76cd7d4bab7044",
-  "source_size": 902041,
-  "source_txt_sha256": "9eb2f150e864aa1790c76e98387025d87aae2b2da3c6bb7a68d89da13107c75c",
-  "source_txt_size": 2007764
+  "source_url": "downloads/DarkittenLauncher-1.10.7-source.zip",
+  "source_txt_url": "downloads/DarkittenLauncher-1.10.7-source.txt",
+  "sha256": "44dc7a0d49833bcd510abaf55833dff2f5518ca2ffef6ef0947d141087e05d4e",
+  "size": 899470,
+  "source_sha256": "8102c10314685e16a09c7a59839e51980037aa8033ae78769c42010a7e660d06",
+  "source_size": 902226,
+  "source_txt_sha256": "ec7fdecdc15b19b8e232d4ac2c6e1cc2321fd3c8118a02911b00d2a1f8ea2c34",
+  "source_txt_size": 2008513
 }

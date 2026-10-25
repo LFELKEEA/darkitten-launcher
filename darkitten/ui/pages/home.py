@@ -160,6 +160,7 @@ class HomePage(QWidget):
         self.main.versions_changed.connect(self.refresh_versions)
         self.main.install_finished.connect(lambda *_: self._refresh_status())
         self.refresh_versions()
+        self._refresh_account_card()
 
     # ------------------------------------------------------------------
     def _build(self) -> None:
@@ -614,6 +615,7 @@ class HomePage(QWidget):
         self._refresh_status()
 
     def _refresh_status(self) -> None:
+        self._refresh_account_card()
         if not self._selected:
             return
         profile_id, _instance_id = self.main.launch_profile(self._selected)
@@ -658,6 +660,7 @@ class HomePage(QWidget):
             )
         self.hero_status.setStyleSheet(style)
 
+    def _refresh_account_card(self) -> None:
         account = self.main.current_account()
         self.hero_title.setText(
             f"今天也要去捣乱吗，{self.main.display_name()}？"

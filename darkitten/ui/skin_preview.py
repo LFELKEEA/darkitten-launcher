@@ -46,6 +46,16 @@ _FACES = (
     ("bottom", (0.0, -1.0, 0.0), (1.0, 0.0, 0.0), (0.0, 0.0, 1.0)),
 )
 
+# 固定的前上方打光，避免纯平面导致相邻面糊成一片。
+_FACE_SHADE = {
+    "front": 1.0,
+    "back": 0.90,
+    "left": 0.93,
+    "right": 0.93,
+    "top": 1.0,
+    "bottom": 0.85,
+}
+
 
 def _vec_scale(vector: tuple[float, float, float], value: float):
     return tuple(component * value for component in vector)
@@ -264,7 +274,7 @@ class SkinPreviewWidget(QWidget):
             self._mirror_left_arm = True
             self._mirror_left_leg = True
             return
-        arm_rect_w = 2 * 4 + self._arm_width
+        arm_rect_w = 2 * 4 + 2 * self._arm_width
         self._mirror_left_arm = not _region_has_alpha(
             self._image, 32, 48, arm_rect_w, 16
         )
@@ -486,16 +496,17 @@ class SkinPreviewWidget(QWidget):
                 cy - (y2 + pose["bob"]) * scale,
             ), depth
 
-        faces: list[tuple[float, list[tuple[QPolygonF, QImage]]]] = []
+        faces: list[tuple[float, list[tuple[QPolygonF, QImage, float]]]] = []
         for part in self._parts():
             layers: list[tuple[float, tuple[int, int] | None]] = [(0.0, None)]
             if part.overlay and part.use_overlay and not self._legacy:
                 if self._has_overlay(part):
-                    # 外层贴图与基体贴合绘制：着色器里外扩 0.25 会让手臂摆动时
-                    # 外层侧面探出基体轮廓，形成白色浮边；分层排序已能区分前后。
-                    layers.append((0.0, part.overlay))
+                    # 与 skinview3d 一致：帽子层每侧外扩 0.5，身体/四肢外扩 0.25。
+                    inflate = 0.5 if part.name == "head" else 0.25
+                    layers.append((inflate, part.overlay))
             for face, normal, u_axis, v_axis in _FACES:
-                layer_faces: list[tuple[QPolygonF, QImage]] = []
+                shade = _FACE_SHADE[face]
+                layer_faces: list[tuple[QPolygonF, QImage, float]] = []
                 layer_depths: list[float] = []
                 for inflate, overlay_uv in layers:
                     box_w = part.width + inflate * 2
@@ -540,15 +551,15 @@ class SkinPreviewWidget(QWidget):
                         continue
                     if part.mirror:
                         crop = crop.mirrored(True, False)
-                    layer_faces.append((polygon, crop))
+                    layer_faces.append((polygon, crop, shade))
                     layer_depths.append(depth)
                 if layer_faces:
                     faces.append((max(layer_depths), layer_faces))
 
         faces.sort(key=lambda item: item[0])
         for _depth, layer_faces in faces:
-            for polygon, crop in layer_faces:
-                self._draw_face(p, polygon, crop)
+            for polygon, crop, shade in layer_faces:
+                self._draw_face(p, polygon, crop, shade)
         p.end()
 
     def _has_overlay(self, part: _Part) -> bool:
@@ -556,9 +567,15 @@ class SkinPreviewWidget(QWidget):
             return False
         u, v = part.overlay
         w, h, d = int(part.width), int(part.height), int(part.depth)
-        return _region_has_alpha(self._image, u, v, 2 * d + w, d + h)
+        return _region_has_alpha(self._image, u, v, 2 * d + 2 * w, d + h)
 
-    def _draw_face(self, painter: QPainter, polygon: QPolygonF, image: QImage) -> None:
+    def _draw_face(
+        self,
+        painter: QPainter,
+        polygon: QPolygonF,
+        image: QImage,
+        shade: float = 1.0,
+    ) -> None:
         if polygon.count() != 4:
             return
         source = QPolygonF(
@@ -575,6 +592,12 @@ class SkinPreviewWidget(QWidget):
         painter.save()
         painter.setTransform(transform, True)
         painter.drawImage(QPointF(0, 0), image)
+        if shade < 1.0:
+            painter.setCompositionMode(QPainter.CompositionMode_SourceAtop)
+            painter.fillRect(
+                QRectF(0, 0, image.width(), image.height()),
+                QColor(0, 0, 0, int((1.0 - shade) * 255)),
+            )
         painter.restore()
 
     # ------------------------------------------------------------------
