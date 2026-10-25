@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import shutil
 import threading
 import zipfile
 from dataclasses import dataclass
@@ -12,6 +11,13 @@ from .installer import Installer
 from .packs import human_size, normalize_version_id
 from .paths import version_game_dir
 from .versions import detect_loader, version_json_path
+from .zip_extract import (
+    DEFAULT_EXTRACT_THREADS,
+    ExtractJob,
+    ZipExtractCancelled,
+    ZipExtractError,
+    extract_zip_entries,
+)
 
 MAX_JSON_BYTES = 2 * 1024 * 1024
 MAX_TOTAL_FILES = 100_000
@@ -330,12 +336,34 @@ def _count_candidate(zf: zipfile.ZipFile, candidate: VersionZipCandidate) -> Non
     candidate.jar_rel = _jar_candidates(zf, candidate)
 
 
+_INSPECT_CACHE: dict[tuple[str, int, int], VersionZipInfo] = {}
+_INSPECT_CACHE_LOCK = threading.Lock()
+_INSPECT_CACHE_MAX = 8
+
+
 def inspect_version_zip(path: Path | str) -> VersionZipInfo:
     archive = Path(path)
     if not archive.is_file():
         raise VersionZipError("版本压缩包不存在")
     try:
-        size = archive.stat().st_size
+        stat = archive.stat()
+    except OSError as exc:
+        raise VersionZipError(f"无法打开压缩包：{exc}") from exc
+    key = (str(archive.resolve()), stat.st_mtime_ns, stat.st_size)
+    with _INSPECT_CACHE_LOCK:
+        cached = _INSPECT_CACHE.get(key)
+    if cached is not None:
+        return cached
+    result = _inspect_version_zip(archive, stat.st_size)
+    with _INSPECT_CACHE_LOCK:
+        if len(_INSPECT_CACHE) >= _INSPECT_CACHE_MAX:
+            _INSPECT_CACHE.pop(next(iter(_INSPECT_CACHE)))
+        _INSPECT_CACHE[key] = result
+    return result
+
+
+def _inspect_version_zip(archive: Path, size: int) -> VersionZipInfo:
+    try:
         with zipfile.ZipFile(archive) as zf:
             infos = zf.infolist()
             if len(infos) > MAX_TOTAL_FILES:
@@ -462,17 +490,20 @@ def import_version_zip(
     run_dir = version_game_dir(game_dir, version_id, isolated)
 
     progress(2, "读取 ZIP 版本信息…")
+    fresh_version_dir = not version_dir.exists()
     version_dir.mkdir(parents=True, exist_ok=True)
+    total_bytes = max(1, candidate.total_bytes)
+    json_destination = game_dir / "versions" / version_id / f"{version_id}.json"
+    json_size = 0
+    json_added = False
     skipped = 0
     added = 0
     added_bytes = 0
-    done_bytes = 0
-    total_bytes = max(1, candidate.total_bytes)
 
+    jobs: list[ExtractJob] = []
+    seen_destinations: dict[str, int] = {}
     with zipfile.ZipFile(Path(zip_path)) as zf:
         for entry in zf.infolist():
-            if cancel.is_set():
-                raise VersionZipError("导入已取消")
             if entry.is_dir():
                 continue
             name = _safe_member(entry.filename)
@@ -489,35 +520,71 @@ def import_version_zip(
                 destination.resolve().relative_to(game_dir.resolve())
             except ValueError as exc:
                 raise VersionZipError(f"压缩包路径越界：{name}") from exc
-            if destination.exists() and not overwrite:
-                skipped += 1
-                done_bytes += max(0, int(entry.file_size))
+            if name == candidate.json_member:
+                json_size = max(0, int(entry.file_size))
                 continue
-            destination.parent.mkdir(parents=True, exist_ok=True)
-            try:
-                if destination.name == f"{version_id}.json" and destination.parent == (
-                    game_dir / "versions" / version_id
-                ):
-                    data = dict(candidate.json_data)
-                    data["id"] = version_id
-                    if str(data.get("jar") or "") == candidate.version_id:
-                        data["jar"] = version_id
-                    destination.write_text(
-                        json.dumps(data, ensure_ascii=False, indent=2),
-                        encoding="utf-8",
-                    )
-                else:
-                    with zf.open(entry) as src, destination.open("wb") as out:
-                        shutil.copyfileobj(src, out, 1024 * 1024)
-            except Exception as exc:
-                raise VersionZipError(f"解压 {name} 失败：{exc}") from exc
-            added += 1
-            added_bytes += max(0, int(entry.file_size))
-            done_bytes += max(0, int(entry.file_size))
-            progress(
-                min(55, 5 + int(50 * done_bytes / total_bytes)),
-                f"放入 {relative}",
+            job = ExtractJob(
+                entry,
+                destination,
+                relative,
+                check_exists=not (
+                    fresh_version_dir
+                    and isolated
+                    and version_dir in destination.parents
+                ),
             )
+            key = str(destination).lower()
+            if key in seen_destinations:
+                jobs[seen_destinations[key]] = job
+            else:
+                seen_destinations[key] = len(jobs)
+                jobs.append(job)
+
+    if json_destination.exists() and not overwrite:
+        skipped += 1
+    else:
+        data = dict(candidate.json_data)
+        data["id"] = version_id
+        if str(data.get("jar") or "") == candidate.version_id:
+            data["jar"] = version_id
+        json_destination.parent.mkdir(parents=True, exist_ok=True)
+        json_destination.write_text(
+            json.dumps(data, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+        json_added = True
+        added += 1
+        added_bytes += json_size
+
+    def extraction_progress(done_bytes: int, _files: int, label: str) -> None:
+        if cancel.is_set():
+            return
+        progress(
+            min(55, 5 + int(50 * (done_bytes + json_size) / total_bytes)),
+            f"放入 {label}" if label else "放入版本文件…",
+        )
+
+    extract_threads = max(
+        1, min(DEFAULT_EXTRACT_THREADS, int(threads or DEFAULT_EXTRACT_THREADS))
+    )
+    try:
+        stats = extract_zip_entries(
+            zip_path,
+            jobs,
+            threads=extract_threads,
+            overwrite=overwrite,
+            cancel_event=cancel,
+            progress_cb=extraction_progress,
+        )
+    except ZipExtractCancelled as exc:
+        raise VersionZipError("导入已取消") from exc
+    except ZipExtractError as exc:
+        raise VersionZipError(f"解压失败：{exc}") from exc
+    if cancel.is_set():
+        raise VersionZipError("导入已取消")
+    added += stats.added
+    skipped += stats.skipped
+    added_bytes += stats.bytes_written
 
     if not version_json_path(game_dir, version_id).is_file():
         raise VersionZipError("压缩包里缺少版本 JSON，无法完成导入")

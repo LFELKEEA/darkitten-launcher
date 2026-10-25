@@ -59,6 +59,20 @@ class FakeInstaller:
         self.calls.append(version_id)
 
 
+class OrderInstaller(FakeInstaller):
+    def __init__(self, run_dir: Path) -> None:
+        super().__init__()
+        self.run_dir = run_dir
+        self.content_ready = False
+
+    def install(self, version_id: str) -> None:
+        self.content_ready = (
+            (self.run_dir / "mods" / "demo.jar").is_file()
+            and (self.run_dir / "config" / "demo.toml").is_file()
+        )
+        super().install(version_id)
+
+
 def check(label: str, value: bool, detail: str = "") -> bool:
     print(f"{label}: {'OK' if value else 'FAIL'}" + (f" ({detail})" if detail else ""))
     return value
@@ -108,7 +122,8 @@ def main() -> None:
         ok &= check("total_files", info.total_files == 5, str(info.total_files))
 
         target = root / "target-game"
-        installer = FakeInstaller()
+        target_run = target / "versions" / "RestoredCat"
+        installer = OrderInstaller(target_run)
         result = import_pack(
             pack_path,
             target,
@@ -116,8 +131,8 @@ def main() -> None:
             isolated=True,
             installer=installer,
         )
-        target_run = target / "versions" / "RestoredCat"
         ok &= check("installer_called", installer.calls == ["RestoredCat"], str(installer.calls))
+        ok &= check("content_before_install", installer.content_ready)
         ok &= check("mod_restored", (target_run / "mods" / "demo.jar").read_bytes() == b"jar-data")
         ok &= check("disabled_restored", (target_run / "mods" / "disabled.jar.disabled").is_file())
         ok &= check("config_restored", (target_run / "config" / "demo.toml").is_file())

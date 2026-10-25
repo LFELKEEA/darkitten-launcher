@@ -3,7 +3,6 @@ from __future__ import annotations
 import json
 import os
 import re
-import shutil
 import threading
 import uuid
 import zipfile
@@ -16,6 +15,13 @@ from .config import APP_NAME, APP_VERSION
 from .installer import Installer
 from .paths import version_game_dir
 from .versions import resolve_version, version_json_path
+from .zip_extract import (
+    DEFAULT_EXTRACT_THREADS,
+    ExtractJob,
+    ZipExtractCancelled,
+    ZipExtractError,
+    extract_zip_entries,
+)
 
 PACK_FORMAT = "dklpack"
 PACK_FORMAT_VERSION = 1
@@ -500,13 +506,86 @@ def import_pack(
     cancel = cancel_event or threading.Event()
 
     progress(2, "解包版本信息…")
+    fresh_version_dir = not version_dir.exists()
     _write_version_json(game_dir, version_id, info.version_json)
     log(f"已写入版本骨架：{version_id}")
+
+    run_dir = version_game_dir(game_dir, version_id, isolated)
+    run_dir.mkdir(parents=True, exist_ok=True)
+    jobs: list[ExtractJob] = []
+    seen_destinations: dict[str, int] = {}
+    total = 1
+    with zipfile.ZipFile(Path(pack_path)) as zf:
+        for entry in zf.infolist():
+            if entry.is_dir():
+                continue
+            name = entry.filename.replace("\\", "/")
+            if not _allowed_content_name(name):
+                continue
+            safe_name = _safe_archive_name(entry.filename)
+            destination = run_dir / safe_name
+            try:
+                destination.resolve().relative_to(run_dir.resolve())
+            except ValueError as exc:
+                raise PackError(f"整合包路径越界：{safe_name}") from exc
+            job = ExtractJob(
+                entry,
+                destination,
+                safe_name,
+                check_exists=not (
+                    fresh_version_dir
+                    and isolated
+                    and version_dir in destination.parents
+                ),
+            )
+            key = str(destination).lower()
+            if key in seen_destinations:
+                jobs[seen_destinations[key]] = job
+            else:
+                seen_destinations[key] = len(jobs)
+                jobs.append(job)
+        total = max(
+            1, sum(max(0, int(entry.info.file_size)) for entry in jobs)
+        )
+
+    def content_progress(done_bytes: int, _files: int, label: str) -> None:
+        if cancel.is_set():
+            return
+        progress(
+            min(66, 5 + int(60 * done_bytes / total)),
+            f"放入 {label}" if label else "放入整合包内容…",
+        )
+
+    try:
+        stats = extract_zip_entries(
+            pack_path,
+            jobs,
+            threads=max(
+                1,
+                min(DEFAULT_EXTRACT_THREADS, int(threads or DEFAULT_EXTRACT_THREADS)),
+            ),
+            overwrite=overwrite,
+            cancel_event=cancel,
+            progress_cb=content_progress,
+        )
+    except ZipExtractCancelled as exc:
+        raise PackError("导入已取消") from exc
+    except ZipExtractError as exc:
+        raise PackError(f"解压失败：{exc}") from exc
+    if cancel.is_set():
+        raise PackError("导入已取消")
+    imported = stats.added
+    skipped = stats.skipped
+    imported_bytes = stats.bytes_written
+    log(
+        f"整合包内容已放入版本文件夹：新增 {imported} 个文件"
+        + (f"，跳过 {skipped} 个已存在文件" if skipped else "")
+    )
 
     def mapped_progress(percent: int, message: str) -> None:
         if cancel.is_set():
             raise PackError("导入已取消")
-        progress(8 + int(max(0, min(100, percent)) * 0.80), message)
+        progress(67 + int(max(0, min(100, percent)) * 0.32), message)
 
     if installer is None:
         installer = Installer(
@@ -517,55 +596,10 @@ def import_pack(
             cancel_event=cancel,
             threads=threads,
         )
-    progress(8, "补齐原版、依赖库与资源文件…")
+    progress(67, "补齐原版、依赖库与资源文件…")
     installer.install(version_id)
     if cancel.is_set():
         raise PackError("导入已取消")
-
-    run_dir = version_game_dir(game_dir, version_id, isolated)
-    imported = 0
-    skipped = 0
-    imported_bytes = 0
-
-    with zipfile.ZipFile(Path(pack_path)) as zf:
-        entries = [
-            entry
-            for entry in zf.infolist()
-            if not entry.is_dir()
-            and _allowed_content_name(entry.filename.replace("\\", "/"))
-        ]
-        total = sum(max(0, int(entry.file_size)) for entry in entries) or 1
-        done_bytes = 0
-        for entry in entries:
-            if cancel.is_set():
-                raise PackError("导入已取消")
-            name = _safe_archive_name(entry.filename)
-            destination = run_dir / name
-            try:
-                destination.resolve().relative_to(run_dir.resolve())
-            except ValueError as exc:
-                raise PackError(f"整合包路径越界：{name}") from exc
-            if destination.exists() and not overwrite:
-                skipped += 1
-                done_bytes += max(0, int(entry.file_size))
-                progress(
-                    min(99, 88 + int(11 * done_bytes / total)),
-                    f"跳过已有文件 {name}",
-                )
-                continue
-            destination.parent.mkdir(parents=True, exist_ok=True)
-            try:
-                with zf.open(entry) as src, destination.open("wb") as out:
-                    shutil.copyfileobj(src, out, 1024 * 1024)
-            except Exception as exc:
-                raise PackError(f"解压 {name} 失败：{exc}") from exc
-            imported += 1
-            imported_bytes += max(0, int(entry.file_size))
-            done_bytes += max(0, int(entry.file_size))
-            progress(
-                min(99, 88 + int(11 * done_bytes / total)),
-                f"放入 {name}",
-            )
 
     progress(100, "猫猫已经把整合包搬进猫窝")
     log(

@@ -77,7 +77,12 @@ from . import icons, theme
 from .animations import GameLoadingOverlay
 from .command_palette import CommandPalette
 from .dialogs import ConfirmDialog, NoticeDialog
-from .download_center import DownloadCenter, DownloadTasksDialog, TopDownloadChip
+from .download_center import (
+    IMPORT_TYPES,
+    DownloadCenter,
+    DownloadTasksDialog,
+    TopDownloadChip,
+)
 from .feedback_dialog import FeedbackDialog
 from .update_dialog import UpdateDialog
 from .pages.download import DownloadPage
@@ -274,6 +279,9 @@ class MainWindow(QWidget):
         self._install_version = ""
         self._install_success_callback = None
         self._install_cancelling = False
+        self._install_last_percent = 0
+        self._install_last_message = ""
+        self._import_status_active = False
         self.launch_worker: LaunchWorker | None = None
         self.launch_active = False
         self._launch_cancel_requested = False
@@ -385,6 +393,8 @@ class MainWindow(QWidget):
         self.account_changed.connect(self._update_account)
         self.account_changed.connect(self.home_page._refresh_status)
         self.download_center.tasks_changed.connect(self._refresh_download_chip)
+        self.download_center.task_progress.connect(self._on_task_progress)
+        self.download_center.tasks_changed.connect(self._sync_import_status)
         self.download_center.task_finished.connect(self._on_download_task_finished)
 
         self.speed_timer = QTimer(self)
@@ -1330,14 +1340,19 @@ class MainWindow(QWidget):
         worker.progress.connect(self._on_install_progress)
         worker.log_line.connect(self._on_task_log)
         worker.finished.connect(self._on_install_finished)
+        self._install_last_percent = 0
+        self._install_last_message = ""
         self.install_started.emit(version_id)
-        self.set_status(f"正在安装 {version_id}…", "busy")
-        self.progress_bar.setValue(0)
-        self.progress_bar.setVisible(True)
-        self.speed_label.setText("")
-        self.speed_label.setVisible(True)
+        if self._active_import_task() is None:
+            self.set_status(f"正在安装 {version_id}…", "busy")
+            self.progress_bar.setValue(0)
+            self.progress_bar.setVisible(True)
+            self.speed_label.setText("")
+            self.speed_label.setVisible(True)
+            self._update_action_button()
+        else:
+            self._sync_import_status()
         self.speed_timer.start()
-        self._update_action_button()
         self.log(f"开始安装 {version_id}（{self.config.download_source}）")
         self._install_task = self.download_center.start_worker(
             worker,
@@ -1351,6 +1366,11 @@ class MainWindow(QWidget):
         )
 
     def _on_install_progress(self, percent: int, message: str) -> None:
+        self._install_last_percent = int(percent)
+        self._install_last_message = str(message)
+        if self._active_import_task() is not None:
+            # 导入优先占用底栏，安装进度只记录，等导入结束后再恢复显示。
+            return
         self.progress_bar.setValue(percent)
         self.set_status(f"{self._install_version} · {message}", "busy")
 
@@ -1369,23 +1389,31 @@ class MainWindow(QWidget):
         cancelled = (not success) and (
             was_cancelling or "取消" in str(message)
         )
+        import_active = self._active_import_task() is not None
         self.install_active = False
         self._install_cancelling = False
-        self.speed_timer.stop()
-        self.speed_label.setText("")
-        self.speed_label.setVisible(False)
-        self.progress_bar.setVisible(False)
-        self.progress_bar.setValue(100 if success else 0)
+        if import_active:
+            # 导入仍在进行，底栏继续显示导入任务，不让安装结果覆盖。
+            self._sync_import_status()
+        else:
+            self.speed_timer.stop()
+            self.speed_label.setText("")
+            self.speed_label.setVisible(False)
+            self.progress_bar.setVisible(False)
+            self.progress_bar.setValue(100 if success else 0)
         if success:
-            self.set_status(f"{version_id} 安装完成", "success")
+            if not import_active:
+                self.set_status(f"{version_id} 安装完成", "success")
             self.log(f"{version_id} 安装完成")
             self.toast(f"{version_id} 已准备就绪", "success")
         elif cancelled:
-            self.set_status(f"已取消安装 {version_id}", "idle")
+            if not import_active:
+                self.set_status(f"已取消安装 {version_id}", "idle")
             self.log(f"已取消安装 {version_id}")
             self.toast("安装已取消，临时下载文件已清理", "info")
         else:
-            self.set_status(f"安装失败：{message}", "error")
+            if not import_active:
+                self.set_status(f"安装失败：{message}", "error")
             self.log(f"安装失败：{message}")
             self.toast(f"安装失败：{message}", "error")
 
@@ -1409,10 +1437,80 @@ class MainWindow(QWidget):
         self.action_cancel_btn.setText("正在取消…")
         self.action_cancel_btn.setEnabled(False)
 
+    def _active_import_task(self):
+        if not hasattr(self, "download_center"):
+            return None
+        for task in reversed(self.download_center.active_tasks()):
+            if task.content_type in IMPORT_TYPES:
+                return task
+        return None
+
+    def _on_task_progress(self, task_id: int, _percent: int, _message: str) -> None:
+        task = self.download_center.task(task_id)
+        if task is not None and task.content_type in IMPORT_TYPES:
+            self._sync_import_status()
+
+    def _sync_import_status(self) -> None:
+        task = self._active_import_task()
+        if task is not None:
+            self._import_status_active = True
+            label = task.target.name or task.title
+            prefix = {
+                "modpack": "导入整合包",
+                "version-import": "导入版本",
+                "local-import": "导入内容",
+            }.get(task.content_type, "导入")
+            message = str(task.message or "").strip()
+            if not message or message == "准备下载…":
+                message = "准备导入…"
+            self.set_status(f"{prefix} {label} · {message}", "busy")
+            self.progress_bar.setValue(task.progress)
+            self.progress_bar.setVisible(True)
+            self.speed_label.setText("")
+            self.speed_label.setVisible(False)
+            pending = message.startswith("正在取消")
+            self.action_cancel_btn.setText("正在取消…" if pending else "取消导入")
+            self.action_cancel_btn.setEnabled(not pending)
+            self.action_cancel_btn.setVisible(True)
+            return
+        if not self._import_status_active:
+            return
+        self._import_status_active = False
+        self.progress_bar.setVisible(False)
+        self.speed_label.setText("")
+        self.speed_label.setVisible(False)
+        self.action_cancel_btn.setVisible(False)
+        if self.install_active:
+            self._restore_install_status()
+        else:
+            self.speed_timer.stop()
+
+    def _restore_install_status(self) -> None:
+        if not self.install_active:
+            return
+        if self._install_last_message:
+            self.set_status(
+                f"{self._install_version} · {self._install_last_message}", "busy"
+            )
+        else:
+            self.set_status(f"正在安装 {self._install_version}…", "busy")
+        self.progress_bar.setValue(self._install_last_percent)
+        self.progress_bar.setVisible(True)
+        self.speed_label.setVisible(True)
+        self.speed_timer.start()
+        self._update_action_button()
+
     def _update_action_button(self) -> None:
         if not hasattr(self, "action_cancel_btn"):
             return
         self.action_cancel_btn.setEnabled(True)
+        import_task = self._active_import_task()
+        if import_task is not None:
+            pending = str(import_task.message or "").startswith("正在取消")
+            self.action_cancel_btn.setText("正在取消…" if pending else "取消导入")
+            self.action_cancel_btn.setEnabled(not pending)
+            self.action_cancel_btn.setVisible(True)
+            return
         if self.install_active:
             self.action_cancel_btn.setText(
                 "正在取消…" if self._install_cancelling else "取消安装"
@@ -1435,6 +1533,12 @@ class MainWindow(QWidget):
             self.action_cancel_btn.setVisible(False)
 
     def cancel_current_action(self) -> None:
+        import_task = self._active_import_task()
+        if import_task is not None:
+            self.download_center.cancel(import_task.id)
+            self.action_cancel_btn.setText("正在取消…")
+            self.action_cancel_btn.setEnabled(False)
+            return
         if self.install_active:
             self.cancel_install()
         elif self.launch_active:

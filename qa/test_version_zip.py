@@ -67,6 +67,10 @@ def main() -> None:
         build_game_dir_zip(archive)
 
         info = inspect_version_zip(archive)
+        ok &= check(
+            "inspect_cached",
+            inspect_version_zip(archive) is info,
+        )
         candidate = info.primary
         ok &= check("candidate_id", candidate.version_id == "TestZip", candidate.version_id)
         ok &= check("layout", candidate.layout == "game_dir", candidate.layout)
@@ -238,6 +242,57 @@ def main() -> None:
             ok &= check("no_json_rejected", False)
         except VersionZipError:
             ok &= check("no_json_rejected", True)
+
+        many = root / "many.zip"
+        with zipfile.ZipFile(many, "w") as zf:
+            zf.writestr("versions/Many/Many.json", version_json("Many"))
+            for index in range(1200):
+                zf.writestr(f"versions/Many/mods/m{index:04d}.jar", b"x" * 32)
+        many_target = root / "many-game"
+        calls: list[int] = []
+        import_version_zip(
+            many,
+            many_target,
+            "ManyRestored",
+            isolated=True,
+            complete=False,
+            progress_cb=lambda percent, _message: calls.append(percent),
+        )
+        ok &= check(
+            "many_files_imported",
+            (many_target / "versions/ManyRestored/mods/m1199.jar").is_file(),
+        )
+        ok &= check("progress_throttled", len(calls) < 300, str(len(calls)))
+        ok &= check("progress_final", calls[-1] == 100, str(calls[-1]))
+
+        cancel_zip = root / "cancel.zip"
+        with zipfile.ZipFile(cancel_zip, "w") as zf:
+            zf.writestr("versions/Cancel/Cancel.json", version_json("Cancel"))
+            zf.writestr("versions/Cancel/mods/a.jar", b"a")
+        cancel_event = __import__("threading").Event()
+        cancel_event.set()
+        try:
+            import_version_zip(
+                cancel_zip,
+                root / "cancel-game",
+                "CancelRestored",
+                isolated=True,
+                complete=False,
+                cancel_event=cancel_event,
+            )
+            ok &= check("cancel_rejected", False)
+        except VersionZipError:
+            ok &= check("cancel_rejected", True)
+
+        import os
+        import time
+
+        stamp = archive.stat().st_mtime_ns
+        os.utime(archive, ns=(stamp + 5_000_000_000, stamp + 5_000_000_000))
+        ok &= check(
+            "inspect_cache_invalidated",
+            inspect_version_zip(archive) is not info,
+        )
 
     print("RESULT:", "PASS" if ok else "FAIL")
     raise SystemExit(0 if ok else 1)

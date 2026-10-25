@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 import re
-import shutil
 import threading
 import zipfile
 from concurrent.futures import ThreadPoolExecutor
@@ -21,6 +20,13 @@ from .loaders import install_loader
 from .paths import version_game_dir
 from .packs import normalize_version_id
 from .versions import version_json_path
+from .zip_extract import (
+    DEFAULT_EXTRACT_THREADS,
+    ExtractJob,
+    ZipExtractCancelled,
+    ZipExtractError,
+    extract_zip_entries,
+)
 
 CURSEFORGE_MANIFEST = "manifest.json"
 MAX_MANIFEST_BYTES = 2 * 1024 * 1024
@@ -598,10 +604,11 @@ def import_curseforge_pack(
         downloaded = 0
 
     override_total = sum(max(0, item.size) for item in info.overrides) or 1
-    override_done = 0
-    written: set[str] = set()
+    jobs: list[ExtractJob] = []
+    groups: dict[str, list[int]] = {}
     try:
         with zipfile.ZipFile(info.path) as zf:
+            indexes: dict[str, int] = {}
             for item in info.overrides:
                 check_cancel()
                 destination = _inside(run_dir, run_dir / item.relative)
@@ -614,37 +621,69 @@ def import_curseforge_pack(
                     raise CurseForgePackError(
                         "整合包覆盖文件试图替换版本 JSON，已拒绝导入"
                     )
-                key = item.relative.lower()
-                if destination.exists() and not overwrite and key not in written:
-                    skipped += 1
-                    override_done += max(0, item.size)
-                    progress(
-                        min(99, 92 + int(7 * override_done / override_total)),
-                        f"跳过已有文件 {item.relative}",
-                    )
-                    continue
-                destination.parent.mkdir(parents=True, exist_ok=True)
                 try:
-                    with zf.open(item.member) as src, destination.open("wb") as out:
-                        shutil.copyfileobj(src, out, 1024 * 1024)
-                except Exception as exc:
+                    entry = zf.getinfo(item.member)
+                except KeyError as exc:
                     raise CurseForgePackError(
-                        f"解压覆盖文件 {item.relative} 失败：{exc}"
+                        f"整合包里找不到覆盖文件：{item.relative}"
                     ) from exc
-                written.add(key)
-                imported += 1
-                imported_bytes += max(0, item.size)
-                override_done += max(0, item.size)
-                progress(
-                    min(99, 92 + int(7 * override_done / override_total)),
-                    f"放入 {item.relative}",
-                )
+                job = ExtractJob(entry, destination, item.relative)
+                key = item.relative.lower()
+                if key in indexes:
+                    jobs[indexes[key]] = job
+                    groups[key][0] += 1
+                    groups[key][1] += max(0, item.size)
+                else:
+                    indexes[key] = len(jobs)
+                    groups[key] = [
+                        1,
+                        max(0, item.size),
+                        1 if destination.exists() else 0,
+                    ]
+                    jobs.append(job)
     except CurseForgePackError:
         raise
     except zipfile.BadZipFile as exc:
         raise CurseForgePackError("整合包在导入过程中损坏") from exc
     except OSError as exc:
-        raise CurseForgePackError(f"写入整合包文件失败：{exc}") from exc
+        raise CurseForgePackError(f"读取整合包文件失败：{exc}") from exc
+
+    check_cancel()
+
+    def override_progress(done_bytes: int, _files: int, label: str) -> None:
+        if label:
+            progress(
+                min(99, 92 + int(7 * done_bytes / override_total)),
+                f"放入 {label}",
+            )
+
+    extract_threads = max(
+        1, min(DEFAULT_EXTRACT_THREADS, int(threads or DEFAULT_EXTRACT_THREADS))
+    )
+    try:
+        stats = extract_zip_entries(
+            info.path,
+            jobs,
+            threads=extract_threads,
+            overwrite=overwrite,
+            cancel_event=cancel,
+            progress_cb=override_progress,
+        )
+    except ZipExtractCancelled as exc:
+        raise CurseForgePackError("导入已取消") from exc
+    except ZipExtractError as exc:
+        raise CurseForgePackError(f"解压覆盖文件失败：{exc}") from exc
+    imported += stats.added
+    skipped += stats.skipped
+    imported_bytes += stats.bytes_written
+    for count, size, existed in groups.values():
+        if count <= 1:
+            continue
+        if existed and not overwrite:
+            skipped += count - 1
+        else:
+            imported += count - 1
+            imported_bytes += size
 
     check_cancel()
     progress(100, "猫猫已经把 CurseForge 整合包搬进猫窝")

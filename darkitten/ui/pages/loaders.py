@@ -231,7 +231,7 @@ class LoaderPage(QWidget):
         titles.addWidget(title)
         titles.addWidget(sub)
         header.addLayout(titles, 1)
-        header.addWidget(ChibiCompanion(60, "mods"), 0, Qt.AlignTop)
+        header.addWidget(ChibiCompanion(60, "loaders"), 0, Qt.AlignTop)
         self.install_btn = QPushButton("安装加载器")
         self.install_btn.setObjectName("Primary")
         self.install_btn.setCursor(Qt.PointingHandCursor)
