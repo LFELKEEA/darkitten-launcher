@@ -940,15 +940,30 @@ class MainWindow(QWidget):
         if release is not None and getattr(release, "page_url", ""):
             url = str(release.page_url)
         else:
-            parsed = urllib.parse.urlsplit(
+            url = self._site_url_from_update_url(
                 str(self.config.update_url or DEFAULT_UPDATE_URL)
             )
-            if parsed.scheme in ("http", "https") and parsed.netloc:
-                url = f"{parsed.scheme}://{parsed.netloc}/"
         if not url:
             self.toast("这个更新源没有提供下载站地址", "info")
             return
         QDesktopServices.openUrl(QUrl(url))
+
+    @staticmethod
+    def _site_url_from_update_url(update_url: str) -> str:
+        """更新源未提供 page_url 时，从清单地址推导站点根地址。
+
+        不能只取 scheme + netloc：GitHub Pages 项目站部署在
+        /darkitten-launcher/ 子路径下，丢掉路径会打开用户站根目录（404）。
+        """
+        parsed = urllib.parse.urlsplit(str(update_url or "").strip())
+        if parsed.scheme not in ("http", "https") or not parsed.netloc:
+            return ""
+        path = parsed.path or "/"
+        if not path.endswith("/"):
+            path = path.rsplit("/", 1)[0] + "/"
+        return urllib.parse.urlunsplit(
+            (parsed.scheme, parsed.netloc, path, "", "")
+        )
 
     def closeEvent(self, event: QCloseEvent) -> None:
         if hasattr(self, "loading_overlay"):

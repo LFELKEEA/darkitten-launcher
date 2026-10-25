@@ -1,22 +1,19 @@
 {
-  "version": "1.11.0",
+  "version": "1.11.1",
   "released": "2026-10-25",
   "notes": [
-    "修复导入整合包或版本时底栏文案被后台更新检查覆盖的问题：不会再出现“已是最新版本”和“取消导入”按钮同时显示的错位状态；导入进行期间底栏由当前导入任务独占，结束后自动恢复安装进度或空闲状态。",
-    "修复整合包导入进度被错误压缩到 3% 的问题：加载器安装阶段现在正确映射到总进度的 3%–45%，依赖库下载到 82/83 时会显示约 37%，不再长时间停在 3%。",
-    "优化依赖库下载顺序与连接数：先下载体积最大的依赖库，避免最后只剩一个几十 MB 的文件拖住整体进度；小于 1 MB 的文件使用单连接，1–4 MB 使用 2 连接，更大的使用 4 连接，并提升到最多 20 个并发文件，减少小文件反复握手和过量分段连接。",
-    "依赖库进度改为按已处理字节计算，并同时显示已完成 MB / 总 MB；进度条更平滑，完成后准确收尾到依赖库阶段节点。",
-    "设置页“下载站”按钮现在直接打开 https://lfelkeea.github.io/darkitten-launcher/，与更新清单保持一致，不再附带 index.html。",
-    "本次只调整底栏导入状态、整合包进度映射、依赖库下载调度与下载站地址，已保存的游戏版本、Mod、配置、皮肤、账户、服务器与联机房间均保持不变。"
+    "修复设置页“下载站”按钮在未发现新版本时打开 https://lfelkeea.github.io 空站点的问题：检查更新结果为“已是最新版本”后，按钮此前会丢失清单里的站点地址，只回退到域名根目录。",
+    "下载站地址回退逻辑改为保留更新清单所在子路径：默认源现在打开 https://lfelkeea.github.io/darkitten-launcher/，自定义更新源也会打开 update.json 所在目录，而不是域名根目录。",
+    "新增回归测试覆盖“已是最新版本后点击下载站”、自定义更新源子路径、根路径清单与清单 page_url 优先级；其他功能与已保存的游戏数据不变。"
   ],
-  "download_url": "downloads/DKL-1.11.0-update.zip",
+  "download_url": "downloads/DKL-1.11.1-update.zip",
   "page_url": "https://lfelkeea.github.io/darkitten-launcher/",
-  "source_url": "downloads/DarkittenLauncher-1.11.0-source.zip",
-  "source_txt_url": "downloads/DarkittenLauncher-1.11.0-source.txt",
-  "sha256": "e6ad2536020db893df8c7e4e87a25a1cba9655ecbcf464d46a2b7a267d10b7b6",
-  "size": 904520,
-  "source_sha256": "842c4cc4f21a86434a0957bd9337132033876e7f433246c2c34c84dedc6f09fe",
-  "source_size": 907318,
-  "source_txt_sha256": "dad8c5597af5ae2eda1c1b0d7478d73ef67fd06c5608c4147682e47862f12345",
-  "source_txt_size": 2026882
+  "source_url": "downloads/DarkittenLauncher-1.11.1-source.zip",
+  "source_txt_url": "downloads/DarkittenLauncher-1.11.1-source.txt",
+  "sha256": "65864392fb5ffc345dc0174d0958eb9ab89f8cbb07cf2b39bd0d8469ee0c0c5e",
+  "size": 904759,
+  "source_sha256": "f45a5da69815cd62621fe4e8f9c25c925d478e54046bb75cb27ce3c11297707f",
+  "source_size": 907559,
+  "source_txt_sha256": "494113645447f8d0a394466a54812dd6fd1165a79302bba2234c55eed3b96164",
+  "source_txt_size": 2027239
 }

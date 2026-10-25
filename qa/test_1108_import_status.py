@@ -21,7 +21,7 @@ def main() -> int:
     from PySide6.QtWidgets import QApplication
 
     app = QApplication.instance() or QApplication([])
-    from darkitten.config import Config
+    from darkitten.config import APP_VERSION, Config
     from darkitten.ui.download_center import DownloadTask, TASK_RUNNING
     from darkitten.ui.main_window import MainWindow
     from darkitten.ui.widgets import ChibiCompanion
@@ -194,18 +194,19 @@ def main() -> int:
         check("import finished hides progress", not window.progress_bar.isVisible())
         check("import finished hides cancel", not window.action_cancel_btn.isVisible())
 
-        window.set_status("已是最新版本 v1.11.0", "success")
+        latest_text = f"已是最新版本 v{APP_VERSION}"
+        window.set_status(latest_text, "success")
         app.processEvents()
         check(
             "normal status resumes after import",
-            window.status_text.text() == "已是最新版本 v1.11.0",
+            window.status_text.text() == latest_text,
             window.status_text.text(),
         )
 
         window.close()
         window.deleteLater()
         app.processEvents()
-    print("all 1.10.8 import status checks passed")
+    print("all import status checks passed")
     return 0
 
 
