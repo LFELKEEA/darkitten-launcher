@@ -20,7 +20,7 @@ from .downloader import (
 from .installer import Installer
 from .loaders import install_loader
 from .paths import version_game_dir
-from .packs import normalize_version_id
+from .packs import loader_stage_percent, normalize_version_id
 from .versions import version_json_path
 from .zip_extract import (
     DEFAULT_EXTRACT_THREADS,
@@ -509,7 +509,7 @@ def import_modrinth_pack(
 
     def loader_progress(percent: int, message: str) -> None:
         check_cancel()
-        progress(3 + int(max(0, min(100, percent)) * 0.42 / 100), message)
+        progress(loader_stage_percent(percent), message)
 
     mc_version = info.minecraft_version
     loader_kind = info.loader_kind

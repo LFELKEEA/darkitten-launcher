@@ -104,6 +104,26 @@ def main() -> int:
             window.status_text.text(),
         )
 
+        # 后台更新检查完成时不能覆盖导入文案，否则会出现
+        # “已是最新版本”和“取消导入”按钮同时存在的错位状态。
+        window.set_status("已是最新版本 v1.10.8", "success")
+        app.processEvents()
+        check(
+            "background status cannot overwrite import",
+            "导入整合包 TestPack" in window.status_text.text(),
+            window.status_text.text(),
+        )
+        check(
+            "background status keeps import progress",
+            window.progress_bar.value() == 55,
+            str(window.progress_bar.value()),
+        )
+        check(
+            "background status keeps import cancel",
+            window.action_cancel_btn.text() == "取消导入",
+            window.action_cancel_btn.text(),
+        )
+
         # 同时存在安装任务时，导入优先占用底栏。
         window.install_active = True
         window._install_version = "1.21.11"
@@ -173,6 +193,14 @@ def main() -> int:
         app.processEvents()
         check("import finished hides progress", not window.progress_bar.isVisible())
         check("import finished hides cancel", not window.action_cancel_btn.isVisible())
+
+        window.set_status("已是最新版本 v1.11.0", "success")
+        app.processEvents()
+        check(
+            "normal status resumes after import",
+            window.status_text.text() == "已是最新版本 v1.11.0",
+            window.status_text.text(),
+        )
 
         window.close()
         window.deleteLater()

@@ -324,6 +324,7 @@ class Installer:
         verify: bool = False,
         label: str = "",
         skipped_bytes: list[int] | None = None,
+        connections: int | None = None,
     ) -> bool:
         """下载单个文件。返回是否真正执行了下载。"""
         self._check_cancel()
@@ -343,6 +344,11 @@ class Installer:
                 pass
 
         errors: list[str] = []
+        file_connections = (
+            self.segments
+            if connections is None
+            else max(1, min(16, int(connections)))
+        )
         for candidate in mirror_urls(url, self.effective_source):
             self._check_cancel()
             last = [0]
@@ -360,7 +366,7 @@ class Installer:
                     size=size,
                     cancel_event=self.cancel_event,
                     progress_cb=on_bytes,
-                    connections=self.segments,
+                    connections=file_connections,
                 )
                 report_success(candidate)
                 return True
@@ -524,6 +530,16 @@ class Installer:
                 last_error = exc
         raise DownloadError(f"客户端 jar 下载失败：{last_error}")
 
+    @staticmethod
+    def _library_connections(size: int, segments: int) -> int:
+        """依赖库单文件的分段数：小文件别为几十 KB 反复握手。"""
+        size = max(0, int(size))
+        if size < 1024 * 1024:
+            return 1
+        if size < 4 * 1024 * 1024:
+            return min(segments, 2)
+        return min(segments, 4)
+
     def _install_libraries(self, resolved: ResolvedVersion, verify: bool = False) -> None:
         arts = active_library_artifacts(resolved)
         native_arts = [n.artifact for n in active_natives(resolved)]
@@ -534,14 +550,21 @@ class Installer:
                 seen.add(art.path)
                 all_arts.append(art)
 
+        # 大文件先下，避免最后只剩一个几十 MB 的依赖库拖住整个进度。
+        all_arts.sort(key=lambda art: max(0, int(art.size)), reverse=True)
         total = len(all_arts)
-        self.log(f"检查依赖库（{total} 个文件）")
+        total_bytes = sum(max(0, int(art.size)) for art in all_arts)
+        self.log(
+            f"检查依赖库（{total} 个文件，"
+            f"{total_bytes / 1024 / 1024:.1f} MB）"
+        )
         done = 0
+        done_bytes = 0
         failures: list[str] = []
         lock = threading.Lock()
 
         def worker(art) -> None:
-            nonlocal done
+            nonlocal done, done_bytes
             self._check_cancel()
             dest = libraries_dir(self.game_dir) / art.path
             try:
@@ -553,6 +576,9 @@ class Installer:
                         size=art.size,
                         verify=verify,
                         label=art.name or Path(art.path).name,
+                        connections=self._library_connections(
+                            art.size, self.segments
+                        ),
                     )
             except InstallCancelled:
                 raise
@@ -563,19 +589,35 @@ class Installer:
             finally:
                 with lock:
                     done += 1
+                    done_bytes += max(0, int(art.size))
                     current = done
+                    current_bytes = done_bytes
+                if total_bytes:
+                    percent = self._stage_percent(
+                        self.STAGE_LIBS, current_bytes, total_bytes
+                    )
+                else:
+                    percent = self._stage_percent(
+                        self.STAGE_LIBS, current, total
+                    )
                 self._set_progress(
-                    self._stage_percent(self.STAGE_LIBS, current, total),
-                    f"下载依赖库 {current}/{total}",
+                    percent,
+                    f"下载依赖库 {current}/{total}"
+                    + (
+                        f" · {current_bytes / 1024 / 1024:.1f}"
+                        f"/{total_bytes / 1024 / 1024:.1f} MB"
+                        if total_bytes
+                        else ""
+                    ),
                 )
 
         if total:
             with ThreadPoolExecutor(
-                max_workers=max(6, min(16, self.threads + 4))
+                max_workers=max(8, min(20, self.threads + 4))
             ) as pool:
                 futures = [pool.submit(worker, art) for art in all_arts]
                 try:
-                    for future in futures:
+                    for future in as_completed(futures):
                         future.result()
                 except InstallCancelled:
                     for future in futures:

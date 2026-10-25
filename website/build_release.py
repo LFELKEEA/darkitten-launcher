@@ -506,7 +506,7 @@ def build(source: Path, version: str, deploy: bool, repo: str) -> int:
         "released": date.today().isoformat(),
         "notes": notes_map[version],
         "download_url": f"downloads/{update_zip.name}",
-        "page_url": "index.html",
+        "page_url": "https://lfelkeea.github.io/darkitten-launcher/",
         "source_url": f"downloads/{source_zip.name}",
         "source_txt_url": f"downloads/{source_txt.name}",
         "sha256": sha256(update_zip),

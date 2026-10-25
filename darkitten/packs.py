@@ -148,6 +148,11 @@ def human_size(value: int) -> str:
     return f"{size:.1f} TB"
 
 
+def loader_stage_percent(percent: int) -> int:
+    """加载器安装阶段占整合包总进度的 3%–45%。"""
+    return 3 + int(max(0, min(100, int(percent))) * 0.42)
+
+
 def normalize_version_id(value: str) -> str:
     text = str(value or "").strip()
     text = re.sub(r'[<>:"/\\|?*\x00-\x1f]', "-", text)

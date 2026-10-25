@@ -1040,6 +1040,13 @@ class MainWindow(QWidget):
             self.toast_widget.show_message(text, kind)
 
     def set_status(self, text: str, kind: str = "idle") -> None:
+        # 导入期间底栏由导入任务独占，避免更新检查等后台状态覆盖导入文案，
+        # 却留下仍可点击的“取消导入”按钮。
+        if self._active_import_task() is not None:
+            return
+        self._set_status_now(text, kind)
+
+    def _set_status_now(self, text: str, kind: str = "idle") -> None:
         palette = {
             "idle": colors()["muted"],
             "busy": colors()["accent"],
@@ -1463,7 +1470,7 @@ class MainWindow(QWidget):
             message = str(task.message or "").strip()
             if not message or message == "准备下载…":
                 message = "准备导入…"
-            self.set_status(f"{prefix} {label} · {message}", "busy")
+            self._set_status_now(f"{prefix} {label} · {message}", "busy")
             self.progress_bar.setValue(task.progress)
             self.progress_bar.setVisible(True)
             self.speed_label.setText("")
