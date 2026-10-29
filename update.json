@@ -1,23 +1,36 @@
 {
-  "version": "1.11.2",
-  "released": "2026-10-25",
+  "version": "1.11.3",
+  "released": "2026-10-29",
   "notes": [
-    "修复依赖库下载卡在最后一个文件的问题：Fabric / Quilt 版本配置把文件大小与 SHA1 写在库条目顶层而不是 downloads 字段里，此前被忽略，导致总字节数偏小、界面提前显示 “65.6/65.6 MB” 却仍在下载。现在会正确读取顶层大小与校验值，总进度与实际文件一致。",
-    "依赖库进度增加文件计数兜底：下载失败的文件不再被计入已完成字节，最后一个文件未完成时进度条不会提前走满；全部文件处理完才收尾到依赖库阶段节点。",
-    "第三方 Maven 依赖优先走 BMCLAPI 镜像：Forge、NeoForge、Fabric 的官方 Maven 在部分网络下会接受连接却几乎不传数据，此前会被清单测速结果误判并拖回官方线路；现在始终先尝试镜像，再回退官方。实测 83 个 Fabric 依赖库 16.8 秒完成，sponge-mixin 正常下载且校验通过。",
-    "下载器新增长时间无数据看门狗：单次读取超时 8 秒，连续 10 秒没有收到任何数据会自动中止并换源重试；取消任务时不再无限等待阻塞的 recv，实测停滞服务器下约 1 秒即可取消。",
-    "取消导入后可以直接重新导入或下载：导入整合包、Modrinth 包、ZIP 版本包、CurseForge 包与普通整合包都会保留已下载/已解压的内容，再次点击“重新导入”会沿用同一个名称接着补全，已完成的文件不会重复处理；即使取消发生在版本骨架写入之前，也不会再被“目录已存在”挡住。",
-    "导入对话框在取消或失败后会恢复“重新导入”按钮并给出续传提示；取消按钮只取消当前导入任务，不会误伤仍在进行的游戏安装。",
-    "使用 D:\\资源\\MC版本\\1.21.11-Fabric 0.19.5.zip 完成真机验证：原版 + Fabric 依赖、14 个整合包 Mod 与 45 个覆盖文件全部导入成功，总耗时约 98 秒；已保存的游戏版本、Mod、配置、皮肤、账户、服务器与联机房间均保持不变。"
+    "首页「猫爪快捷方式」新增“桌宠 LFELKEEA”入口：可以直接下载、安装并启动桌宠，下载过程显示进度与速度，支持后台继续和取消。",
+    "桌宠安装包来自 GitHub Releases，包含完整中文语音模型。下载完成后先校验 SHA-256，解压前检查路径穿越，校验失败的文件会自动删除。",
+    "桌宠升级只替换程序文件，桌宠自己的 data/config.json 会保留；如果桌宠正在运行，会先提示关闭再更新。",
+    "下载站新增桌宠下载卡片，显示版本、大小、发布日期和 SHA-256，可以直接跳转 Release 下载。",
+    "桌宠的 AI 接口和 API Key 由桌宠自己的设置页填写，启动器不会读取、保存或上传这份密钥。",
+    "本次只新增桌宠入口与下载站卡片，已保存的游戏版本、Mod、账户、皮肤、服务器与联机房间均保持不变。"
   ],
-  "download_url": "downloads/DKL-1.11.2-update.zip",
+  "download_url": "downloads/DKL-1.11.3-update.zip",
   "page_url": "https://lfelkeea.github.io/darkitten-launcher/",
-  "source_url": "downloads/DarkittenLauncher-1.11.2-source.zip",
-  "source_txt_url": "downloads/DarkittenLauncher-1.11.2-source.txt",
-  "sha256": "9960bc5c6b49733246b3390d1b01d8f4630a4fe4adbe54e398ce82b3a1a261f7",
-  "size": 907481,
-  "source_sha256": "7693420e455463106fd96d48b729d4882f892cf60b27612aa8f3c93155cb6177",
-  "source_size": 910279,
-  "source_txt_sha256": "cf3ba98b7b2e467fc00893e5c15169ec59cd5d5e6c5bd9b68b7a7bb7762ae4d7",
-  "source_txt_size": 2038082
+  "source_url": "downloads/DarkittenLauncher-1.11.3-source.zip",
+  "source_txt_url": "downloads/DarkittenLauncher-1.11.3-source.txt",
+  "sha256": "1cbb7ff476f2cbde6428def8fdb18a2b38d391adb9cbd5c252c96a5a2c13a638",
+  "size": 914766,
+  "source_sha256": "089719c7bd9237ac2805c33dda9d710f0b8eaab61bbaa0e3283547d046b8afd8",
+  "source_size": 917648,
+  "source_txt_sha256": "ba502e757413fc283b2454cc345b5dd274e67d7cf8ff2b470f7edef2d7db305e",
+  "source_txt_size": 2066200,
+  "pet": {
+    "name": "LFELKEEA 桌宠",
+    "version": "1.0.0",
+    "released": "2026-10-27",
+    "size": 135975564,
+    "sha256": "8eb1513a3e80a22c948eab0bd60ad134b9ee8f70a647023bd46187bda009d319",
+    "download_url": "https://github.com/LFELKEEA/darkitten-launcher/releases/download/pet-v1.0.0/LFELKEEA.zip",
+    "notes": [
+      "桌面常驻小猫：可置顶、缩放和拖动位置，空闲时会自己说几句话。",
+      "支持语音识别与语音对话，内置中文语音模型，不需要另外安装语音组件。",
+      "可以接入 OpenAI 兼容接口的 AI 对话，首次使用时在桌宠设置里填写自己的 API Key。",
+      "升级只替换程序文件，data/config.json 里的位置、缩放和 AI 配置会保留。"
+    ]
+  }
 }

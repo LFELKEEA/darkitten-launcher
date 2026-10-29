@@ -851,6 +851,28 @@ main {
 
 .download-meta strong { color: var(--muted); font-weight: 600; }
 
+.pet-card {
+  margin-top: 18px;
+  border-color: rgba(255, 124, 157, 0.22);
+  background:
+    radial-gradient(560px 240px at 12% 0%, rgba(255, 124, 157, 0.14), transparent 70%),
+    linear-gradient(130deg, rgba(33, 22, 34, 0.94), rgba(16, 11, 18, 0.96));
+}
+
+.pet-card::after { content: "PET"; right: 26px; bottom: -30px; font-size: 150px; }
+
+.pet-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 22px;
+  margin-top: 14px;
+  color: var(--muted-2);
+  font-size: 11px;
+}
+
+.pet-meta strong { color: var(--text); font-weight: 600; }
+.pet-note { color: var(--muted-2); font-size: 10.5px; text-align: center; }
+
 .feedback-section { padding-bottom: 10px; }
 
 .feedback-grid {

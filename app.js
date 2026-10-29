@@ -53,6 +53,8 @@
     const versionInput = $('input[name="version"]', $("#feedbackForm") || document);
     if (versionInput && !versionInput.dataset.touched) versionInput.value = version;
 
+    loadPet(manifest.pet);
+
     if (Array.isArray(manifest.notes) && manifest.notes.length) {
       const list = $("#release-notes");
       if (list) {
@@ -67,6 +69,19 @@
 
     if (version) {
       document.title = "Darkitten Launcher v" + version + " · 恶魔小猫的秘密基地";
+    }
+  }
+
+  function loadPet(pet) {
+    if (!pet || typeof pet !== "object") return;
+    const version = String(pet.version || "").replace(/^v/i, "");
+    setText("[data-pet-version]", version);
+    setText("[data-pet-size]", formatBytes(pet.size));
+    setText("[data-pet-date]", pet.released || "—");
+    setHref("[data-pet-download]", pet.download_url);
+    const link = $("[data-pet-download]");
+    if (link && pet.size) {
+      link.setAttribute("title", "桌宠完整包 · " + formatBytes(pet.size));
     }
   }
 
@@ -102,6 +117,20 @@
         area.remove();
       }
       showToast("SHA-256 已复制");
+    });
+  }
+
+  function bindPetCopy() {
+    const button = $("[data-pet-copy-sha]");
+    if (!button) return;
+    button.addEventListener("click", async () => {
+      const digest = manifest && manifest.pet && manifest.pet.sha256;
+      if (!digest) {
+        showToast("还没有读取到桌宠 SHA-256");
+        return;
+      }
+      const copied = await copyText(digest);
+      showToast(copied ? "桌宠 SHA-256 已复制" : "复制失败，请手动复制");
     });
   }
 
@@ -159,7 +188,7 @@
 
   const FEEDBACK_EMAIL = "lfel278623@outlook.com";
   const GITHUB_NEW_ISSUE = "https://github.com/LFELKEEA/darkitten-launcher/issues/new";
-  const FEEDBACK_VERSION_FALLBACK = "1.11.2";
+  const FEEDBACK_VERSION_FALLBACK = "1.11.3";
   const KIND_LABELS = {
     bug: "Bug",
     suggestion: "改进建议",
@@ -448,6 +477,7 @@
     bindHeader();
     bindReveal();
     bindCopy();
+    bindPetCopy();
     bindParallax();
     bindFeedback();
     loadManifest();
