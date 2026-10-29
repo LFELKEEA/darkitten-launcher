@@ -408,6 +408,7 @@ class HomePage(QWidget):
         col2.setSpacing(8)
 
         actions = [
+            ("paw", "桌宠 LFELKEEA", "下载并召唤桌面猫猫", "#C98A4B", self.main.open_pet_dialog),
             ("folder", "游戏目录", "打开游戏文件夹", "#E23A5E", self.main.open_game_dir),
             ("package", "导入本地文件", "版本与 Mod", "#E8683F", self.main.open_local_import),
             ("migrate", "版本迁移", "搬走存档与 Mod", "#3FB3AA", lambda: self.main.open_migration_dialog(self._selected)),

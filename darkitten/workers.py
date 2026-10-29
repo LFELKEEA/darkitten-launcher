@@ -66,6 +66,12 @@ from .server_pack import (
     export_server,
     import_server_pack,
 )
+from .pet import (
+    PetRelease,
+    download_pet,
+    fetch_pet_release,
+    install_pet,
+)
 from .updater import check_for_update, download_update, prepare_update
 from .sakura import (
     ROOM_TUNNEL_NAME,
@@ -452,6 +458,87 @@ class UpdateDownloadWorker(QObject):
                 self.finished.emit(False, str(exc), "")
         else:
             self.finished.emit(True, "更新包已准备就绪", str(payload))
+
+
+class PetManifestWorker(QObject):
+    ready = Signal(object, str)
+
+    def __init__(self, url: str, parent: QObject | None = None) -> None:
+        super().__init__(parent)
+        self.url = str(url)
+
+    def start(self) -> None:
+        threading.Thread(target=self._run, daemon=True).start()
+
+    def _run(self) -> None:
+        try:
+            release = fetch_pet_release(self.url)
+        except Exception as exc:
+            self.ready.emit(None, str(exc))
+        else:
+            self.ready.emit(release, "")
+
+
+class PetDownloadWorker(QObject):
+    progress = Signal(int, str)
+    finished = Signal(bool, str, str)
+
+    def __init__(
+        self,
+        release: PetRelease,
+        root: Path | None = None,
+        threads: int = 4,
+        parent: QObject | None = None,
+    ) -> None:
+        super().__init__(parent)
+        self.release = release
+        self.root = Path(root) if root is not None else None
+        self.threads = max(1, min(8, int(threads)))
+        self.cancel_event = threading.Event()
+        self._thread: threading.Thread | None = None
+
+    def start(self) -> None:
+        self._thread = threading.Thread(target=self._run, daemon=True)
+        self._thread.start()
+
+    def cancel(self) -> None:
+        self.cancel_event.set()
+
+    def _run(self) -> None:
+        try:
+            archive = download_pet(
+                self.release,
+                self.root,
+                progress_cb=lambda p, m: self.progress.emit(
+                    max(1, int(p * 0.86)), m
+                ),
+                cancel_event=self.cancel_event,
+                threads=self.threads,
+            )
+            folder = install_pet(
+                archive,
+                self.release.version,
+                self.root,
+                progress_cb=lambda p, m: self.progress.emit(
+                    86 + min(14, max(0, int(p * 0.14))), m
+                ),
+                cancel_event=self.cancel_event,
+            )
+            try:
+                archive.unlink()
+            except OSError:
+                pass
+        except DownloadCancelled:
+            self.finished.emit(False, "桌宠下载已取消", "")
+        except Exception as exc:
+            if self.cancel_event.is_set():
+                self.finished.emit(False, "桌宠下载已取消", "")
+            else:
+                self.finished.emit(False, str(exc), "")
+        else:
+            self.finished.emit(
+                True, f"桌宠 {self.release.version} 已安装", str(folder)
+            )
 
 
 class PackExportWorker(QObject):

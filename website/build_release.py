@@ -17,7 +17,8 @@ from pathlib import Path
 SITE = Path(__file__).resolve().parent
 PUBLIC = SITE / "public"
 DOWNLOADS = PUBLIC / "downloads"
-DEFAULT_SOURCE = Path(os.environ.get("DKL_SOURCE", r"C:\tmp\dkl_bug_work\DarkittenLauncher-1.9.8-source"))
+PET_RELEASE = SITE / "pet_release.json"
+DEFAULT_SOURCE = Path(os.environ.get("DKL_SOURCE", str(SITE.parent / "launcher")))
 DELIVERY = Path(os.environ.get("DKL_DELIVERY", str(Path.home() / "Tianxi")))
 DEFAULT_REPO = "darkitten-launcher"
 
@@ -234,6 +235,42 @@ def legacy_shim_entries(
     ]
 
 
+def load_pet_release() -> dict | None:
+    """桌宠体积超过 GitHub Pages 单文件上限，走 Release 资源，清单里只放元数据。"""
+    if not PET_RELEASE.is_file():
+        return None
+    try:
+        data = json.loads(PET_RELEASE.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        raise SystemExit(f"pet_release.json 读取失败：{exc}") from exc
+    if not isinstance(data, dict):
+        raise SystemExit("pet_release.json 必须是一个 JSON 对象")
+    version = str(data.get("version") or "").strip()
+    url = str(data.get("download_url") or "").strip()
+    digest = str(data.get("sha256") or "").strip().lower()
+    try:
+        size = int(data.get("size") or 0)
+    except Exception:
+        size = 0
+    if not version:
+        raise SystemExit("pet_release.json 缺少 version")
+    if not url.startswith(("http://", "https://")):
+        raise SystemExit("pet_release.json 的 download_url 必须是完整地址")
+    if not re.fullmatch(r"[0-9a-f]{64}", digest):
+        raise SystemExit("pet_release.json 的 sha256 不是有效的 64 位十六进制")
+    if size <= 0:
+        raise SystemExit("pet_release.json 的 size 无效")
+    return {
+        "name": str(data.get("name") or "LFELKEEA 桌宠"),
+        "version": version,
+        "released": str(data.get("released") or ""),
+        "size": size,
+        "sha256": digest,
+        "download_url": url,
+        "notes": [str(item) for item in (data.get("notes") or []) if str(item).strip()],
+    }
+
+
 def sync_site_version(version: str) -> None:
     index = PUBLIC / "index.html"
     text = index.read_text(encoding="utf-8")
@@ -354,6 +391,8 @@ def upload_tree(
     branch: str,
     files: list[tuple[str, Path]],
     message: str,
+    *,
+    base_tree: bool = False,
 ) -> None:
     if repo_is_empty(gh, full):
         # Git Data API 在完全空的仓库上会返回 409，先用 Contents API 建立首个提交。
@@ -387,8 +426,14 @@ def upload_tree(
             {"path": relative, "mode": "100644", "type": "blob", "sha": blob["sha"]}
         )
 
-    # 不传 base_tree，整棵树按本次文件列表重建，旧版本文件不会残留。
-    tree = gh_api(gh, f"repos/{full}/git/trees", "POST", {"tree": entries})
+    payload: dict = {"tree": entries}
+    if base_tree and parent:
+        # 增量覆盖：保留远端已有文件（例如历史下载包），只替换本次上传的路径。
+        parent_commit = gh_api(gh, f"repos/{full}/git/commits/{parent}", check=False)
+        base_sha = str(parent_commit.get("tree", {}).get("sha") or "")
+        if base_sha:
+            payload["base_tree"] = base_sha
+    tree = gh_api(gh, f"repos/{full}/git/trees", "POST", payload)
     print(f"upload {branch}: {len(entries)} files, tree {tree['sha']}", flush=True)
     # 新建 tree 后立刻提交偶尔会触发 GitHub 的复制延迟（Tree SHA does not exist），短暂等待后重试。
     commit: dict = {}
@@ -431,9 +476,15 @@ def deploy_github(version: str, repo: str, source: Path) -> str:
     public_files = [
         (path.relative_to(PUBLIC).as_posix(), path)
         for path in sorted(PUBLIC.rglob("*"))
-        if path.is_file() and ".git" not in path.relative_to(PUBLIC).parts
+        if path.is_file()
+        and ".git" not in path.relative_to(PUBLIC).parts
+        and ".sync-part" not in path.name
     ]
-    upload_tree(gh, full, "gh-pages", public_files, f"deploy: Darkitten Launcher {version}")
+    # 增量覆盖 gh-pages：以远端现有 tree 为基底，历史版本的下载包不会被删除。
+    upload_tree(
+        gh, full, "gh-pages", public_files,
+        f"deploy: Darkitten Launcher {version}", base_tree=True,
+    )
 
     source_repo_files = [
         (relative.as_posix(), source / relative) for relative in source_files(source)
@@ -516,6 +567,9 @@ def build(source: Path, version: str, deploy: bool, repo: str) -> int:
         "source_txt_sha256": sha256(source_txt),
         "source_txt_size": source_txt.stat().st_size,
     }
+    pet_meta = load_pet_release()
+    if pet_meta:
+        manifest["pet"] = pet_meta
     (PUBLIC / "update.json").write_text(
         json.dumps(manifest, ensure_ascii=False, indent=2) + "\n",
         encoding="utf-8",
@@ -538,6 +592,14 @@ def build(source: Path, version: str, deploy: bool, repo: str) -> int:
     print("update sha256:", manifest["sha256"])
     print("source sha256:", manifest["source_sha256"])
     print("source txt sha256:", manifest["source_txt_sha256"])
+    if pet_meta:
+        print(
+            "pet:",
+            pet_meta["version"],
+            pet_meta["size"],
+            "bytes",
+            pet_meta["download_url"],
+        )
 
     if deploy:
         pages_url = deploy_github(version, repo, source)

@@ -1,0 +1,14 @@
+{
+  "name": "LFELKEEA 桌宠",
+  "version": "1.0.0",
+  "released": "2026-10-27",
+  "size": 135975564,
+  "sha256": "8eb1513a3e80a22c948eab0bd60ad134b9ee8f70a647023bd46187bda009d319",
+  "download_url": "https://github.com/LFELKEEA/darkitten-launcher/releases/download/pet-v1.0.0/LFELKEEA.zip",
+  "notes": [
+    "桌面常驻小猫：可置顶、缩放和拖动位置，空闲时会自己说几句话。",
+    "支持语音识别与语音对话，内置中文语音模型，不需要另外安装语音组件。",
+    "可以接入 OpenAI 兼容接口的 AI 对话，首次使用时在桌宠设置里填写自己的 API Key。",
+    "升级只替换程序文件，data/config.json 里的位置、缩放和 AI 配置会保留。"
+  ]
+}

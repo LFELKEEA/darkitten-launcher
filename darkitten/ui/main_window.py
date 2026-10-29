@@ -1759,6 +1759,11 @@ class MainWindow(QWidget):
         dialog.join_requested.connect(self.join_friend_room)
         dialog.exec()
 
+    def open_pet_dialog(self) -> None:
+        from .pet_dialog import PetDialog
+
+        PetDialog(self).exec()
+
     # ------------------------------------------------------------------
     # 快捷命令 / 开发者反馈提醒
 
