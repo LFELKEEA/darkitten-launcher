@@ -139,6 +139,40 @@ class ConfirmDialog(StyledDialog):
         self.add_button(primary_text, "Primary", self.accept)
 
 
+class CloseChoiceDialog(StyledDialog):
+    """关闭主窗口时选择后台运行、退出程序或取消。"""
+
+    BACKGROUND = "background"
+    EXIT = "exit"
+
+    def __init__(self, parent: QWidget | None) -> None:
+        super().__init__(parent, "关闭启动器", "close", width=480)
+        text = QLabel(
+            "要退出程序，还是只关闭界面，让下载、服务端和联机继续在后台运行？"
+        )
+        text.setObjectName("DialogText")
+        text.setWordWrap(True)
+        self.body.addWidget(text)
+        hint = QLabel("选择「后台运行」后，可以从系统托盘图标重新打开主界面。")
+        hint.setObjectName("Tiny")
+        hint.setWordWrap(True)
+        self.body.addWidget(hint)
+        self._choice = ""
+        self.add_button("取消", "Secondary", self.reject)
+        self.add_button("退出程序", "Secondary", lambda: self._choose(self.EXIT))
+        self.add_button(
+            "后台运行", "Primary", lambda: self._choose(self.BACKGROUND)
+        )
+
+    def _choose(self, choice: str) -> None:
+        self._choice = choice
+        self.accept()
+
+    @property
+    def choice(self) -> str:
+        return self._choice
+
+
 class NoticeDialog(StyledDialog):
     def __init__(
         self,

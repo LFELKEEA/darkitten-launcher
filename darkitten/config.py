@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import sys
+import uuid
 from dataclasses import asdict, dataclass, field, fields
 from pathlib import Path
 from typing import Any
@@ -13,7 +15,7 @@ APP_SHORT_NAME = "DKL"
 APP_TAGLINE = "恶魔小猫的秘密基地"
 APP_AUTHOR = "LFELKEEA"
 APP_EMAIL = "lfel278623@outlook.com"
-APP_VERSION = "1.11.3"
+APP_VERSION = "1.11.6"
 APP_ID = "DarkittenLauncher"
 DEFAULT_UPDATE_URL = "https://lfelkeea.github.io/darkitten-launcher/update.json"
 
@@ -51,10 +53,13 @@ class Config:
     auto_complete: bool = True
     version_isolation: bool = True
     shortcut_offered: bool = False
+    # 关闭窗口后留在系统托盘继续下载/运行服务端；托盘不可用时自动忽略。
+    background_enabled: bool = True
+    tray_hint_shown: bool = False
     microsoft_client_id: str = ""
     microsoft_email: str = ""
     account: dict[str, Any] = field(default_factory=dict)
-    # LittleSkin 皮肤账号（只保存令牌，不保存密码）。与游戏登录账户分离。
+    # LittleSkin 账户资料（只保存令牌，不保存密码）；登录后会同步为游戏账户。
     littleskin_account: dict[str, Any] = field(default_factory=dict)
     skin_path: str = ""
     skin_variant: str = "classic"
@@ -62,6 +67,12 @@ class Config:
     sakura_frpc_path: str = ""
     sakura_node_id: int = 0
     sakura_tunnel_id: int = 0
+    # EasyTier P2P 联机：不需要账户，房间号同时包含网络名与密钥。
+    easytier_machine_id: str = ""
+    easytier_direct_only: bool = False
+    easytier_hide_address: bool = False
+    easytier_last_port: int = 25565
+    easytier_node_ids: list[str] = field(default_factory=list)
     update_url: str = DEFAULT_UPDATE_URL
     update_auto_check: bool = True
     update_skipped_version: str = ""
@@ -180,6 +191,25 @@ class Config:
             cfg.sakura_tunnel_id = max(0, int(cfg.sakura_tunnel_id))
         except Exception:
             cfg.sakura_tunnel_id = 0
+        cfg.easytier_machine_id = str(cfg.easytier_machine_id or "").strip()
+        if not cfg.easytier_machine_id:
+            # 只在房间里用来区分玩家，不包含可识别的硬件信息。
+            cfg.easytier_machine_id = hashlib.sha1(
+                str(uuid.getnode()).encode("utf-8")
+            ).hexdigest()[:32]
+        cfg.easytier_direct_only = bool(cfg.easytier_direct_only)
+        cfg.easytier_hide_address = bool(cfg.easytier_hide_address)
+        try:
+            cfg.easytier_last_port = max(
+                1, min(65535, int(cfg.easytier_last_port))
+            )
+        except Exception:
+            cfg.easytier_last_port = 25565
+        if not isinstance(cfg.easytier_node_ids, list):
+            cfg.easytier_node_ids = []
+        cfg.easytier_node_ids = [
+            str(item) for item in cfg.easytier_node_ids if str(item).strip()
+        ]
         # 旧版本留下过本机、临时托管和测试源。现在只保留官方 GitHub Pages
         # 地址，避免升级后仍然去请求已经失效的旧地址。
         cfg.update_url = DEFAULT_UPDATE_URL

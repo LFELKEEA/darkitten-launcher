@@ -679,6 +679,17 @@ class HomePage(QWidget):
                 "已通过 Microsoft 正版验证，可以进入正版验证服务器。"
             )
             self.account_btn.setToolTip("管理正版账户")
+        elif account.is_littleskin:
+            uid = account.uuid
+            self.account_uuid.setText(
+                f"LittleSkin · UUID {uid[:8]}…{uid[-4:]}" if uid else "LittleSkin 账户"
+            )
+            self.account_badge.setText("LittleSkin")
+            self.account_badge.setProperty("badge", "blue")
+            self.account_note.setText(
+                "启动游戏使用这个 LittleSkin 角色，皮肤与披风由 LittleSkin 提供。"
+            )
+            self.account_btn.setToolTip("管理 LittleSkin 账户")
         else:
             uid = offline_uuid(self.main.config.player_name)
             self.account_uuid.setText(f"UUID {uid[:8]}…{uid[-4:]}")
@@ -691,7 +702,7 @@ class HomePage(QWidget):
         repolish(self.account_badge)
 
     def edit_account(self) -> None:
-        if self.main.current_account().is_msa:
+        if self.main.current_account().is_online:
             self.main.switch_page("settings")
             return
         dialog = TextInputDialog(

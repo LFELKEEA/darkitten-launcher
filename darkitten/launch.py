@@ -224,6 +224,17 @@ def prepare_launch(
         auth_xuid = account.xuid
         user_type = "msa"
         client_id = cfg.microsoft_client_id
+    elif account.is_littleskin:
+        name = account.name.strip()
+        if not name or not account.uuid or not account.access_token:
+            raise LaunchError("LittleSkin 登录状态无效，请到皮肤页重新登录。")
+        if not valid_player_name(name):
+            raise LaunchError("LittleSkin 角色名称不是有效的 Minecraft 玩家名。")
+        auth_uuid = account.uuid
+        access_token = account.access_token
+        auth_xuid = ""
+        user_type = "mojang"
+        client_id = ""
     else:
         name = cfg.player_name.strip()
         if not valid_player_name(name):
@@ -387,7 +398,25 @@ def prepare_launch(
     (run_dir / "mods").mkdir(parents=True, exist_ok=True)
 
     offline_runtime = None
-    if not account.is_msa:
+    if account.is_littleskin:
+        # LittleSkin 使用 authlib-injector 把游戏的验证请求指向 LittleSkin
+        # Yggdrasil。皮肤由 LittleSkin 服务器直接提供，不再启动本地皮肤服务。
+        try:
+            from .littleskin import API_ROOT as LITTLESKIN_API
+            from .offline_skin import ensure_authlib_jar
+
+            jar = ensure_authlib_jar(status_cb)
+        except Exception as exc:
+            raise LaunchError(f"LittleSkin 登录组件准备失败：{exc}") from exc
+        jvm_args = [
+            f"-javaagent:{jar}={LITTLESKIN_API}",
+            "-Dauthlibinjector.side=client",
+        ]
+        command[main_index:main_index] = jvm_args
+        warnings.append(
+            f"已启用 LittleSkin 登录：{name} · 皮肤与披风由 LittleSkin 提供"
+        )
+    elif not account.is_msa:
         try:
             from .offline_skin import prepare_offline_runtime
 

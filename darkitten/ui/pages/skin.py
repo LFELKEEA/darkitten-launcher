@@ -83,6 +83,7 @@ from ..widgets import (
 SKIN_FORUM_URL = "https://klpbbs.com/forum.php?mod=forumdisplay&fid=54"
 FORUM_URL = "https://klpbbs.com/"
 LITTLESKIN_URL = "https://littleskin.cn/"
+LITTLESKIN_CLOSET_URL = "https://littleskin.cn/user/closet"
 
 
 def _rounded_face(image: QImage, size: int = 48) -> QPixmap:
@@ -776,14 +777,21 @@ class SkinPage(QWidget):
             tooltip += f"\n原始文件：{entry.source}"
         self.file_edit.setToolTip(tooltip)
 
-        online = self.main.current_account().is_msa
-        if online:
+        account = self.main.current_account()
+        if account.is_msa:
             self.current_label.setText(
                 f"已选择皮肤库中的「{entry.name}」。"
                 "点击“上传并使用”同步到正版账户。"
                 + legacy_note
             )
             status = f"已切换到皮肤：{entry.name}{legacy_note}"
+        elif account.is_littleskin:
+            self.current_label.setText(
+                f"已选择皮肤库中的「{entry.name}」，当前仅用于本地预览。"
+                "LittleSkin 游戏内皮肤由 LittleSkin 衣柜决定。"
+                + legacy_note
+            )
+            status = f"已选择 LittleSkin 预览皮肤：{entry.name}{legacy_note}"
         else:
             self.current_label.setText(
                 f"离线皮肤「{entry.name}」已启用。"
@@ -969,17 +977,24 @@ class SkinPage(QWidget):
         self.status_label.setStyleSheet(f"color: {color}; font-size: 11px;")
 
     def _update_buttons(self) -> None:
-        online = self.main.current_account().is_msa
+        account = self.main.current_account()
+        online = account.is_msa
+        littleskin = account.is_littleskin
         available = not self._busy
         has_file = self._skin_file is not None
         self.refresh_skin_btn.setEnabled(online and available)
         self.reset_skin_btn.setEnabled(online and available)
-        self.upload_btn.setEnabled(available and has_file)
+        self.upload_btn.setEnabled(available and (has_file or littleskin))
         self.select_btn.setEnabled(available)
         if online:
             self.upload_btn.setText("上传并使用")
             self.upload_btn.setToolTip(
                 "" if has_file else "请先选择一张 64×64 或 64×32 的 PNG 皮肤"
+            )
+        elif littleskin:
+            self.upload_btn.setText("在 LittleSkin 更换")
+            self.upload_btn.setToolTip(
+                "打开 LittleSkin 衣柜更换角色皮肤，游戏会自动加载"
             )
         else:
             self.upload_btn.setText("离线使用")
@@ -1013,6 +1028,10 @@ class SkinPage(QWidget):
     # ------------------------------------------------------------------
     def _fetch_current_skin(self, silent: bool = False) -> None:
         account = self.main.current_account()
+        if account.is_littleskin:
+            if not silent:
+                self._littleskin_sync()
+            return
         if not account.is_msa:
             if not silent:
                 self.main.toast("请先登录 Microsoft 正版账户", "info")
@@ -1157,11 +1176,13 @@ class SkinPage(QWidget):
         skin = dialog.skin
         self._littleskin = account
         save_littleskin_account(self.main.config, account)
+        # LittleSkin 角色同时成为当前游戏账户，不再只是皮肤来源。
+        self.main.apply_littleskin_account(account)
         self._refresh_littleskin()
         if skin is None:
             message = (
                 f"已登录 LittleSkin：{account.name}，"
-                "但这个角色还没有设置皮肤。"
+                "这个角色还没有设置皮肤，但已经可以用于启动游戏。"
             )
             self._set_status(message, "info")
             self.main.toast(message, "info")
@@ -1187,6 +1208,8 @@ class SkinPage(QWidget):
             return
         self._littleskin = account
         save_littleskin_account(self.main.config, account)
+        if self.main.current_account().is_littleskin:
+            self.main.apply_littleskin_account(account)
         if skin is None:
             self._refresh_littleskin()
             message = "LittleSkin 角色当前没有自定义皮肤。"
@@ -1219,7 +1242,12 @@ class SkinPage(QWidget):
         )
         save_littleskin_account(self.main.config, account)
         self._refresh_littleskin()
-        if self.main.current_account().is_msa:
+        if self.main.current_account().is_littleskin:
+            note = (
+                f"LittleSkin 角色「{account.name}」的皮肤已同步并设为预览。"
+                "游戏内皮肤由 LittleSkin 自动提供，本地这份用于预览和皮肤库。"
+            )
+        elif self.main.current_account().is_msa:
             note = (
                 f"LittleSkin 角色「{account.name}」的皮肤已同步并设为预览。"
                 "微软正版启动仍使用 Mojang 账户皮肤，需要时可在上方上传。"
@@ -1249,12 +1277,24 @@ class SkinPage(QWidget):
             return
         clear_littleskin_account(self.main.config)
         self._littleskin = LittleSkinAccount()
+        if self.main.current_account().is_littleskin:
+            # LittleSkin 同时是游戏账户，退出后必须一并回到离线模式。
+            self.main.config.account = {}
+            self.main.config.save()
+            self.main.account_changed.emit()
         self._refresh_littleskin()
         self._set_status("已退出 LittleSkin 登录，已同步的皮肤仍保留在皮肤库。", "info")
         self.main.toast("已退出 LittleSkin 登录", "info")
 
     def _upload_skin(self) -> None:
         account = self.main.current_account()
+        if account.is_littleskin:
+            QDesktopServices.openUrl(QUrl(LITTLESKIN_CLOSET_URL))
+            self.main.toast(
+                "已打开 LittleSkin 衣柜；在网页更换皮肤后，游戏会自动同步",
+                "info",
+            )
+            return
         if not account.is_msa:
             self._use_offline_skin()
             return
@@ -1311,6 +1351,9 @@ class SkinPage(QWidget):
 
     def _reset_skin(self) -> None:
         account = self.main.current_account()
+        if account.is_littleskin:
+            self.main.toast("LittleSkin 皮肤请在 LittleSkin 衣柜中管理", "info")
+            return
         if not account.is_msa:
             self.main.toast("请先登录 Microsoft 正版账户", "error")
             return
@@ -1362,6 +1405,7 @@ class SkinPage(QWidget):
     # ------------------------------------------------------------------
     def refresh_account(self) -> None:
         account = self.main.current_account()
+        self._littleskin = load_littleskin_account(self.main.config)
         self.main.config.skin_variant = self.variant_tabs.current()
         if account.is_msa:
             self.account_badge.setText("微软正版")
@@ -1372,6 +1416,22 @@ class SkinPage(QWidget):
             uid = account.uuid or ""
             self.account_uuid.setText(
                 f"UUID {uid[:8]}…{uid[-4:]}" if uid else "已登录 Microsoft 账户"
+            )
+        elif account.is_littleskin:
+            self.account_badge.setText("LittleSkin")
+            self.account_badge.setProperty("badge", "blue")
+            self.mode_badge.setText("LittleSkin")
+            self.mode_badge.setProperty("badge", "blue")
+            self.account_name.setText(account.name or "LittleSkin 角色")
+            uid = account.uuid or ""
+            self.account_uuid.setText(
+                f"角色 UUID {uid[:8]}…{uid[-4:]}"
+                if uid
+                else "已登录 LittleSkin，可直接启动游戏"
+            )
+            self.current_label.setText(
+                "游戏内皮肤与披风由 LittleSkin 自动提供；"
+                "皮肤库中的本地选择只用于预览。"
             )
         else:
             has_skin = self._skin_file is not None
@@ -1407,7 +1467,11 @@ class SkinPage(QWidget):
         repolish(self.mode_badge)
         if not self._busy:
             online = account.is_msa
-            if self._current_skin is not None and online:
+            if account.is_littleskin:
+                self._set_status(
+                    "LittleSkin 账户已连接，游戏内皮肤由 LittleSkin 提供。", "info"
+                )
+            elif self._current_skin is not None and online:
                 self._set_status("正版账户已连接，可以上传或恢复皮肤。", "info")
             elif not online and self._skin_file is not None:
                 self._set_status(

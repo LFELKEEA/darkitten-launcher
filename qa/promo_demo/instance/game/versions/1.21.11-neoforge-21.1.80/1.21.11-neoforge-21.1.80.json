@@ -1,0 +1,1 @@
+{"id": "1.21.11-neoforge-21.1.80", "inheritsFrom": "1.21.11", "type": "release", "mainClass": "cpw.mods.bootstraplauncher.BootstrapLauncher", "libraries": [{"name": "net.neoforged:neoforge:21.1.80"}], "javaVersion": {"majorVersion": 21}, "releaseTime": ""}

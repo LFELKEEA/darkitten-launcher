@@ -53,6 +53,7 @@ from ...workers import ServerInstallWorker
 from .. import icons
 from ..dialogs import ConfirmDialog, NoticeDialog
 from ..server_addons import ServerAddonDialog
+from ..server_config_dialog import ServerConfigDialog
 from ..server_dialog import ServerCreateDialog
 from ..widgets import (
     Card,
@@ -740,6 +741,17 @@ class ServerPage(QWidget):
         self.save_btn.clicked.connect(self.save_settings)
         actions.addWidget(self.save_btn)
 
+        self.config_btn = QPushButton("编辑配置文件")
+        self.config_btn.setObjectName("Soft")
+        self.config_btn.setCursor(Qt.PointingHandCursor)
+        self.config_btn.setIcon(icons.icon("edit", colors()["accent"], 14))
+        self.config_btn.setToolTip(
+            "在启动器内修改 server.properties 和插件/Mod 配置，"
+            "每一项都有中文说明。"
+        )
+        self.config_btn.clicked.connect(self.open_config_dialog)
+        actions.addWidget(self.config_btn)
+
         self.pack_btn = QPushButton("打包服务端")
         self.pack_btn.setObjectName("Soft")
         self.pack_btn.setCursor(Qt.PointingHandCursor)
@@ -1253,6 +1265,7 @@ class ServerPage(QWidget):
         self.settings_online.setEnabled(not installing)
         self.settings_java.setEnabled(not installing)
         self.save_btn.setEnabled(not installing)
+        self.config_btn.setEnabled(not installing)
         self.delete_btn.setEnabled(not running and not installing)
         self.reinstall_btn.setEnabled(not running and not installing)
         self.pack_btn.setEnabled(not running and not installing)
@@ -1510,6 +1523,22 @@ class ServerPage(QWidget):
         if dialog.imported_folder:
             self.refresh_servers(dialog.imported_folder)
             self.toast("服务端已经导入，世界和玩家数据都搬过来了喵。", "success")
+
+    def open_config_dialog(self) -> None:
+        info = self._current_info()
+        if info is None:
+            self.toast("先选一个服务端，再编辑它的配置", "info")
+            return
+        if self._install_worker is not None and self._install_folder == info.folder:
+            self.toast("服务端还在安装，安装完成后再编辑配置", "info")
+            return
+        state = self._state_of(info)
+        dialog = ServerConfigDialog(
+            self.main, info, running=state != "stopped"
+        )
+        dialog.exec()
+        # 配置里可能改了端口或正版验证，重新扫描后同步到设置页。
+        self.refresh_servers(info.folder)
 
     def _open_server_folder(self) -> None:
         info = self._current_info()

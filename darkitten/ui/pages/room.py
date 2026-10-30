@@ -17,6 +17,7 @@ from PySide6.QtWidgets import (
     QScrollArea,
     QSizePolicy,
     QSpinBox,
+    QStackedWidget,
     QVBoxLayout,
     QWidget,
 )
@@ -42,10 +43,12 @@ from ...social import INVITE_PREFIX, SocialError, parse_invite
 from ...workers import RoomInviteWorker, SakuraLoginWorker, SakuraRoomWorker
 from .. import icons
 from ..dialogs import ConfirmDialog
+from ..easytier_panel import EasyTierPanel
 from ..mod_sync_dialog import ModSyncDialog
 from ..widgets import (
     Card,
     ChibiCompanion,
+    SegmentedControl,
     badge,
     colors,
     hline,
@@ -119,7 +122,7 @@ class RoomPage(QWidget):
         title = QLabel("猫猫联机窝")
         title.setObjectName("PageTitle")
         sub = QLabel(
-            "内置樱花穿透：房主把单人世界开放到局域网，朋友输入房间号就能直接进入。"
+            "内置 P2P 直连与樱花穿透：房主开房间，朋友输入房间号就能直接进入。"
         )
         sub.setObjectName("Muted")
         sub.setWordWrap(True)
@@ -128,7 +131,7 @@ class RoomPage(QWidget):
         header.addLayout(titles, 1)
         header.addWidget(ChibiCompanion(60, "room"), 0, Qt.AlignTop)
 
-        builtin_badge = badge("樱花穿透 · 内置", "blue")
+        builtin_badge = badge("双模式联机 · 内置", "blue")
         header.addWidget(builtin_badge, 0, Qt.AlignTop)
         docs_btn = QPushButton("联机文档")
         docs_btn.setObjectName("Ghost")
@@ -138,16 +141,36 @@ class RoomPage(QWidget):
         header.addWidget(docs_btn, 0, Qt.AlignTop)
         layout.addLayout(header)
 
+        mode_row = QHBoxLayout()
+        mode_row.setSpacing(8)
+        self.mode_tabs = SegmentedControl()
+        self.mode_tabs.add_item("P2P 直连", "p2p")
+        self.mode_tabs.add_item("樱花穿透", "sakura")
+        self.mode_tabs.changed.connect(self._switch_mode)
+        mode_row.addWidget(self.mode_tabs)
+        mode_row.addStretch(1)
+        layout.addLayout(mode_row)
+
+        self.mode_stack = QStackedWidget()
+        self.easytier_panel = EasyTierPanel(self.main, self)
+        self.mode_stack.addWidget(self.easytier_panel)
+
+        sakura_page = QWidget()
+        sakura_layout = QVBoxLayout(sakura_page)
+        sakura_layout.setContentsMargins(0, 0, 0, 0)
+        sakura_layout.setSpacing(14)
         columns = QHBoxLayout()
         columns.setSpacing(14)
         self.host_card = self._build_host_card()
         self.guest_card = self._build_guest_card()
         columns.addWidget(self.host_card, 3)
         columns.addWidget(self.guest_card, 2)
-        layout.addLayout(columns, 1)
-
-        layout.addWidget(self._build_info_card())
-        layout.addStretch(1)
+        sakura_layout.addLayout(columns, 1)
+        sakura_layout.addWidget(self._build_info_card())
+        sakura_layout.addStretch(1)
+        self.mode_stack.addWidget(sakura_page)
+        layout.addWidget(self.mode_stack, 1)
+        self._switch_mode("p2p")
 
     def _build_host_card(self) -> QWidget:
         card = Card()
@@ -542,6 +565,14 @@ class RoomPage(QWidget):
     # ------------------------------------------------------------------
     # 状态与主题
 
+    def _switch_mode(self, mode: str) -> None:
+        if not hasattr(self, "mode_stack"):
+            return
+        index = 0 if str(mode) == "p2p" else 1
+        self.mode_stack.setCurrentIndex(index)
+        if index == 0 and hasattr(self, "easytier_panel"):
+            self.easytier_panel.on_show()
+
     def _set_status(self, label: QLabel, text: str, kind: str = "muted") -> None:
         c = colors()
         key = STATUS_COLORS.get(kind, STATUS_COLORS["muted"])[0]
@@ -566,6 +597,8 @@ class RoomPage(QWidget):
         self._set_status(
             self.guest_status, self.guest_status.text(), self._guest_status_kind
         )
+        if hasattr(self, "easytier_panel"):
+            self.easytier_panel.refresh_theme()
         self.create_btn.setIcon(icons.icon("bolt", "#FFFFFF", 16))
         self.join_btn.setIcon(icons.icon("play", "#FFFFFF", 16))
         self.copy_code_btn.setIcon(icons.icon("copy", "#FFFFFF", 14))
@@ -603,6 +636,8 @@ class RoomPage(QWidget):
 
     def on_show(self) -> None:
         self._sync_versions()
+        if hasattr(self, "easytier_panel"):
+            self.easytier_panel.on_show()
         if (
             not self._auto_login_attempted
             and self._token
@@ -1480,6 +1515,8 @@ class RoomPage(QWidget):
 
     def shutdown(self) -> None:
         self._closing = True
+        if hasattr(self, "easytier_panel"):
+            self.easytier_panel.shutdown()
         worker = self._room_worker
         if worker:
             worker.cancel()

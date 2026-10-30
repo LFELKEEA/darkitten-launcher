@@ -20,6 +20,7 @@ from PySide6.QtWidgets import (
 )
 
 from ...accounts import valid_player_name
+from ...littleskin import clear_account as clear_littleskin_account
 from ...developer import (
     feedback_table_url,
     lock_developer,
@@ -46,6 +47,7 @@ from ...workers import (
 from .. import icons
 from ..account_dialog import BrowserLoginDialog, MicrosoftLoginDialog
 from ..dialogs import ConfirmDialog
+from ..littleskin_dialog import LittleSkinLoginDialog
 from ..snapshot_dialog import SnapshotDialog
 from ..widgets import (
     Card,
@@ -185,8 +187,9 @@ class SettingsPage(QWidget):
         header = QHBoxLayout()
         header.addLayout(
             self._card_header(
-                "正版账户",
-                "使用 Microsoft 账户登录，可进入需要正版验证的服务器。",
+                "游戏账户",
+                "Microsoft 正版和 LittleSkin 都可以作为当前游戏账户，"
+                "登录后启动游戏会直接使用这个角色。",
             ),
             1,
         )
@@ -270,7 +273,15 @@ class SettingsPage(QWidget):
         self.logout_btn = QPushButton("退出登录")
         self.logout_btn.setObjectName("Ghost")
         self.logout_btn.setCursor(Qt.PointingHandCursor)
-        self.logout_btn.clicked.connect(self._logout_microsoft)
+        self.logout_btn.clicked.connect(self._logout_account)
+        self.littleskin_btn = QPushButton("LittleSkin 登录")
+        self.littleskin_btn.setObjectName("Ghost")
+        self.littleskin_btn.setCursor(Qt.PointingHandCursor)
+        self.littleskin_btn.setIcon(icons.icon("globe", colors()["text2"], 15))
+        self.littleskin_btn.setToolTip(
+            "使用 LittleSkin 账号登录，并把该角色设为当前游戏账户"
+        )
+        self.littleskin_btn.clicked.connect(self._login_littleskin)
         skin_btn = QPushButton("管理皮肤")
         skin_btn.setObjectName("Ghost")
         skin_btn.setCursor(Qt.PointingHandCursor)
@@ -279,11 +290,13 @@ class SettingsPage(QWidget):
         button_layout.addWidget(self.login_btn)
         button_layout.addWidget(self.verify_btn)
         button_layout.addWidget(self.logout_btn)
+        button_layout.addWidget(self.littleskin_btn)
         button_layout.addWidget(skin_btn)
         layout.addWidget(
             self._row(
                 "账户操作",
-                "邮箱登录会在系统浏览器中完成，授权后自动返回；离线名称仅在未登录时生效。",
+                "Microsoft 登录会在系统浏览器中完成；LittleSkin 登录后直接使用"
+                "该角色启动游戏。离线名称仅在未登录时生效。",
                 buttons,
             )
         )
@@ -593,6 +606,25 @@ class SettingsPage(QWidget):
         theme_layout.addWidget(self.theme_seg)
         layout.addWidget(
             self._row("界面主题", "切换启动器的浅色或深色外观。", theme_box)
+        )
+        layout.addWidget(hline())
+
+        background_box = QWidget()
+        background_layout = QHBoxLayout(background_box)
+        background_layout.setContentsMargins(0, 0, 0, 0)
+        self.background_switch = Switch()
+        self.background_switch.setChecked(
+            bool(getattr(self.main.config, "background_enabled", True))
+        )
+        self.background_switch.toggled.connect(self._save_background)
+        background_layout.addWidget(self.background_switch)
+        layout.addWidget(
+            self._row(
+                "后台运行",
+                "关闭窗口时留在系统托盘，下载、安装和服务端继续运行；"
+                "从托盘菜单可以真正退出。",
+                background_box,
+            )
         )
         layout.addWidget(hline())
 
@@ -1119,16 +1151,32 @@ class SettingsPage(QWidget):
             self.login_btn.setText("重新登录")
             self.verify_btn.setVisible(False)
             self.logout_btn.setVisible(True)
+        elif account.is_littleskin:
+            self.account_badge.setText("LittleSkin")
+            self.account_badge.setProperty("badge", "blue")
+            self.account_name.setText(account.name or "LittleSkin 角色")
+            uid = account.uuid or ""
+            self.account_uuid.setText(
+                f"LittleSkin 角色 · UUID {uid[:8]}…{uid[-4:]}"
+                if uid
+                else "已登录 LittleSkin，启动时使用该角色"
+            )
+            self.login_btn.setText("Microsoft 登录")
+            self.verify_btn.setVisible(False)
+            self.logout_btn.setVisible(True)
         else:
             self.account_badge.setText("离线模式")
             self.account_badge.setProperty("badge", "gray")
             self.account_name.setText(f"离线账户 · {self.main.config.player_name}")
             self.account_uuid.setText(
-                "未登录 Microsoft 账户，启动时使用上面的离线名称。"
+                "未登录游戏账户，启动时使用上面的离线名称。"
             )
             self.login_btn.setText("邮箱登录")
             self.verify_btn.setVisible(True)
             self.logout_btn.setVisible(False)
+        self.littleskin_btn.setText(
+            "切换 LittleSkin" if account.is_littleskin else "LittleSkin 登录"
+        )
         repolish(self.account_badge)
 
     def _save_client_id(self) -> None:
@@ -1188,8 +1236,39 @@ class SettingsPage(QWidget):
         self.main.account_changed.emit()
         self.main.toast(f"已登录 Microsoft 账户：{account.name}", "success")
 
-    def _logout_microsoft(self) -> None:
-        if not self.main.current_account().is_msa:
+    def _login_littleskin(self) -> None:
+        dialog = LittleSkinLoginDialog(self.main)
+        if not dialog.exec() or dialog.account is None:
+            return
+        account = dialog.account
+        self.main.apply_littleskin_account(account)
+        self.main.toast(
+            f"已登录 LittleSkin：{account.name}，该角色将用于启动游戏",
+            "success",
+        )
+
+    def _logout_account(self) -> None:
+        account = self.main.current_account()
+        if account.is_littleskin:
+            name = account.name or "LittleSkin 角色"
+            dialog = ConfirmDialog(
+                self.main,
+                "退出 LittleSkin 账户",
+                f"将退出 LittleSkin 角色「{name}」，并改回离线账户启动游戏。",
+                primary_text="退出登录",
+                secondary_text="取消",
+                icon_name="warning",
+                details="皮肤库中已经同步的皮肤会保留，不会删除本地图片。",
+            )
+            if not dialog.exec():
+                return
+            clear_littleskin_account(self.main.config)
+            self.main.config.account = {}
+            self.main.config.save()
+            self.main.account_changed.emit()
+            self.main.toast("已退出 LittleSkin 账户", "info")
+            return
+        if not account.is_msa:
             return
         dialog = ConfirmDialog(
             self.main,
@@ -1205,6 +1284,21 @@ class SettingsPage(QWidget):
         self.main.config.save()
         self.main.account_changed.emit()
         self.main.toast("已退出正版账户", "info")
+
+    def _save_background(self, checked: bool) -> None:
+        checked = bool(checked)
+        if checked == bool(getattr(self.main.config, "background_enabled", True)):
+            return
+        self.main.config.background_enabled = checked
+        self.main.config.save()
+        self.main.apply_background_setting()
+        if checked and not self.main.background_active():
+            self.main.toast("系统托盘不可用，关闭窗口仍会退出", "info")
+            return
+        self.main.toast(
+            "关闭窗口后将留在后台运行" if checked else "关闭窗口将直接退出",
+            "success" if checked else "info",
+        )
 
     def _save_isolation(self, checked: bool) -> None:
         checked = bool(checked)
@@ -1469,6 +1563,10 @@ class SettingsPage(QWidget):
     def on_show(self) -> None:
         self.refresh_account()
         self.isolation_switch.setChecked(bool(self.main.config.version_isolation))
+        if hasattr(self, "background_switch"):
+            self.background_switch.setChecked(
+                bool(getattr(self.main.config, "background_enabled", True))
+            )
         source_index = self.source_combo.findData(self.main.config.download_source)
         self.source_combo.setCurrentIndex(max(0, source_index))
         thread_index = self.thread_combo.findData(self.main.config.download_threads)

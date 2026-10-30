@@ -1,0 +1,10 @@
+{
+  "title": "Just Enough Items",
+  "project_id": "jei",
+  "source": "curseforge",
+  "source_label": "CurseForge",
+  "description": "View items and recipes",
+  "description_zh": "JEI 是物品与配方查询模组，打开背包就能搜索物品和合成表。",
+  "project_url": "https://www.curseforge.com/minecraft/mc-mods/jei",
+  "filename": "jei-1.21.11-fabric-19.27.0.jar"
+}

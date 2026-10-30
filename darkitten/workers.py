@@ -66,6 +66,12 @@ from .server_pack import (
     export_server,
     import_server_pack,
 )
+from .easytier import (
+    EasyTierCancelled,
+    RoomCode,
+    create_guest_session,
+    create_host_session,
+)
 from .pet import (
     PetRelease,
     download_pet,
@@ -204,6 +210,27 @@ class LaunchWorker(QObject):
                     else:
                         self.cancelled.emit()
                     return
+                if self._cancelled():
+                    self.cancelled.emit()
+                    return
+            elif account.is_littleskin:
+                self.status.emit("正在验证 LittleSkin 账户…")
+                try:
+                    from .littleskin import refresh as refresh_littleskin
+
+                    account = refresh_littleskin(account)
+                except Exception as exc:
+                    message = str(exc)
+                    if "失效" in message or "401" in message or "403" in message:
+                        if not self._cancelled():
+                            self.failed.emit(
+                                f"LittleSkin 登录已失效，请到皮肤页重新登录：{message}"
+                            )
+                        else:
+                            self.cancelled.emit()
+                        return
+                    # 网络波动不应该阻止启动，保留原令牌继续尝试。
+                    self.status.emit(f"LittleSkin 令牌续期失败，继续使用原令牌：{message}")
                 if self._cancelled():
                     self.cancelled.emit()
                     return
@@ -2581,3 +2608,140 @@ class RoomModSyncWorker(QObject):
             return
         message = "Mod 同步完成" if not result.cancelled else "Mod 同步已取消"
         self.finished.emit(True, message, result)
+
+
+class EasyTierHostWorker(QObject):
+    """准备 EasyTier 组件、房间服务和房主虚拟网络。"""
+
+    progress = Signal(int, str)
+    log_line = Signal(str)
+    ready = Signal(object, str)
+    failed = Signal(str)
+    cancelled = Signal()
+
+    def __init__(
+        self,
+        game_port: int,
+        player_name: str,
+        machine_id: str = "",
+        node_ids: list[str] | None = None,
+        direct_only: bool = False,
+        hide_address: bool = False,
+        parent=None,
+    ) -> None:
+        super().__init__(parent)
+        self.game_port = int(game_port)
+        self.player_name = str(player_name or "Steve")
+        self.machine_id = str(machine_id or "")
+        self.node_ids = list(node_ids or [])
+        self.direct_only = bool(direct_only)
+        self.hide_address = bool(hide_address)
+        self.cancel_event = threading.Event()
+
+    def start(self) -> None:
+        threading.Thread(target=self._run, daemon=True).start()
+
+    def cancel(self) -> None:
+        self.cancel_event.set()
+
+    def _progress(self, percent: int, message: str) -> None:
+        if not self.cancel_event.is_set():
+            self.progress.emit(max(0, min(100, int(percent))), str(message))
+
+    def _log(self, message: str) -> None:
+        if message and not self.cancel_event.is_set():
+            self.log_line.emit(str(message))
+
+    def _run(self) -> None:
+        try:
+            session = create_host_session(
+                self.game_port,
+                self.player_name,
+                machine_id=self.machine_id,
+                node_ids=self.node_ids,
+                direct_only=self.direct_only,
+                hide_address=self.hide_address,
+                progress=self._progress,
+                cancel=self.cancel_event.is_set,
+                log=self._log,
+            )
+        except EasyTierCancelled:
+            self.cancelled.emit()
+        except Exception as exc:
+            if not self.cancel_event.is_set():
+                self.failed.emit(str(exc) or "创建 P2P 房间失败。")
+        else:
+            if self.cancel_event.is_set():
+                session.stop()
+            else:
+                self.ready.emit(session, "")
+
+
+class EasyTierJoinWorker(QObject):
+    """加入房主的 EasyTier 房间并准备好本机端口转发。"""
+
+    progress = Signal(int, str)
+    log_line = Signal(str)
+    ready = Signal(object, str)
+    failed = Signal(str)
+    cancelled = Signal()
+
+    def __init__(
+        self,
+        code: RoomCode,
+        player_name: str,
+        machine_id: str = "",
+        node_ids: list[str] | None = None,
+        allow_relay: bool = True,
+        hide_address: bool = False,
+        search_timeout: float = 120.0,
+        parent=None,
+    ) -> None:
+        super().__init__(parent)
+        self.code = code
+        self.player_name = str(player_name or "Steve")
+        self.machine_id = str(machine_id or "")
+        self.node_ids = list(node_ids or [])
+        self.allow_relay = bool(allow_relay)
+        self.hide_address = bool(hide_address)
+        self.search_timeout = float(search_timeout)
+        self.cancel_event = threading.Event()
+
+    def start(self) -> None:
+        threading.Thread(target=self._run, daemon=True).start()
+
+    def cancel(self) -> None:
+        self.cancel_event.set()
+
+    def _progress(self, percent: int, message: str) -> None:
+        if not self.cancel_event.is_set():
+            self.progress.emit(max(0, min(100, int(percent))), str(message))
+
+    def _log(self, message: str) -> None:
+        if message and not self.cancel_event.is_set():
+            self.log_line.emit(str(message))
+
+    def _run(self) -> None:
+        try:
+            session = create_guest_session(
+                self.code,
+                self.player_name,
+                machine_id=self.machine_id,
+                node_ids=self.node_ids,
+                allow_relay=self.allow_relay,
+                hide_address=self.hide_address,
+                search_timeout=self.search_timeout,
+                progress=self._progress,
+                cancel=self.cancel_event.is_set,
+                log=self._log,
+            )
+        except EasyTierCancelled:
+            self.cancelled.emit()
+        except Exception as exc:
+            if not self.cancel_event.is_set():
+                self.failed.emit(str(exc) or "加入 P2P 房间失败。")
+        else:
+            if self.cancel_event.is_set():
+                session.stop()
+            else:
+                self.ready.emit(session, "")

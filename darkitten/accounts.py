@@ -30,6 +30,7 @@ class Account:
     uuid: str = ""
     access_token: str = ""
     refresh_token: str = ""
+    client_token: str = ""
     expires_at: float = 0.0
     mc_access_token: str = ""
     mc_expires_at: float = 0.0
@@ -40,6 +41,23 @@ class Account:
         return self.kind == "msa"
 
     @property
+    def is_littleskin(self) -> bool:
+        return self.kind == "littleskin"
+
+    @property
+    def is_online(self) -> bool:
+        """微软正版或 LittleSkin 这类需要在线验证的账户。"""
+        return self.is_msa or self.is_littleskin
+
+    @property
+    def kind_label(self) -> str:
+        if self.is_msa:
+            return "微软正版"
+        if self.is_littleskin:
+            return "LittleSkin"
+        return "离线模式"
+
+    @property
     def display_name(self) -> str:
         return self.name or "Steve"
 
@@ -48,10 +66,29 @@ class Account:
         return cls(kind="offline", name=name, uuid=offline_uuid(name))
 
     @classmethod
+    def from_littleskin(cls, account) -> "Account":
+        """把 LittleSkin 登录结果转成启动器当前游戏账户。"""
+        return cls(
+            kind="littleskin",
+            name=str(getattr(account, "name", "") or ""),
+            uuid=str(getattr(account, "uuid", "") or ""),
+            access_token=str(getattr(account, "access_token", "") or ""),
+            client_token=str(getattr(account, "client_token", "") or ""),
+        )
+
+    @classmethod
     def from_config(cls, data: dict[str, Any] | None) -> "Account":
         if not isinstance(data, dict):
             return cls()
         kind = str(data.get("kind") or "offline")
+        if kind == "littleskin":
+            return cls(
+                kind="littleskin",
+                name=str(data.get("name") or ""),
+                uuid=str(data.get("uuid") or ""),
+                access_token=unprotect(str(data.get("access_token") or "")),
+                client_token=unprotect(str(data.get("client_token") or "")),
+            )
         if kind != "msa":
             return cls()
         return cls(
@@ -67,6 +104,14 @@ class Account:
         )
 
     def to_config(self) -> dict[str, Any]:
+        if self.is_littleskin:
+            return {
+                "kind": "littleskin",
+                "name": self.name,
+                "uuid": self.uuid,
+                "access_token": protect(self.access_token),
+                "client_token": protect(self.client_token),
+            }
         if not self.is_msa:
             return {}
         return {

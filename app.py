@@ -15,6 +15,7 @@ from PySide6.QtGui import QFont
 from PySide6.QtWidgets import QApplication
 
 from darkitten.config import APP_NAME, LOG_DIR, Config, ensure_dirs
+from darkitten.single_instance import SingleInstanceGuard
 from darkitten.ui import icons, theme
 from darkitten.ui.animations import SplashScreen
 from darkitten.ui.main_window import MainWindow
@@ -65,6 +66,14 @@ def main() -> int:
     app.setFont(QFont("Microsoft YaHei UI", 9))
     app.setQuitOnLastWindowClosed(True)
 
+    # 截图/QA 模式必须能并行运行；正常启动则只允许一个常驻实例。
+    single_instance: SingleInstanceGuard | None = None
+    if "--screenshot" not in sys.argv:
+        single_instance = SingleInstanceGuard()
+        if not single_instance.acquire():
+            _debug("another launcher instance is running; activation sent")
+            return 0
+
     config = Config.load()
     theme.set_current(config.theme)
     app.setStyleSheet(theme.stylesheet(config.theme))
@@ -84,6 +93,11 @@ def main() -> int:
 
     _debug("building main window")
     window = MainWindow(config)
+
+    if single_instance is not None:
+        single_instance.activated.connect(window.show_from_tray)
+        single_instance.flush_pending_activation()
+        app.aboutToQuit.connect(single_instance.close)
 
     def offer_shortcut() -> None:
         if shot or os.environ.get("QT_QPA_PLATFORM", "").lower() == "offscreen":
@@ -106,7 +120,8 @@ def main() -> int:
             # 关闭即退出”，避免 splash 收尾时把整个启动器带走。
             splash.hide()
             QTimer.singleShot(0, splash.deleteLater)
-            app.setQuitOnLastWindowClosed(True)
+            # 后台运行时窗口只是隐藏，不能让“最后一个窗口关闭”把进程带走。
+            app.setQuitOnLastWindowClosed(not window.background_active())
             offer_shortcut()
 
         splash.finished.connect(reveal)

@@ -1,0 +1,10 @@
+{
+  "title": "Create",
+  "project_id": "create",
+  "source": "modrinth",
+  "source_label": "Modrinth",
+  "description": "Building and automation",
+  "description_zh": "机械动力：用齿轮、传送带和旋转机械搭建自动化装置。",
+  "project_url": "https://modrinth.com/mod/create",
+  "filename": "create-fabric-6.0.6.jar"
+}

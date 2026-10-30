@@ -28,8 +28,8 @@ class LittleSkinLoginDialog(StyledDialog):
         self._client_token = str(client_token or "")
 
         intro = QLabel(
-            "登录后会自动读取 LittleSkin 角色，并把角色当前皮肤同步到皮肤库。"
-            "这里只负责皮肤；启动游戏仍使用启动器当前选择的账户。"
+            "登录后会自动读取 LittleSkin 角色，并把该角色设为当前游戏账户。"
+            "之后启动游戏会通过 LittleSkin 验证，皮肤与披风也由 LittleSkin 提供。"
         )
         intro.setObjectName("Muted")
         intro.setWordWrap(True)

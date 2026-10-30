@@ -23,9 +23,11 @@ from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
     QLabel,
+    QMenu,
     QProgressBar,
     QPushButton,
     QStackedWidget,
+    QSystemTrayIcon,
     QVBoxLayout,
     QWidget,
 )
@@ -76,7 +78,7 @@ from ..workers import (
 from . import icons, theme
 from .animations import GameLoadingOverlay
 from .command_palette import CommandPalette
-from .dialogs import ConfirmDialog, NoticeDialog
+from .dialogs import CloseChoiceDialog, ConfirmDialog, NoticeDialog
 from .download_center import (
     IMPORT_TYPES,
     DownloadCenter,
@@ -255,7 +257,7 @@ class MainWindow(QWidget):
         account = Account.from_config(self.config.account)
         self.social_store = load_store()
         self.social_store.ensure_profile(
-            (account.display_name if account.is_msa else self.config.player_name)
+            (account.display_name if account.is_online else self.config.player_name)
             or "Steve"
         )
         self.versions = scan_versions(self.config.game_path)
@@ -308,6 +310,11 @@ class MainWindow(QWidget):
         self._download_tasks_dialog: DownloadTasksDialog | None = None
         self._feedback_reminder_worker: FeedbackListWorker | None = None
         self._feedback_checked = False
+        self._tray: QSystemTrayIcon | None = None
+        self._tray_menu: QMenu | None = None
+        self._force_quit = False
+        self._quit_requested = False
+        self._close_choice_dialog: CloseChoiceDialog | None = None
 
         self.setObjectName("Root")
         self.setAttribute(Qt.WA_StyledBackground, True)
@@ -318,6 +325,7 @@ class MainWindow(QWidget):
         self.setAcceptDrops(True)
 
         self._build_ui()
+        self._setup_tray()
         self._restore_safe_mode_on_startup()
         self.command_shortcut = QShortcut(QKeySequence("Ctrl+K"), self)
         self.command_shortcut.activated.connect(self.show_command_palette)
@@ -497,9 +505,9 @@ class MainWindow(QWidget):
 
         account = self.current_account()
         self.account_chip.set_account(
-            account.display_name if account.is_msa else self.config.player_name,
-            "正版" if account.is_msa else "离线",
-            account.is_msa,
+            account.display_name if account.is_online else self.config.player_name,
+            "正版" if account.is_msa else ("LittleSkin" if account.is_littleskin else "离线"),
+            account.is_online,
         )
 
     def _build_statusbar(self) -> QWidget:
@@ -931,6 +939,8 @@ class MainWindow(QWidget):
         self.update_state_kind = "busy"
         self.set_status("正在应用更新，启动器即将重启…", "busy")
         self.refresh_update_state()
+        # 更新器要等当前进程退出才会替换代码，这里不能再走“关闭到托盘”。
+        self._force_quit = True
         QTimer.singleShot(250, self.close)
         return True
 
@@ -965,7 +975,166 @@ class MainWindow(QWidget):
             (parsed.scheme, parsed.netloc, path, "", "")
         )
 
+    # ------------------------------------------------------------------
+    # 后台运行 / 系统托盘
+
+    def background_active(self) -> bool:
+        return self._tray is not None
+
+    def _setup_tray(self) -> None:
+        if self._tray is not None:
+            return
+        if not bool(getattr(self.config, "background_enabled", True)):
+            return
+        app = QApplication.instance()
+        if app is None or not QSystemTrayIcon.isSystemTrayAvailable():
+            return
+        tray = QSystemTrayIcon(icons.app_icon(), self)
+        tray.setToolTip(f"{APP_NAME} v{APP_VERSION}")
+        menu = QMenu(self)
+        menu.addAction("显示主界面", self.show_from_tray)
+        menu.addAction("下载中心", self._show_downloads_from_tray)
+        menu.addSeparator()
+        menu.addAction("退出启动器", self.quit_from_tray)
+        tray.setContextMenu(menu)
+        tray.activated.connect(self._on_tray_activated)
+        tray.messageClicked.connect(self.show_from_tray)
+        self.download_center.task_finished.connect(self._on_tray_task_finished)
+        tray.show()
+        self._tray = tray
+        self._tray_menu = menu
+        # 隐藏到托盘后最后一个窗口关闭不能再触发退出。
+        app.setQuitOnLastWindowClosed(False)
+
+    def _teardown_tray(self) -> None:
+        tray = self._tray
+        menu = self._tray_menu
+        self._tray = None
+        self._tray_menu = None
+        if tray is not None:
+            try:
+                self.download_center.task_finished.disconnect(
+                    self._on_tray_task_finished
+                )
+            except (RuntimeError, TypeError):
+                pass
+            tray.hide()
+            tray.setContextMenu(None)
+            tray.deleteLater()
+        if menu is not None:
+            menu.deleteLater()
+        app = QApplication.instance()
+        if app is not None:
+            app.setQuitOnLastWindowClosed(True)
+
+    def apply_background_setting(self) -> None:
+        if bool(getattr(self.config, "background_enabled", True)):
+            self._setup_tray()
+        else:
+            self._teardown_tray()
+
+    def _on_tray_activated(self, reason: QSystemTrayIcon.ActivationReason) -> None:
+        if reason in (QSystemTrayIcon.Trigger, QSystemTrayIcon.DoubleClick):
+            self.show_from_tray()
+
+    def show_from_tray(self) -> None:
+        if self.isMinimized():
+            self.showNormal()
+        else:
+            self.show()
+        self.raise_()
+        self.activateWindow()
+
+    def _show_downloads_from_tray(self) -> None:
+        self.show_from_tray()
+        self.open_download_tasks()
+
+    def quit_from_tray(self) -> None:
+        self._force_quit = True
+        self.close()
+
+    def _show_close_choice(self) -> None:
+        dialog = CloseChoiceDialog(self)
+        self._close_choice_dialog = dialog
+        dialog.setAttribute(Qt.WA_DeleteOnClose, True)
+        dialog.finished.connect(
+            lambda _result, current=dialog: self._on_close_choice(current)
+        )
+        dialog.open()
+
+    def _on_close_choice(self, dialog: CloseChoiceDialog) -> None:
+        if self._close_choice_dialog is dialog:
+            self._close_choice_dialog = None
+        choice = str(getattr(dialog, "choice", ""))
+        if choice == CloseChoiceDialog.BACKGROUND:
+            self.hide()
+            self._show_tray_hint()
+        elif choice == CloseChoiceDialog.EXIT:
+            self._force_quit = True
+            self.close()
+
+    def _quit_application(self) -> None:
+        if self._quit_requested:
+            return
+        self._quit_requested = True
+        app = QApplication.instance()
+        if app is not None:
+            app.quit()
+
+    def _on_tray_task_finished(self, task) -> None:
+        if self._tray is None:
+            return
+        if self.isVisible() and not self.isMinimized():
+            return
+        success = str(getattr(task, "status", "")) == "success"
+        title = "下载完成" if success else "下载结束"
+        message = str(getattr(task, "message", "") or getattr(task, "title", ""))
+        icon = (
+            QSystemTrayIcon.Information
+            if success
+            else QSystemTrayIcon.Warning
+        )
+        self._tray.showMessage(title, message, icon, 4000)
+
+    def _show_tray_hint(self) -> None:
+        if self._tray is None:
+            return
+        self._tray.setToolTip(f"{APP_NAME} v{APP_VERSION} · 正在后台运行")
+        if bool(getattr(self.config, "tray_hint_shown", False)):
+            return
+        self.config.tray_hint_shown = True
+        self.config.save()
+        self._tray.showMessage(
+            APP_NAME,
+            "启动器已最小化到系统托盘，下载和服务端会继续运行。右键托盘图标可以退出。",
+            QSystemTrayIcon.Information,
+            4200,
+        )
+
     def closeEvent(self, event: QCloseEvent) -> None:
+        if self._force_quit:
+            # 托盘菜单或更新器发起的退出，继续走下面的安全确认流程。
+            if self._close_choice_dialog is not None:
+                dialog = self._close_choice_dialog
+                self._close_choice_dialog = None
+                dialog.reject()
+        elif self.background_active() and bool(
+            getattr(self.config, "background_enabled", True)
+        ):
+            if os.environ.get("QT_QPA_PLATFORM", "").lower() == "offscreen":
+                # 无界面 QA 沿用直接隐藏，不弹出需要人工选择的对话框。
+                self.hide()
+                event.ignore()
+                self._show_tray_hint()
+                return
+            if self._close_choice_dialog is not None:
+                self._close_choice_dialog.raise_()
+                self._close_choice_dialog.activateWindow()
+                event.ignore()
+                return
+            self._show_close_choice()
+            event.ignore()
+            return
         if hasattr(self, "loading_overlay"):
             self.loading_overlay.abort()
         if self.install_active and self.install_worker:
@@ -978,6 +1147,7 @@ class MainWindow(QWidget):
                 icon_name="warning",
             )
             if not dialog.exec():
+                self._force_quit = False
                 event.ignore()
                 return
             self.install_worker.cancel()
@@ -992,6 +1162,7 @@ class MainWindow(QWidget):
                 icon_color=colors()["orange"],
             )
             if not dialog.exec():
+                self._force_quit = False
                 event.ignore()
                 return
             for task in self.download_center.active_tasks():
@@ -1010,6 +1181,7 @@ class MainWindow(QWidget):
                     details="、".join(running),
                 )
                 if not dialog.exec():
+                    self._force_quit = False
                     event.ignore()
                     return
             self.server_page.shutdown()
@@ -1024,6 +1196,10 @@ class MainWindow(QWidget):
                 self._game_log_file.close()
             except Exception:
                 pass
+        if self._force_quit:
+            self._teardown_tray()
+            # 窗口可能本来就隐藏着，不能依赖“最后一个窗口关闭”来结束进程。
+            QTimer.singleShot(0, self._quit_application)
         event.accept()
 
     # ------------------------------------------------------------------
@@ -1071,6 +1247,8 @@ class MainWindow(QWidget):
         color = palette.get(kind, palette["idle"])
         self.status_dot.setStyleSheet(f"color: {color}; font-size: 9px;")
         self.status_text.setText(text)
+        if self._tray is not None:
+            self._tray.setToolTip(f"{APP_NAME} v{APP_VERSION}\n{text}")
 
     def open_path(self, path: Path | str) -> None:
         try:
@@ -1296,9 +1474,35 @@ class MainWindow(QWidget):
     def current_account(self) -> Account:
         return Account.from_config(self.config.account)
 
+    def apply_littleskin_account(self, account) -> None:
+        """把 LittleSkin 角色设为当前游戏账户，并同步皮肤账户里的令牌。"""
+        from ..littleskin import load_account, save_account
+
+        profile = load_account(self.config)
+        for field in ("username", "name", "uuid", "access_token", "client_token"):
+            value = str(getattr(account, field, "") or "")
+            if value:
+                setattr(profile, field, value)
+        for field in ("variant", "skin_url"):
+            value = str(getattr(account, field, "") or "")
+            if value:
+                setattr(profile, field, value)
+        last_sync = float(getattr(account, "last_sync", 0) or 0)
+        if last_sync:
+            profile.last_sync = last_sync
+        profiles = getattr(account, "profiles", None)
+        if isinstance(profiles, list) and profiles:
+            profile.profiles = profiles
+        save_account(self.config, profile)
+
+        self.config.account = Account.from_littleskin(profile).to_config()
+        self.config.player_name = profile.name
+        self.config.save()
+        self.account_changed.emit()
+
     def display_name(self) -> str:
         account = self.current_account()
-        return account.name if account.is_msa else self.config.player_name
+        return account.name if account.is_online else self.config.player_name
 
     def _update_account(self) -> None:
         account = self.current_account()
@@ -1306,9 +1510,9 @@ class MainWindow(QWidget):
         set_developer_mode(dev_mode)
         if hasattr(self, "account_chip"):
             self.account_chip.set_account(
-                account.display_name if account.is_msa else self.config.player_name,
-                "正版" if account.is_msa else "离线",
-                account.is_msa,
+                account.display_name if account.is_online else self.config.player_name,
+                "正版" if account.is_msa else ("LittleSkin" if account.is_littleskin else "离线"),
+                account.is_online,
             )
             self.account_chip.set_developer(dev_mode)
             self.account_chip.avatar.refresh()
@@ -2546,7 +2750,10 @@ class MainWindow(QWidget):
         self.launch_active = False
         self.launch_worker = None
         self.loading_overlay.set_status("正在注入猫猫能量…")
-        if account.is_msa:
+        if account.is_littleskin:
+            # 启动前刷新过的令牌与角色资料要同时写回游戏账户和皮肤账户。
+            self.apply_littleskin_account(account)
+        elif account.is_online:
             self.config.account = account.to_config()
             self.config.save()
             self.account_changed.emit()

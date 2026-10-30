@@ -16,6 +16,7 @@ from .skins import SkinFile, SkinError, validate_skin_bytes
 
 API_ROOT = "https://littleskin.cn/api/yggdrasil"
 AUTHENTICATE_URL = f"{API_ROOT}/authserver/authenticate"
+REFRESH_URL = f"{API_ROOT}/authserver/refresh"
 PROFILE_URL = f"{API_ROOT}/sessionserver/session/minecraft/profile/{{uuid}}"
 REGISTER_URL = "https://littleskin.cn/auth/register"
 USER_AGENT = f"DarkittenLauncher/{APP_VERSION} (LittleSkin skin sync)"
@@ -285,6 +286,30 @@ def authenticate(
         variant="classic",
         profiles=_all_profiles(data),
     )
+
+
+def refresh(account: LittleSkinAccount) -> LittleSkinAccount:
+    """用 refresh 接口续期 Yggdrasil 令牌，避免启动时登录过期。"""
+    if not account.access_token:
+        raise LittleSkinError("LittleSkin 登录状态为空，请重新登录。")
+    data = _request_json(
+        REFRESH_URL,
+        {
+            "accessToken": account.access_token,
+            "clientToken": account.client_token,
+            "requestUser": True,
+        },
+    )
+    access_token = str(data.get("accessToken") or "").strip()
+    if not access_token:
+        raise LittleSkinError("LittleSkin 登录已失效，请重新登录。")
+    account.access_token = access_token
+    account.client_token = str(data.get("clientToken") or account.client_token)
+    profile = _profile_from_response(data)
+    if profile is not None:
+        account.name = profile["name"]
+        account.uuid = profile["id"]
+    return account
 
 
 def fetch_skin(account: LittleSkinAccount) -> SkinFile | None:

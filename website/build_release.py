@@ -30,6 +30,8 @@ EXCLUDED_NAMES = {
 EXCLUDED_PARTS = {
     "__pycache__",
     "cache",
+    # EasyTier 联机组件由启动器首次开房时按需下载，不随包分发。
+    "easytier",
     "logs",
     "minecraft",
     "servers",
