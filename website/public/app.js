@@ -186,6 +186,121 @@
     });
   }
 
+  let shotButtons = [];
+  let shotIndex = 0;
+  let shotToken = 0;
+  let shotLightboxFocus = null;
+
+  function shotCounter(index) {
+    return String(index + 1).padStart(2, "0") + " / " + String(shotButtons.length).padStart(2, "0");
+  }
+
+  function syncShotLightbox() {
+    const button = shotButtons[shotIndex];
+    if (!button) return;
+    const image = $("#shotLightboxImage");
+    const title = $("#shotLightboxTitle");
+    const counter = $("#shotLightboxCounter");
+    if (image) {
+      image.src = button.dataset.shot || "";
+      image.alt = button.dataset.alt || button.dataset.title || "启动器界面截图";
+    }
+    if (title) title.textContent = button.dataset.title || "";
+    if (counter) counter.textContent = shotCounter(shotIndex);
+  }
+
+  function setShot(index) {
+    if (!shotButtons.length) return;
+    shotIndex = (index + shotButtons.length) % shotButtons.length;
+    const button = shotButtons[shotIndex];
+    const image = $("#shotImage");
+    const title = $("#shotTitle");
+    const desc = $("#shotDesc");
+    const counter = $("#shotCounter");
+    const src = button.dataset.shot || "";
+
+    shotButtons.forEach((item, position) => {
+      const active = position === shotIndex;
+      item.classList.toggle("is-active", active);
+      item.setAttribute("aria-selected", active ? "true" : "false");
+    });
+
+    if (title) title.textContent = button.dataset.title || "";
+    if (desc) desc.textContent = button.dataset.desc || "";
+    if (counter) counter.textContent = shotCounter(shotIndex);
+
+    if (image && src) {
+      const token = ++shotToken;
+      image.style.opacity = "0";
+      const preload = new Image();
+      const apply = () => {
+        if (token !== shotToken) return;
+        image.src = src;
+        image.alt = button.dataset.alt || button.dataset.title || "启动器界面截图";
+        image.style.opacity = "1";
+      };
+      preload.onload = apply;
+      preload.onerror = apply;
+      preload.src = src;
+    }
+
+    if (!$("#shotLightbox")?.hidden) syncShotLightbox();
+  }
+
+  function openShotLightbox() {
+    const lightbox = $("#shotLightbox");
+    if (!lightbox) return;
+    shotLightboxFocus = document.activeElement;
+    syncShotLightbox();
+    lightbox.hidden = false;
+    document.body.classList.add("lightbox-open");
+    const close = $(".lightbox-close", lightbox);
+    if (close) close.focus();
+  }
+
+  function closeShotLightbox() {
+    const lightbox = $("#shotLightbox");
+    if (!lightbox || lightbox.hidden) return;
+    lightbox.hidden = true;
+    document.body.classList.remove("lightbox-open");
+    if (shotLightboxFocus && typeof shotLightboxFocus.focus === "function") {
+      shotLightboxFocus.focus();
+    }
+    shotLightboxFocus = null;
+  }
+
+  function bindGallery() {
+    shotButtons = $$(".shot-thumb");
+    if (!shotButtons.length) return;
+    shotButtons.forEach((button, index) => {
+      button.addEventListener("click", () => setShot(index));
+    });
+    $$("[data-shot-zoom]").forEach((button) => {
+      button.addEventListener("click", openShotLightbox);
+    });
+    $$("[data-shot-close]").forEach((button) => {
+      button.addEventListener("click", closeShotLightbox);
+    });
+    const prev = $("[data-shot-prev]");
+    const next = $("[data-shot-next]");
+    if (prev) prev.addEventListener("click", () => setShot(shotIndex - 1));
+    if (next) next.addEventListener("click", () => setShot(shotIndex + 1));
+    document.addEventListener("keydown", (event) => {
+      const lightbox = $("#shotLightbox");
+      if (!lightbox || lightbox.hidden) return;
+      if (event.key === "Escape") closeShotLightbox();
+      if (event.key === "ArrowLeft") setShot(shotIndex - 1);
+      if (event.key === "ArrowRight") setShot(shotIndex + 1);
+    });
+    const lightbox = $("#shotLightbox");
+    if (lightbox) {
+      lightbox.addEventListener("click", (event) => {
+        if (event.target === lightbox) closeShotLightbox();
+      });
+    }
+    setShot(0);
+  }
+
   const FEEDBACK_EMAIL = "lfel278623@outlook.com";
   const GITHUB_NEW_ISSUE = "https://github.com/LFELKEEA/darkitten-launcher/issues/new";
   const FEEDBACK_VERSION_FALLBACK = "1.11.6";
@@ -479,6 +594,7 @@
     bindCopy();
     bindPetCopy();
     bindParallax();
+    bindGallery();
     bindFeedback();
     loadManifest();
     if (!prefillFeedbackFromQuery()) openFeedbackFromHash();

@@ -41,13 +41,14 @@ def _allowed_path(raw_path: str) -> bool:
     if path in STATIC_FILES:
         return True
     parts = [part for part in path.split("/") if part]
-    if len(parts) != 2:
+    if len(parts) < 2:
         return False
-    folder, name = parts
+    folder, name = parts[0], parts[-1]
     suffix = Path(name).suffix.lower()
     if folder == "assets":
-        return suffix in ASSET_SUFFIXES
-    if folder == "downloads":
+        # 允许 assets/screenshots/*.webp 这类子目录，仍然只放行图片后缀。
+        return suffix in ASSET_SUFFIXES and all(part not in (".", "..") for part in parts[1:])
+    if len(parts) == 2 and folder == "downloads":
         return suffix in DOWNLOAD_SUFFIXES
     return False
 
