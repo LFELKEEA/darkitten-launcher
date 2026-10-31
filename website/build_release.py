@@ -433,10 +433,14 @@ def upload_tree(
     payload: dict = {"tree": entries}
     if base_tree and parent:
         # 增量覆盖：保留远端已有文件（例如历史下载包），只替换本次上传的路径。
+        # 读不到父提交的 tree 时必须中止，否则会把整个分支覆盖成本次文件。
         parent_commit = gh_api(gh, f"repos/{full}/git/commits/{parent}", check=False)
         base_sha = str(parent_commit.get("tree", {}).get("sha") or "")
-        if base_sha:
-            payload["base_tree"] = base_sha
+        if not base_sha:
+            raise SystemExit(
+                "base_tree 失败：读不到父提交的 tree，已中止上传以避免覆盖远端文件。"
+            )
+        payload["base_tree"] = base_sha
     tree = gh_api(gh, f"repos/{full}/git/trees", "POST", payload)
     print(f"upload {branch}: {len(entries)} files, tree {tree['sha']}", flush=True)
     # 新建 tree 后立刻提交偶尔会触发 GitHub 的复制延迟（Tree SHA does not exist），短暂等待后重试。
