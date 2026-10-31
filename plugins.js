@@ -303,7 +303,7 @@
       console.warn("plugins.json 读取失败", error);
       grid.innerHTML =
         '<p class="pl-noscript">插件清单暂时读取失败。可以直接下载：' +
-        '<a href="plugins/lfelkeea.qq_bridge-1.0.0.zip">QQ 桥接（SnowLuma）</a>、' +
+        '<a href="plugins/lfelkeea.qq_bridge-1.1.0.zip">QQ 桥接（SnowLuma）</a>、' +
         '<a href="plugins/lfelkeea.focus_guard-1.0.0.zip">专注时间</a>、' +
         '<a href="plugins/example.hello-1.0.0.zip">示例：定时问候</a>、' +
         '<a href="plugins/example.screen_note-1.0.0.zip">示例：屏幕观察补充</a>。' +
