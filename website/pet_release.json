@@ -1,14 +1,15 @@
 {
   "name": "LFELKEEA 桌宠",
-  "version": "1.0.0",
-  "released": "2026-10-27",
-  "size": 135975564,
-  "sha256": "8eb1513a3e80a22c948eab0bd60ad134b9ee8f70a647023bd46187bda009d319",
-  "download_url": "https://github.com/LFELKEEA/darkitten-launcher/releases/download/pet-v1.0.0/LFELKEEA.zip",
+  "version": "1.1.0",
+  "released": "2026-10-31",
+  "size": 136042156,
+  "sha256": "3d158daa3834a619f177ba5836830edc83fafd98a8b662b7a53bd80163e0e469",
+  "download_url": "https://github.com/LFELKEEA/darkitten-launcher/releases/download/pet-v1.1.0/LFELKEEA.zip",
   "notes": [
-    "桌面常驻小猫：可置顶、缩放和拖动位置，空闲时会自己说几句话。",
-    "支持语音识别与语音对话，内置中文语音模型，不需要另外安装语音组件。",
-    "可以接入 OpenAI 兼容接口的 AI 对话，首次使用时在桌宠设置里填写自己的 API Key。",
-    "升级只替换程序文件，data/config.json 里的位置、缩放和 AI 配置会保留。"
+    "定时观察屏幕：每隔 1/2/5/10 分钟看一眼当前窗口，结合画面和屏幕文字主动聊一句，聊天、语音、观察共用同一段记忆。",
+    "四种观察方式：自动选择、窗口标题、视觉模型、屏幕 OCR；支持全屏自动暂停、敏感窗口跳过，截图只在内存中处理、不落盘。",
+    "新增插件系统：插件放在 data/plugins，支持权限、事件、定时器、AI 对话、截图、设置和 JSON 存储，出错自动隔离，不影响桌宠本体。",
+    "新增插件管理界面和完整开发文档：内置两个示例插件，附带可直接交给其他 AI 的插件开发提示词。",
+    "升级只替换程序文件，data/config.json 里的位置、缩放、AI 配置和插件数据都会保留。"
   ]
 }
