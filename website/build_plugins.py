@@ -41,7 +41,7 @@ PERMISSION_LABELS = {
 EXCLUDED_PARTS = {"__pycache__", ".state"}
 EXCLUDED_SUFFIXES = {".pyc", ".pyo", ".log"}
 
-FEATURED = {"lfelkeea.focus_guard"}
+FEATURED = {"lfelkeea.focus_guard", "lfelkeea.qq_bridge"}
 
 
 def plugin_files(folder: Path) -> list[Path]:
@@ -75,6 +75,25 @@ def package(folder: Path, manifest: dict) -> dict:
             archive.write(path, f"{folder.name}/{path.relative_to(folder).as_posix()}")
 
     permissions = [str(item) for item in manifest.get("permissions", [])]
+    requires = []
+    for item in manifest.get("requires", []) or []:
+        if not isinstance(item, dict):
+            continue
+        requires.append(
+            {
+                "name": str(item.get("name", "")),
+                "version": str(item.get("version", "")),
+                "url": str(item.get("url", "")),
+                "note": str(item.get("note", "")),
+            }
+        )
+    highlights = []
+    for item in manifest.get("highlights", []) or []:
+        if not isinstance(item, dict):
+            continue
+        highlights.append(
+            {"label": str(item.get("label", "")), "value": str(item.get("value", ""))}
+        )
     return {
         "id": plugin_id,
         "name": str(manifest.get("name", plugin_id)),
@@ -84,6 +103,8 @@ def package(folder: Path, manifest: dict) -> dict:
         "api_version": int(manifest.get("api_version", 1)),
         "permissions": permissions,
         "permission_labels": [PERMISSION_LABELS.get(item, item) for item in permissions],
+        "requires": requires,
+        "highlights": highlights,
         "settings": manifest.get("settings", {}),
         "bundled": folder.name.startswith("example."),
         "featured": plugin_id in FEATURED,

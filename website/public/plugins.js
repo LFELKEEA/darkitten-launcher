@@ -13,7 +13,8 @@
   const ICONS = [
     ["focus", "i-timer"],
     ["hello", "i-chat"],
-    ["screen", "i-eye"]
+    ["screen", "i-eye"],
+    ["qq", "i-chat"]
   ];
 
   const SETTING_LABELS = {
@@ -66,14 +67,49 @@
     Object.keys(settings).forEach((key) => {
       const raw = settings[key];
       if (raw === "" || raw === null || raw === undefined) return;
+      if (Array.isArray(raw) && !raw.length) return;
+      if (typeof raw === "object" && !Array.isArray(raw)) return;
+      if (/token|secret|password/i.test(key)) return;
       const label = SETTING_LABELS[key] || key;
+      let value = raw;
+      if (Array.isArray(raw)) value = raw.length + " 项";
+      if (typeof raw === "boolean") value = raw ? "开" : "关";
       const unit = key.slice(-8) === "_minutes" ? " 分钟" : "";
       chips.push(
         '<span class="pl-setting">' + escapeHtml(label) +
-        " <strong>" + escapeHtml(raw) + "</strong>" + unit + "</span>"
+        " <strong>" + escapeHtml(value) + "</strong>" + unit + "</span>"
       );
     });
     return chips.length ? '<div class="pl-settings">' + chips.join("") + "</div>" : "";
+  }
+
+  function highlightChips(plugin) {
+    const items = Array.isArray(plugin.highlights) ? plugin.highlights : [];
+    if (!items.length) return "";
+    const chips = items.map((item) => {
+      if (!item || typeof item !== "object") return "";
+      return (
+        '<span class="pl-setting">' + escapeHtml(item.label || "说明") +
+        " <strong>" + escapeHtml(item.value || "") + "</strong></span>"
+      );
+    }).filter(Boolean);
+    return chips.length ? '<div class="pl-settings pl-highlights">' + chips.join("") + "</div>" : "";
+  }
+
+  function requiresBlock(plugin) {
+    const items = Array.isArray(plugin.requires) ? plugin.requires : [];
+    if (!items.length) return "";
+    const rows = items.map((item) => {
+      if (!item || typeof item !== "object") return "";
+      const name = escapeHtml(item.name || "前置程序");
+      const version = item.version ? " <strong>" + escapeHtml(item.version) + "</strong>" : "";
+      const label = item.url
+        ? '<a class="pl-requires-link" href="' + escapeHtml(item.url) + '" target="_blank" rel="noopener">' + name + version + ' <svg class="icon"><use href="#i-arrow"></use></svg></a>'
+        : "<span>" + name + version + "</span>";
+      const note = item.note ? '<span class="pl-requires-note">' + escapeHtml(item.note) + "</span>" : "";
+      return '<div class="pl-requires-row"><span class="pl-requires-label">需要</span>' + label + note + "</div>";
+    }).filter(Boolean);
+    return rows.length ? '<div class="pl-requires">' + rows.join("") + "</div>" : "";
   }
 
   function permissionChips(plugin) {
@@ -117,7 +153,8 @@
         '<span class="pl-id">' + escapeHtml(id) + "</span></div>" +
       "</div>" +
       '<p class="pl-desc">' + escapeHtml(plugin.description || "") + "</p>" +
-      settingChips(plugin.settings) +
+      requiresBlock(plugin) +
+      (highlightChips(plugin) || settingChips(plugin.settings)) +
       permissionChips(plugin) +
       '<dl class="pl-meta">' +
         "<div><dt>包大小</dt><dd>" + escapeHtml(formatBytes(plugin.size)) + "</dd></div>" +
@@ -266,6 +303,7 @@
       console.warn("plugins.json 读取失败", error);
       grid.innerHTML =
         '<p class="pl-noscript">插件清单暂时读取失败。可以直接下载：' +
+        '<a href="plugins/lfelkeea.qq_bridge-1.1.1.zip">QQ 桥接（SnowLuma）</a>、' +
         '<a href="plugins/lfelkeea.focus_guard-1.0.0.zip">专注时间</a>、' +
         '<a href="plugins/example.hello-1.0.0.zip">示例：定时问候</a>、' +
         '<a href="plugins/example.screen_note-1.0.0.zip">示例：屏幕观察补充</a>。' +

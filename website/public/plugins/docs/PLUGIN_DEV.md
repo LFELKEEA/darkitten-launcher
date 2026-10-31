@@ -120,12 +120,17 @@ def setup(api):
 ```python
 def teardown():
     ...
+
+def open_settings(api, parent=None):
+    """可选：返回一个 QDialog，插件管理里会出现「设置」按钮。"""
+    return MySettingsDialog(api, parent)
 ```
 
 注意：
 
 - `setup(api)` 在桌宠主线程执行，不要在里面做长时间阻塞操作（例如 `time.sleep(10)`、同步 HTTP）。
-- 不要自己创建 Qt 控件；插件没有 UI 容器。需要提示用户就调用 `api.say()`。
+- 插件可以自带设置界面：入口模块实现 `open_settings(api, parent=None)`，返回一个 `QDialog`（或任意带 `show()` 的窗口）即可，插件管理里会自动出现「设置」按钮。窗口由插件自己创建，必须使用 PySide6；父窗口是插件对话框，关闭插件对话框时窗口会一起销毁。
+- 没有设置界面时，需要提示用户就调用 `api.say()`。
 - 不要在模块顶层直接调用 `api`，那时 API 还不存在。
 - 定时器和事件回调都在主线程执行。长时间计算请自己开线程，但不要从后台线程直接操作 Qt 界面或调用 `api.say()` / `api.capture_screen()`。
 - 插件抛异常不会让桌宠崩溃，但会在插件管理里显示「运行出错（已隔离）」，并写入日志。
@@ -262,6 +267,29 @@ api.save_settings({"interval_minutes": 15})
 - `api.settings` 返回当前设置的副本，修改它不会自动保存。
 - `save_settings(values)` 会合并进 `data/config.json` 的 `plugins.settings.<id>`。
 - 设置变更不会自动重载插件；需要让用户点「重载」，或者在插件里自己处理。
+
+### 5.8.1 插件设置界面
+
+入口模块提供 `open_settings(api, parent=None)` 即可，返回一个 `QDialog`：
+
+```python
+from PySide6.QtWidgets import QDialog, QVBoxLayout, QLabel, QPushButton
+
+def open_settings(api, parent=None):
+    dialog = QDialog(parent)
+    dialog.setWindowTitle("我的插件设置")
+    layout = QVBoxLayout(dialog)
+    layout.addWidget(QLabel("这里放插件自己的配置项"))
+    close = QPushButton("关闭")
+    close.clicked.connect(dialog.accept)
+    layout.addWidget(close)
+    return dialog
+```
+
+- 只有插件正在运行时才会显示「设置」按钮。
+- 每次点击都会调用一次 `open_settings`，同一个插件的同时只保留一个窗口；插件被停用或重载时窗口自动关闭。
+- 插件可以在窗口里直接调用 `api.save_settings()` 和 `api.say()`，但所有 Qt 操作都必须在主线程。
+- 设置窗口是插件自己的代码，样式和布局自由发挥；建议用 760×640 左右、深色配色，和桌宠保持一致。
 
 ### 5.9 存储
 

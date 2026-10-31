@@ -19,16 +19,16 @@
   "source_txt_size": 2282672,
   "pet": {
     "name": "LFELKEEA 桌宠",
-    "version": "1.1.0",
+    "version": "1.1.1",
     "released": "2026-10-31",
-    "size": 136042156,
-    "sha256": "3d158daa3834a619f177ba5836830edc83fafd98a8b662b7a53bd80163e0e469",
-    "download_url": "https://github.com/LFELKEEA/darkitten-launcher/releases/download/pet-v1.1.0/LFELKEEA.zip",
+    "size": 136045040,
+    "sha256": "46cc0855b56c665022567c4098ca8ddcc0a807e02566bb59b231c2563e5663cb",
+    "download_url": "https://github.com/LFELKEEA/darkitten-launcher/releases/download/pet-v1.1.1/LFELKEEA.zip",
     "notes": [
-      "定时观察屏幕：每隔 1/2/5/10 分钟看一眼当前窗口，结合画面和屏幕文字主动聊一句，聊天、语音、观察共用同一段记忆。",
-      "四种观察方式：自动选择、窗口标题、视觉模型、屏幕 OCR；支持全屏自动暂停、敏感窗口跳过，截图只在内存中处理、不落盘。",
-      "新增插件系统：插件放在 data/plugins，支持权限、事件、定时器、AI 对话、截图、设置和 JSON 存储，出错自动隔离，不影响桌宠本体。",
-      "新增插件管理界面和完整开发文档：内置两个示例插件，附带可直接交给其他 AI 的插件开发提示词。",
+      "插件系统新增设置面板支持：插件可以提供自己的可视化配置窗口，运行中的插件在插件管理里直接点「设置」打开，停用或卸载时自动关闭。",
+      "插件清单 settings 里的默认值会先合并进插件配置，插件首次运行就有合理默认值，不再需要手改 data/config.json。",
+      "配套的 QQ 桥接插件 1.1.0 使用新设置面板：SnowLuma 连接、白名单、人格卡、长期记忆、黑话库、习惯化回复和 QQ 空间都在窗口里配置。",
+      "安装包不再内置第三方插件，避免桌宠升级覆盖插件；QQ 桥接和专注守护请从下载站插件页单独安装。",
       "升级只替换程序文件，data/config.json 里的位置、缩放、AI 配置和插件数据都会保留。"
     ]
   }
