@@ -1,0 +1,87 @@
+{
+  "updated": "2026-10-31",
+  "api_version": 1,
+  "pet_version": "1.1.0",
+  "plugins": [
+    {
+      "id": "lfelkeea.focus_guard",
+      "name": "专注时间",
+      "version": "1.0.0",
+      "author": "LFELKEEA",
+      "description": "专注 50 分钟、休息 5 分钟的循环提醒；结束时让桌宠提醒你站起来活动。",
+      "api_version": 1,
+      "permissions": [
+        "pet.say",
+        "pet.action",
+        "timer",
+        "settings",
+        "storage"
+      ],
+      "permission_labels": [
+        "说话",
+        "动作",
+        "定时器",
+        "设置",
+        "本地存储"
+      ],
+      "settings": {
+        "focus_minutes": 50,
+        "break_minutes": 5
+      },
+      "bundled": false,
+      "featured": true,
+      "file": "plugins/lfelkeea.focus_guard-1.0.0.zip",
+      "size": 2644,
+      "sha256": "ea7e3339bea04d09360c0c6990ba8c9a26f963e6d2c27137749d0c7caf9ed2f9"
+    },
+    {
+      "id": "example.hello",
+      "name": "示例：定时问候",
+      "version": "1.0.0",
+      "author": "LFELKEEA",
+      "description": "每隔一段时间说一句话，演示 say / every / settings / events 的用法。",
+      "api_version": 1,
+      "permissions": [
+        "pet.say",
+        "timer",
+        "events",
+        "settings"
+      ],
+      "permission_labels": [
+        "说话",
+        "定时器",
+        "事件",
+        "设置"
+      ],
+      "settings": {
+        "interval_minutes": 10,
+        "message": ""
+      },
+      "bundled": true,
+      "featured": false,
+      "file": "plugins/example.hello-1.0.0.zip",
+      "size": 1483,
+      "sha256": "b906d6270302ccb0920cb00a53502ce0028b8569fc433f3ed647848f3680a3b6"
+    },
+    {
+      "id": "example.screen_note",
+      "name": "示例：屏幕观察补充",
+      "version": "1.0.0",
+      "author": "LFELKEEA",
+      "description": "在屏幕观察时补充一条上下文，让 LFELKEEA 更容易说对话题。",
+      "api_version": 1,
+      "permissions": [
+        "events"
+      ],
+      "permission_labels": [
+        "事件"
+      ],
+      "settings": {},
+      "bundled": true,
+      "featured": false,
+      "file": "plugins/example.screen_note-1.0.0.zip",
+      "size": 1485,
+      "sha256": "f00edb0c640ba6d04fb3811f3d7bd9530167d9f42070b25eda0775078674f298"
+    }
+  ]
+}
