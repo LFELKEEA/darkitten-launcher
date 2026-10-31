@@ -86,6 +86,8 @@ def source_include(relative: Path) -> bool:
 def website_include(relative: Path) -> bool:
     if any(part in EXCLUDED_PARTS for part in relative.parts):
         return False
+    if relative.parts and relative.parts[0] == "qa":
+        return False
     if "downloads" in relative.parts:
         return False
     if relative.suffix.lower() in (".pyc", ".pyo", ".log"):

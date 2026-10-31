@@ -16,11 +16,15 @@ ROOT = BASE / "public"
 STATIC_FILES = {
     "/",
     "/index.html",
+    "/plugins.html",
     "/feedback.html",
     "/style.css",
+    "/plugins.css",
     "/app.js",
+    "/plugins.js",
     "/feedback-admin.css",
     "/feedback-admin.js",
+    "/plugins.json",
     "/update.json",
     "/robots.txt",
 }
@@ -50,6 +54,8 @@ def _allowed_path(raw_path: str) -> bool:
         return suffix in ASSET_SUFFIXES and all(part not in (".", "..") for part in parts[1:])
     if len(parts) == 2 and folder == "downloads":
         return suffix in DOWNLOAD_SUFFIXES
+    if folder == "plugins":
+        return suffix in {".zip", ".md"} and all(part not in (".", "..") for part in parts[1:])
     return False
 
 
