@@ -373,6 +373,56 @@
 
 .pl-featured .pl-desc { max-width: 720px; font-size: 13.5px; }
 
+/* External requirements -------------------------------------------------- */
+
+.pl-requires {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px;
+  border: 1px solid rgba(255, 176, 92, 0.24);
+  border-radius: 10px;
+  background: rgba(255, 176, 92, 0.05);
+}
+
+.pl-requires-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.6;
+}
+
+.pl-requires-label {
+  color: #ffcf8a;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.13em;
+}
+
+.pl-requires-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  color: #ffcf8a;
+  text-decoration: none;
+  border-bottom: 1px dashed rgba(255, 207, 138, 0.45);
+}
+
+.pl-requires-link:hover { color: #ffe1b3; border-bottom-color: #ffe1b3; }
+.pl-requires-link strong { font-family: var(--mono); font-size: 10.5px; }
+.pl-requires-link .icon { width: 12px; height: 12px; }
+.pl-requires-note { color: var(--muted-2); font-size: 10.5px; }
+
+.pl-highlights .pl-setting {
+  border-color: rgba(255, 176, 92, 0.18);
+  background: rgba(255, 176, 92, 0.04);
+}
+
+.pl-highlights .pl-setting strong { color: #ffcf8a; }
+
 /* Settings chips --------------------------------------------------------- */
 
 .pl-settings {
@@ -537,6 +587,16 @@
 .pl-tip .icon { margin-top: 2px; color: var(--green); width: 18px; height: 18px; }
 .pl-tip p { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.8; }
 .pl-tip strong { color: #b7f0d6; font-weight: 700; }
+
+.pl-tip-dependency {
+  border-color: rgba(255, 176, 92, 0.26);
+  background: rgba(255, 176, 92, 0.05);
+}
+
+.pl-tip-dependency .icon,
+.pl-tip-dependency strong { color: #ffcf8a; }
+.pl-tip-dependency a { color: #ffcf8a; text-decoration: none; border-bottom: 1px dashed rgba(255, 207, 138, 0.45); }
+.pl-tip-dependency a:hover { color: #ffe1b3; border-bottom-color: #ffe1b3; }
 
 /* Develop ---------------------------------------------------------------- */
 

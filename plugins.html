@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="theme-color" content="#100a10">
   <title>插件库 · Darkitten Launcher 桌宠插件</title>
-  <meta name="description" content="LFELKEEA 桌宠插件库：下载专注时间等插件，查看权限、安装步骤和插件开发文档，让桌面小猫多一项技能。">
+  <meta name="description" content="LFELKEEA 桌宠插件库：下载 QQ 桥接、专注时间等插件，查看权限、外部依赖、安装步骤和插件开发文档，让桌面小猫多一项技能。">
   <link rel="icon" href="assets/dkl.ico">
   <link rel="stylesheet" href="style.css">
   <link rel="stylesheet" href="plugins.css">
@@ -57,7 +57,7 @@
       <div class="pl-hero-copy reveal">
         <div class="eyebrow"><span class="pulse"></span>PLUGIN LIBRARY<span class="eyebrow-sep">/</span>API V1</div>
         <h1>给小猫<br><em>装个新技能。</em></h1>
-        <p class="lede">插件是桌宠 1.1.0 起开放的小扩展：用几行 Python 就能让它定时提醒、读取屏幕上下文，或者在特定事件里做点自己的事。<strong>新插件默认不会运行，要你在插件管理里手动勾选启用。</strong></p>
+        <p class="lede">插件是桌宠 1.1.0 起开放的小扩展：用几行 Python 就能让它定时提醒、读取屏幕上下文，或者把 QQ 私聊和群聊接进来。<strong>新插件默认不会运行，要你在插件管理里手动勾选启用。</strong></p>
         <div class="pl-hero-actions">
           <a class="btn btn-primary" href="#library">
             <svg class="icon"><use href="#i-plug"></use></svg>
@@ -69,7 +69,7 @@
           </a>
         </div>
         <div class="pl-hero-meta">
-          <span><strong data-plugin-total>3</strong> 个可用插件</span>
+          <span><strong data-plugin-total>4</strong> 个可用插件</span>
           <span>适配桌宠 <strong data-pet-version>1.1.0</strong></span>
           <span>接口版本 <strong>v1</strong></span>
         </div>
@@ -109,10 +109,10 @@
         <div>
           <span class="kicker">AVAILABLE PLUGINS</span>
           <h2>现有的插件，<br>先装一个试试。</h2>
-          <p>下面每个包都是可直接解压使用的完整插件文件夹，附带来源、权限和 SHA-256。列表由站点的 <a href="plugins.json">plugins.json</a> 生成，版本和校验值以文件为准。</p>
+          <p>下面每个包都是可直接解压使用的完整插件文件夹，附带来源、权限和 SHA-256。需要额外程序的插件会在卡片上单独标注，比如 QQ 桥接要先装 SnowLuma。列表由站点的 <a href="plugins.json">plugins.json</a> 生成，版本和校验值以文件为准。</p>
         </div>
         <div class="pl-filters" role="group" aria-label="筛选插件">
-          <button class="pl-filter is-active" type="button" data-filter="all" aria-pressed="true">全部 <span data-count-all>3</span></button>
+          <button class="pl-filter is-active" type="button" data-filter="all" aria-pressed="true">全部 <span data-count-all>4</span></button>
           <button class="pl-filter" type="button" data-filter="featured" aria-pressed="false">推荐</button>
           <button class="pl-filter" type="button" data-filter="bundled" aria-pressed="false">内置示例</button>
         </div>
@@ -122,7 +122,7 @@
         <p class="pl-loading">正在读取插件清单…</p>
       </div>
       <noscript>
-        <p class="pl-noscript">站点用脚本读取 <a href="plugins.json">plugins.json</a> 来渲染插件卡片。启用 JavaScript 后可以在这里直接下载；也可以手动下载：<a href="plugins/lfelkeea.focus_guard-1.0.0.zip">专注时间</a>、<a href="plugins/example.hello-1.0.0.zip">示例：定时问候</a>、<a href="plugins/example.screen_note-1.0.0.zip">示例：屏幕观察补充</a>。</p>
+        <p class="pl-noscript">站点用脚本读取 <a href="plugins.json">plugins.json</a> 来渲染插件卡片。启用 JavaScript 后可以在这里直接下载；也可以手动下载：<a href="plugins/lfelkeea.qq_bridge-1.0.0.zip">QQ 桥接（SnowLuma）</a>、<a href="plugins/lfelkeea.focus_guard-1.0.0.zip">专注时间</a>、<a href="plugins/example.hello-1.0.0.zip">示例：定时问候</a>、<a href="plugins/example.screen_note-1.0.0.zip">示例：屏幕观察补充</a>。</p>
       </noscript>
       <p class="pl-empty" data-plugin-empty hidden>这个分类下暂时没有插件。</p>
     </section>
@@ -155,6 +155,10 @@
       <div class="pl-tip reveal">
         <svg class="icon"><use href="#i-check"></use></svg>
         <p><strong>专注时间装好后会立刻开始第一段计时。</strong>默认专注 50 分钟、休息 5 分钟。想改时长，先退出桌宠，编辑 <code>data/config.json</code> 里 <code>plugins.settings.lfelkeea.focus_guard</code> 的 <code>focus_minutes</code> 和 <code>break_minutes</code>，保存后重新打开桌宠。每天完成多少段只记在本地，不会上传。</p>
+      </div>
+      <div class="pl-tip pl-tip-dependency reveal" id="snowluma">
+        <svg class="icon"><use href="#i-shield"></use></svg>
+        <p><strong>QQ 桥接要先装 SnowLuma。</strong>SnowLuma 是独立运行的 QQ → OneBot 桥，不包含在插件包里，也不允许二次打包。到 <a href="https://github.com/SnowLuma/SnowLuma/releases" target="_blank" rel="noopener">官方 Releases</a> 下载 <code>win-x64</code> 完整包（自带 Node，开箱即用），按 <a href="https://snowluma.github.io/zh/docs/guide/deploy/windows" target="_blank" rel="noopener">Windows 部署说明</a>登录 QQ，再把 HTTP 事件上报地址填成 <code>http://127.0.0.1:8766/onebot</code>。插件 ZIP 里的 <code>README.md</code> 有完整配置、指令和白名单说明。</p>
       </div>
     </section>
 
