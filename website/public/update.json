@@ -1,0 +1,36 @@
+{
+  "version": "1.11.6",
+  "released": "2026-10-30",
+  "notes": [
+    "修复托盘菜单「退出启动器」只关闭窗口、进程仍留在后台的问题；现在退出会结束事件循环，并正常释放托盘图标、联机服务和后台任务。",
+    "关闭主窗口时新增选择：可以「后台运行」「退出程序」或「取消」。选择后台运行后，下载、服务端和联机会继续运行，可从托盘重新打开。",
+    "应用更新时改为强制退出后再替换代码，不再被「关闭到托盘」拦截，更新完成后会自动重新启动。",
+    "无界面自动化测试保留原来的直接隐藏行为，不影响 QA 截图和回归脚本。"
+  ],
+  "download_url": "downloads/DKL-1.11.6-update.zip",
+  "page_url": "https://lfelkeea.github.io/darkitten-launcher/",
+  "source_url": "downloads/DarkittenLauncher-1.11.6-source.zip",
+  "source_txt_url": "downloads/DarkittenLauncher-1.11.6-source.txt",
+  "sha256": "c46dfa11b22dce0f05ca42c2752a11af1703defd8ac13f02154c2f770158a6cc",
+  "size": 967373,
+  "source_sha256": "b9806ed4ba60fefd9684c352b9970a8c7780dce7dca7c4ada6fefeb37336bc37",
+  "source_size": 970465,
+  "source_txt_sha256": "5c272229665442dcb71b44e294f3938a3a8de95c73a4c183f087bf0cecbe719b",
+  "source_txt_size": 2282672,
+  "pet": {
+    "name": "LFELKEEA 桌宠",
+    "version": "1.2.0",
+    "released": "2026-10-31",
+    "size": 136091971,
+    "sha256": "52bd39e9b594a2352fef0be6a663e06d1696579947438bbc8e972f55e2b5d58f",
+    "download_url": "https://github.com/LFELKEEA/darkitten-launcher/releases/download/pet-v1.2.0/LFELKEEA.zip",
+    "notes": [
+      "新增桌宠自动更新：托盘菜单或设置页可以检查更新，下载后校验 SHA-256，退出时自动替换程序文件并重新启动，data/config.json、插件和聊天记录都会保留。",
+      "新增插件自动更新：插件管理支持单个更新和全部更新，更新前自动备份旧版本；第三方插件不再随桌宠安装包覆盖。",
+      "设置页新增「软件更新」区域，可以查看当前版本、手动检查更新，并开关启动时自动检查。",
+      "修复插件管理窗口无法拖动的问题，设置、插件和更新窗口现在都有可拖动的标题栏。",
+      "安装包只内置两个示例插件；QQ 桥接、专注守护请从插件库单独安装或更新。",
+      "配套 QQ 桥接 1.4.0：新增语音包导入与本机扫描、发送 QQ 语音，AI 回复也可以按概率自动带语音。"
+    ]
+  }
+}

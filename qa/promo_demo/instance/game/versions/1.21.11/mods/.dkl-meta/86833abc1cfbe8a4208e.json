@@ -1,0 +1,10 @@
+{
+  "title": "Iris Shaders",
+  "project_id": "iris",
+  "source": "modrinth",
+  "source_label": "Modrinth",
+  "description": "Modern shader support",
+  "description_zh": "Iris 让 Fabric 支持光影包，兼容大部分 OptiFine 光影并有更好的性能。",
+  "project_url": "https://modrinth.com/mod/iris",
+  "filename": "iris-fabric-1.9.2.jar"
+}

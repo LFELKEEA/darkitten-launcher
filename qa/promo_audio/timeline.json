@@ -1,0 +1,297 @@
+{
+  "total": 167.23,
+  "scenes": [
+    {
+      "id": "intro",
+      "kicker": "DARKITTEN LAUNCHER",
+      "title": "把 Minecraft，收进一个猫窝。",
+      "bullets": [
+        "版本 · 模组 · 联机 · 服务端"
+      ],
+      "start": 0.0,
+      "duration": 10.76,
+      "voice_start": 0.9,
+      "voice_duration": 8.76,
+      "voice_file": "voice_01_intro.wav",
+      "shots": []
+    },
+    {
+      "id": "home",
+      "kicker": "01 / 首页",
+      "title": "所有版本，一个猫窝",
+      "bullets": [
+        "一键启动",
+        "加载器绑定",
+        "存档隔离"
+      ],
+      "start": 10.76,
+      "duration": 16.35,
+      "voice_start": 11.66,
+      "voice_duration": 14.352,
+      "voice_file": "voice_02_home.wav",
+      "shots": [
+        {
+          "name": "home_games",
+          "focus": "center",
+          "duration": 9.343
+        },
+        {
+          "name": "home_loaders",
+          "focus": "center",
+          "duration": 7.007
+        }
+      ]
+    },
+    {
+      "id": "download",
+      "kicker": "02 / 游戏版本",
+      "title": "缺哪个版本，就装哪个",
+      "bullets": [
+        "原版 / 快照 / 旧版",
+        "智能加速",
+        "实时进度"
+      ],
+      "start": 27.11,
+      "duration": 14.22,
+      "voice_start": 28.01,
+      "voice_duration": 12.216,
+      "voice_file": "voice_03_download.wav",
+      "shots": [
+        {
+          "name": "download",
+          "focus": "right",
+          "duration": 14.22
+        }
+      ]
+    },
+    {
+      "id": "loaders",
+      "kicker": "03 / 加载器",
+      "title": "加载器，随用随切",
+      "bullets": [
+        "Fabric",
+        "Forge",
+        "NeoForge"
+      ],
+      "start": 41.33,
+      "duration": 11.91,
+      "voice_start": 42.23,
+      "voice_duration": 9.912,
+      "voice_file": "voice_04_loaders.wav",
+      "shots": [
+        {
+          "name": "loaders",
+          "focus": "center",
+          "duration": 11.91
+        }
+      ]
+    },
+    {
+      "id": "mods",
+      "kicker": "04 / 模组",
+      "title": "找模组，不用离开启动器",
+      "bullets": [
+        "Modrinth",
+        "CurseForge",
+        "一键安装"
+      ],
+      "start": 53.24,
+      "duration": 17.0,
+      "voice_start": 54.14,
+      "voice_duration": 14.4,
+      "voice_file": "voice_05_mods.wav",
+      "shots": [
+        {
+          "name": "mods",
+          "focus": "center",
+          "duration": 7.0
+        },
+        {
+          "name": "mod_browser",
+          "focus": "center",
+          "duration": 10.0
+        }
+      ]
+    },
+    {
+      "id": "skin",
+      "kicker": "05 / 皮肤",
+      "title": "换皮肤，先看 3D 效果",
+      "bullets": [
+        "64×64 / 64×32",
+        "实时预览",
+        "LittleSkin"
+      ],
+      "start": 70.24,
+      "duration": 13.18,
+      "voice_start": 71.14,
+      "voice_duration": 11.184,
+      "voice_file": "voice_06_skin.wav",
+      "shots": [
+        {
+          "name": "skin",
+          "focus": "left",
+          "duration": 13.18
+        }
+      ]
+    },
+    {
+      "id": "room",
+      "kicker": "06 / 联机",
+      "title": "把房间号发给朋友",
+      "bullets": [
+        "P2P 直连",
+        "樱花穿透",
+        "模组同步"
+      ],
+      "start": 83.42,
+      "duration": 18.0,
+      "voice_start": 84.32,
+      "voice_duration": 13.536,
+      "voice_file": "voice_07_room.wav",
+      "shots": [
+        {
+          "name": "room_p2p",
+          "focus": "left",
+          "duration": 9.0
+        },
+        {
+          "name": "room_sakura",
+          "focus": "left",
+          "duration": 9.0
+        }
+      ]
+    },
+    {
+      "id": "server",
+      "kicker": "07 / 服务端",
+      "title": "服务端，也能在启动器里养",
+      "bullets": [
+        "Paper / Fabric / Forge",
+        "控制台",
+        "配置翻译"
+      ],
+      "start": 101.42,
+      "duration": 21.0,
+      "voice_start": 102.32,
+      "voice_duration": 16.848,
+      "voice_file": "voice_08_server.wav",
+      "shots": [
+        {
+          "name": "server_console",
+          "focus": "right",
+          "duration": 6.0
+        },
+        {
+          "name": "server_settings",
+          "focus": "right",
+          "duration": 5.0
+        },
+        {
+          "name": "server_config_properties",
+          "focus": "center",
+          "duration": 5.0
+        },
+        {
+          "name": "server_config_plugins",
+          "focus": "center",
+          "duration": 5.0
+        }
+      ]
+    },
+    {
+      "id": "tools",
+      "kicker": "08 / 工具箱",
+      "title": "顺手的小工具，都给你备好了",
+      "bullets": [
+        "下载中心",
+        "版本设置",
+        "快捷命令"
+      ],
+      "start": 122.42,
+      "duration": 15.0,
+      "voice_start": 123.32,
+      "voice_duration": 7.344,
+      "voice_file": "voice_09_tools.wav",
+      "shots": [
+        {
+          "name": "download_tasks",
+          "focus": "center",
+          "duration": 3.0
+        },
+        {
+          "name": "version_settings",
+          "focus": "center",
+          "duration": 3.0
+        },
+        {
+          "name": "command_palette",
+          "focus": "center",
+          "duration": 3.0
+        },
+        {
+          "name": "pet_dialog",
+          "focus": "center",
+          "duration": 3.0
+        },
+        {
+          "name": "drag_import",
+          "focus": "center",
+          "duration": 3.0
+        }
+      ]
+    },
+    {
+      "id": "settings",
+      "kicker": "09 / 设置与后台",
+      "title": "关掉窗口，也可以继续看家",
+      "bullets": [
+        "后台运行",
+        "世界快照",
+        "诊断包"
+      ],
+      "start": 137.42,
+      "duration": 19.0,
+      "voice_start": 138.32,
+      "voice_duration": 13.992,
+      "voice_file": "voice_10_settings.wav",
+      "shots": [
+        {
+          "name": "settings_top",
+          "focus": "center",
+          "duration": 5.0
+        },
+        {
+          "name": "settings_mid",
+          "focus": "center",
+          "duration": 5.0
+        },
+        {
+          "name": "settings_bottom",
+          "focus": "center",
+          "duration": 6.0
+        },
+        {
+          "name": "close_choice",
+          "focus": "center",
+          "duration": 3.0
+        }
+      ]
+    },
+    {
+      "id": "outro",
+      "kicker": "DARKITTEN LAUNCHER 1.11.6",
+      "title": "今天也要去捣乱吗？",
+      "bullets": [
+        "下载站 · GitHub Releases",
+        "Windows 10 / 11"
+      ],
+      "start": 156.42,
+      "duration": 9.61,
+      "voice_start": 157.32,
+      "voice_duration": 7.608,
+      "voice_file": "voice_11_outro.wav",
+      "shots": []
+    }
+  ]
+}

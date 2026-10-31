@@ -1,0 +1,616 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#100a10">
+  <title>Darkitten Launcher · 恶魔小猫的秘密基地</title>
+  <meta name="description" content="Darkitten Launcher（DKL）下载站：一款把版本、加载器、Mod、整合包、皮肤、联机、服务端和更新都收进同一个猫窝的 Minecraft 启动器。">
+  <link rel="icon" href="assets/dkl.ico">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <svg class="svg-sprite" aria-hidden="true">
+    <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 3v11m0 0 4-4m-4 4-4-4M5 21h14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M5 12h14m-5-5 5 5-5 5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12 4 4L19 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 3 5 6v5c0 4.5 2.9 8.2 7 10 4.1-1.8 7-5.5 7-10V6l-7-3Z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><path d="m9 12 2 2 4-4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-cube" viewBox="0 0 24 24"><path d="m12 3 8 4.5v9L12 21l-8-4.5v-9L12 3Z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><path d="m4 7.5 8 4.5 8-4.5M12 12v9" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/></symbol>
+    <symbol id="i-server" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="6" rx="1.6" fill="none" stroke="currentColor" stroke-width="1.7"/><rect x="4" y="14" width="16" height="6" rx="1.6" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M8 7h.01M8 17h.01" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></symbol>
+    <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M20 7v5h-5M4 17v-5h5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M6.1 9a7 7 0 0 1 11.6-1.7L20 10M4 14l2.3 2.7A7 7 0 0 0 17.9 15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-users" viewBox="0 0 24 24"><path d="M16 19v-1.5a4 4 0 0 0-4-4H7a4 4 0 0 0-4 4V19M13 7a3.5 3.5 0 1 1-7 0 3.5 3.5 0 0 1 7 0ZM17 11a3 3 0 1 0 0-6M21 19v-1.4a4 4 0 0 0-3-3.7" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-spark" viewBox="0 0 24 24"><path d="M12 3c.7 4.6 2.4 6.3 7 7-4.6.7-6.3 2.4-7 7-.7-4.6-2.4-6.3-7-7 4.6-.7 6.3-2.4 7-7Z" fill="currentColor"/><path d="M19 15c.3 2 1 2.7 3 3-2 .3-2.7 1-3 3-.3-2-1-2.7-3-3 2-.3 2.7-1 3-3Z" fill="currentColor" opacity=".6"/></symbol>
+    <symbol id="i-hash" viewBox="0 0 24 24"><path d="M9 3 7 21M17 3l-2 18M4 9h17M3 15h17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></symbol>
+    <symbol id="i-copy" viewBox="0 0 24 24"><rect x="8" y="8" width="11" height="11" rx="2" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></symbol>
+    <symbol id="i-windows" viewBox="0 0 24 24"><path d="M3 5.5 10.5 4v7H3V5.5ZM12 3.8 21 2.5V11h-9V3.8ZM3 13h7.5v7L3 18.5V13ZM12 13h9v8.5L12 20.2V13Z" fill="currentColor"/></symbol>
+    <symbol id="i-gamepad" viewBox="0 0 24 24"><rect x="2.5" y="7" width="19" height="10" rx="4" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M7 10.2v3.6M5.2 12h3.6" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/><circle cx="16.1" cy="11" r="1" fill="currentColor"/><circle cx="18.4" cy="14" r="1" fill="currentColor"/></symbol>
+    <symbol id="i-palette" viewBox="0 0 24 24"><path d="M12 3a9 9 0 1 0 0 18h1.2a2.1 2.1 0 0 0 0-4.2h-.7a2 2 0 0 1 0-4h4.3A4.2 4.2 0 0 0 21 8.6C21 5.5 17 3 12 3Z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><circle cx="7.6" cy="10" r="1.1" fill="currentColor"/><circle cx="10" cy="6.8" r="1.1" fill="currentColor"/><circle cx="14" cy="6.6" r="1.1" fill="currentColor"/></symbol>
+    <symbol id="i-terminal" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="m7 9 3 3-3 3M13 15h4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-gallery" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.7"/><circle cx="8.5" cy="9" r="1.5" fill="currentColor"/><path d="m4 17 5-5 3.5 3.5L16 12l4 4" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-zoom" viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6.5" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="m15.5 15.5 4 4M8 10.5h5M10.5 8v5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></symbol>
+    <symbol id="i-close" viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></symbol>
+    <symbol id="i-chevron-left" viewBox="0 0 24 24"><path d="m15 5-7 7 7 7" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-chevron-right" viewBox="0 0 24 24"><path d="m9 5 7 7-7 7" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  </svg>
+
+  <div class="bg-grid" aria-hidden="true"></div>
+  <div class="glow glow-a" aria-hidden="true"></div>
+  <div class="glow glow-b" aria-hidden="true"></div>
+  <div class="noise" aria-hidden="true"></div>
+
+  <header class="site-header" id="top">
+    <a class="brand" href="#top" aria-label="Darkitten Launcher 首页">
+      <span class="brand-logo"><img src="assets/chibi_face.png" alt="DKL 猫猫图标"></span>
+      <span class="brand-text"><strong>DARKITTEN</strong><small>LAUNCHER</small></span>
+    </a>
+    <nav class="nav">
+      <a href="#gallery">界面</a>
+      <a href="#features">能力</a>
+      <a href="#release">更新</a>
+      <a href="#safety">数据安全</a>
+      <a href="#download">下载</a>
+      <a href="#pet">桌宠</a>
+      <a href="plugins.html">插件</a>
+      <button class="nav-link" type="button" data-feedback-kind="bug">反馈</button>
+    </nav>
+    <div class="header-actions">
+      <span class="version-chip"><i></i><span>v<span data-version>1.11.6</span></span></span>
+      <a class="btn btn-small" href="#download"><svg class="icon"><use href="#i-download"></use></svg>下载</a>
+    </div>
+  </header>
+
+  <main>
+    <section class="hero">
+      <div class="hero-copy reveal">
+        <div class="eyebrow"><span class="pulse"></span>DKL <b data-version>1.11.6</b><span class="eyebrow-sep">/</span>LATEST BUILD</div>
+        <h1>恶魔小猫的<br><em>秘密基地</em></h1>
+        <p class="lede">从原版安装、Fabric / Forge / NeoForge 加载器，到 Mod、整合包、皮肤、P2P 联机和服务端，全收进同一个猫窝。<strong>更新只换代码，存档、账户和配置原地不动。</strong></p>
+        <div class="hero-actions">
+          <a class="btn btn-primary" href="downloads/DarkittenLauncher-1.11.6-source.zip" data-source-download>
+            <svg class="icon"><use href="#i-download"></use></svg>
+            <span>下载启动器</span>
+            <small data-size>约 1.1 MB</small>
+          </a>
+          <a class="btn btn-ghost" href="#gallery">
+            <svg class="icon"><use href="#i-gallery"></use></svg>
+            先看界面截图
+          </a>
+        </div>
+        <div class="hero-meta">
+          <span><svg class="icon"><use href="#i-windows"></use></svg>Windows 10 / 11</span>
+          <span><svg class="icon"><use href="#i-cube"></use></svg>Fabric · Forge · NeoForge</span>
+          <span><svg class="icon"><use href="#i-server"></use></svg>5 种服务端</span>
+          <span><svg class="icon"><use href="#i-shield"></use></svg>更新保留数据</span>
+        </div>
+      </div>
+
+      <div class="hero-art reveal" id="heroArt">
+        <div class="orbit orbit-a" aria-hidden="true"></div>
+        <div class="orbit orbit-b" aria-hidden="true"></div>
+        <div class="orbit orbit-c" aria-hidden="true"></div>
+        <div class="art-card">
+          <img src="assets/chibi_oc.png" alt="DKL 的恶魔小猫 OC 形象">
+          <span class="scanline" aria-hidden="true"></span>
+        </div>
+        <div class="float-chip chip-version"><span>LATEST</span><strong>v<span data-version>1.11.6</span></strong></div>
+        <div class="float-chip chip-safe"><svg class="icon"><use href="#i-shield"></use></svg><span>更新不动存档</span></div>
+        <div class="float-chip chip-source"><span class="dot dot-a"></span><span class="dot dot-b"></span>Modrinth + CurseForge</div>
+        <div class="art-caption">LFELKEEA's OC <span>/</span> 恶魔小猫</div>
+      </div>
+    </section>
+
+    <section class="stat-strip reveal" aria-label="启动器能力概览">
+      <div class="stat"><strong>02</strong><span>Mod 下载源</span></div>
+      <div class="stat"><strong>03</strong><span>加载器生态</span></div>
+      <div class="stat"><strong>05</strong><span>服务端类型</span></div>
+      <div class="stat"><strong>08</strong><span>核心页面</span></div>
+      <div class="stat-note"><span class="pulse"></span>当前稳定版 v<span data-version>1.11.6</span> 已上线</div>
+    </section>
+
+    <section class="section gallery-section" id="gallery">
+      <div class="section-head reveal">
+        <span class="kicker">INSIDE DKL</span>
+        <h2>先看看猫窝<br>长什么样。</h2>
+        <p>下面都是 1.11.6 的真实界面截图，不是概念图。点缩略图切换页面，点大图可以放大看细节。</p>
+      </div>
+
+      <div class="gallery-shell reveal">
+        <div class="shot-frame">
+          <div class="shot-chrome">
+            <span class="dots" aria-hidden="true"><i></i><i></i><i></i></span>
+            <span class="shot-window-title">Darkitten Launcher · v<span data-version>1.11.6</span></span>
+            <button class="shot-zoom" type="button" data-shot-zoom>
+              <svg class="icon"><use href="#i-zoom"></use></svg>放大
+            </button>
+          </div>
+          <button class="shot-stage" type="button" data-shot-zoom aria-label="放大查看当前界面截图">
+            <img id="shotImage" src="assets/screenshots/home.webp" width="1400" height="875" alt="Darkitten Launcher 首页：版本列表、账户卡和快捷入口">
+            <span class="shot-shine" aria-hidden="true"></span>
+          </button>
+          <div class="shot-caption">
+            <div>
+              <strong id="shotTitle">首页 · 所有版本，一个猫窝</strong>
+              <p id="shotDesc">选中版本直接启动；右侧集中了账户、桌宠、导入、版本迁移、模组管理和下载中心入口。</p>
+            </div>
+            <span class="shot-counter" id="shotCounter">01 / 09</span>
+          </div>
+        </div>
+
+        <div class="shot-thumbs" role="tablist" aria-label="界面截图">
+          <button class="shot-thumb is-active" type="button" role="tab" aria-selected="true" data-shot="assets/screenshots/home.webp" data-title="首页 · 所有版本，一个猫窝" data-desc="选中版本直接启动；右侧集中了账户、桌宠、导入、版本迁移、模组管理和下载中心入口。" data-alt="Darkitten Launcher 首页：版本列表、账户卡和快捷入口">
+            <img src="assets/screenshots/home-thumb.webp" alt="" width="360" height="225" loading="lazy">
+            <span>首页</span>
+          </button>
+          <button class="shot-thumb" type="button" role="tab" aria-selected="false" data-shot="assets/screenshots/versions.webp" data-title="版本仓库 · 官方清单与本地导入" data-desc="正式版与快照筛选，安装进度、速度和当前文件一屏可见；本地 ZIP 或文件夹也能直接导入。" data-alt="游戏版本仓库：版本列表、安装进度和文件状态">
+            <img src="assets/screenshots/versions-thumb.webp" alt="" width="360" height="225" loading="lazy">
+            <span>版本仓库</span>
+          </button>
+          <button class="shot-thumb" type="button" role="tab" aria-selected="false" data-shot="assets/screenshots/mods.webp" data-title="模组抽屉 · 已安装管理" data-desc="已安装的 Mod 逐项启停，检查更新、环境检查和打开目录都在这一页；每个版本独立 mods。" data-alt="模组抽屉：已安装 Mod 列表、启停开关和环境状态">
+            <img src="assets/screenshots/mods-thumb.webp" alt="" width="360" height="225" loading="lazy">
+            <span>模组抽屉</span>
+          </button>
+          <button class="shot-thumb" type="button" role="tab" aria-selected="false" data-shot="assets/screenshots/mod-store.webp" data-title="模组仓库 · Modrinth + CurseForge" data-desc="双源同屏切换，按版本和加载器筛选；详情页直接显示前置、下载量和文件列表。" data-alt="模组下载窗口：Modrinth 与 CurseForge 搜索结果和详情">
+            <img src="assets/screenshots/mod-store-thumb.webp" alt="" width="360" height="225" loading="lazy">
+            <span>模组仓库</span>
+          </button>
+          <button class="shot-thumb" type="button" role="tab" aria-selected="false" data-shot="assets/screenshots/skin.webp" data-title="皮肤 · 3D 试衣间" data-desc="本地 PNG、LittleSkin 角色和皮肤库共用同一套账户状态，3D 预览支持待机、行走和转身。" data-alt="皮肤试衣间：3D 预览、皮肤库和 LittleSkin 入口">
+            <img src="assets/screenshots/skin-thumb.webp" alt="" width="360" height="225" loading="lazy">
+            <span>皮肤</span>
+          </button>
+          <button class="shot-thumb" type="button" role="tab" aria-selected="false" data-shot="assets/screenshots/multiplayer.webp" data-title="联机 · P2P 房间与樱花穿透" data-desc="P2P 开房后把 U/XXXX-XXXX-XXXX-XXXX 房间号发给朋友；玩家、直连/中继和延迟实时显示。" data-alt="联机页面：P2P 房间号、玩家列表和联机设置">
+            <img src="assets/screenshots/multiplayer-thumb.webp" alt="" width="360" height="225" loading="lazy">
+            <span>联机</span>
+          </button>
+          <button class="shot-thumb" type="button" role="tab" aria-selected="false" data-shot="assets/screenshots/server-console.webp" data-title="服务端 · 控制台" data-desc="启动、停止、输入命令、看玩家日志和端口信息；插件或 Mod 可以在旁边直接搜索下载。" data-alt="服务端控制台：服务端列表、运行日志和命令输入">
+            <img src="assets/screenshots/server-console-thumb.webp" alt="" width="360" height="225" loading="lazy">
+            <span>服务端</span>
+          </button>
+          <button class="shot-thumb" type="button" role="tab" aria-selected="false" data-shot="assets/screenshots/server-config.webp" data-title="配置编辑 · 中文说明" data-desc="server.properties 和插件配置做成中文表单，保存前备份原文件，不确定的选项旁边就有解释。" data-alt="服务端配置文件窗口：server.properties 中文表单">
+            <img src="assets/screenshots/server-config-thumb.webp" alt="" width="360" height="225" loading="lazy">
+            <span>配置编辑</span>
+          </button>
+          <button class="shot-thumb" type="button" role="tab" aria-selected="false" data-shot="assets/screenshots/settings.webp" data-title="设置 · Java、内存与下载源" data-desc="Java 检测、内存、版本隔离、下载源和后台运行；改完自动保存，不用记配置文件路径。" data-alt="设置页面：Java 检测、游戏目录、内存和版本隔离">
+            <img src="assets/screenshots/settings-thumb.webp" alt="" width="360" height="225" loading="lazy">
+            <span>设置</span>
+          </button>
+        </div>
+      </div>
+      <p class="gallery-note reveal">截图使用演示数据；实际界面会随版本更新，但功能位置基本一致。</p>
+    </section>
+
+    <section class="section" id="features">
+      <div class="section-head reveal">
+        <span class="kicker">WHAT'S INSIDE</span>
+        <h2>猫爪能碰到的地方，<br>都替你安排好了。</h2>
+        <p>不只是“能启动游戏”。版本、加载器、Mod、整合包、皮肤、联机、服务端和更新，每一块都有对应的页面和兜底逻辑。</p>
+      </div>
+
+      <div class="feature-grid">
+        <article class="feature-card reveal">
+          <div class="feature-icon"><svg class="icon"><use href="#i-gamepad"></use></svg></div>
+          <span class="feature-no">01</span>
+          <h3>原版和三种加载器，一个地方装好</h3>
+          <p>从 Mojang 清单读取正式版与快照；装完原版后可以直接在版本行绑定 Fabric、Forge 或 NeoForge。已有的版本文件夹、ZIP 也能拖进来。</p>
+          <ul class="feature-points">
+            <li>每个版本独立 mods、saves、config，互不影响</li>
+            <li>自动判断 Java 版本，缺失时给出提示</li>
+            <li>BMCLAPI 镜像优先，官方源失败自动回退</li>
+            <li>下载中断后继续，已完成文件不重下</li>
+          </ul>
+          <div class="feature-tags"><span>Vanilla</span><span>Fabric</span><span>Forge</span><span>NeoForge</span></div>
+        </article>
+
+        <article class="feature-card reveal">
+          <div class="feature-icon"><svg class="icon"><use href="#i-spark"></use></svg></div>
+          <span class="feature-no">02</span>
+          <h3>双源模组仓库，前置和冲突一起管</h3>
+          <p>Modrinth 与 CurseForge 同屏切换，按游戏版本、加载器和分类筛选 Mod、整合包、材质与光影。已安装的 Mod 可以启停、检查更新和修复冲突。</p>
+          <ul class="feature-points">
+            <li>必填前置一键跳转，缺哪个补哪个</li>
+            <li>环境检查覆盖加载器混装、重复 modId、缺失前置</li>
+            <li>更新检查逐项列出可用新版本</li>
+            <li>冲突修复先备份再改，不直接动原文件</li>
+          </ul>
+          <div class="feature-tags"><span>Modrinth</span><span>CurseForge</span><span>前置</span><span>冲突修复</span></div>
+        </article>
+
+        <article class="feature-card reveal">
+          <div class="feature-icon"><svg class="icon"><use href="#i-download"></use></svg></div>
+          <span class="feature-no">03</span>
+          <h3>整合包拖进来，进度和任务都看得见</h3>
+          <p>支持 Modrinth、CurseForge 整合包和本地 ZIP / 文件夹导入；下载中心集中显示速度、进度和后台任务，导入期间可以取消，下次继续。</p>
+          <ul class="feature-points">
+            <li>大文件多连接，小文件按体积分配并发</li>
+            <li>依赖库按已处理字节计算进度，不会长时间卡住</li>
+            <li>ZIP 并行解压，导入完成立即写入版本 JSON</li>
+            <li>下载卡住自动重试，不用守着窗口</li>
+          </ul>
+          <div class="feature-tags"><span>整合包</span><span>断点续传</span><span>下载中心</span></div>
+        </article>
+
+        <article class="feature-card reveal">
+          <div class="feature-icon"><svg class="icon"><use href="#i-palette"></use></svg></div>
+          <span class="feature-no">04</span>
+          <h3>64×64 皮肤，直接看 3D 效果</h3>
+          <p>导入 PNG 自动识别 Classic / Slim 模型，支持 64×64 与 64×32。LittleSkin 角色与游戏账户共用登录状态，不用再单独登录一次。</p>
+          <ul class="feature-points">
+            <li>待机、行走、转身三种动作，可拖动旋转、滚轮缩放</li>
+            <li>皮肤库保存多套皮肤，点一下切换</li>
+            <li>正版账户可上传 Mojang，离线账户本地加载</li>
+            <li>LittleSkin 密码不经过启动器，令牌用 DPAPI 加密</li>
+          </ul>
+          <div class="feature-tags"><span>LittleSkin</span><span>3D 预览</span><span>Classic</span><span>Slim</span></div>
+        </article>
+
+        <article class="feature-card reveal">
+          <div class="feature-icon"><svg class="icon"><use href="#i-users"></use></svg></div>
+          <span class="feature-no">05</span>
+          <h3>房间号一贴，朋友就能进来</h3>
+          <p>内置 P2P 直连与樱花穿透两套方案。P2P 不需要樱花账户，房主开房后把 U/XXXX-XXXX-XXXX-XXXX 房间号发给朋友即可组网。</p>
+          <ul class="feature-points">
+            <li>自动发现房主，优先直连，失败走公共节点中继</li>
+            <li>显示玩家列表、直连/中继人数和延迟</li>
+            <li>可只允许直连，或隐藏本机地址只走中继</li>
+            <li>房主退出游戏自动关房，启动器退出回收进程</li>
+          </ul>
+          <div class="feature-tags"><span>EasyTier</span><span>P2P</span><span>樱花穿透</span><span>房间号</span></div>
+        </article>
+
+        <article class="feature-card reveal">
+          <div class="feature-icon"><svg class="icon"><use href="#i-server"></use></svg></div>
+          <span class="feature-no">06</span>
+          <h3>开服、看控制台、改配置，都在启动器里</h3>
+          <p>Paper、Spigot、Fabric、Forge、NeoForge 服务端统一管理。控制台直接输入命令，插件或 Mod 可以在页面里搜索下载。</p>
+          <ul class="feature-points">
+            <li>server.properties 和插件配置可视化编辑，内置中文说明</li>
+            <li>保存前自动备份原文件，改错可以恢复</li>
+            <li>世界、玩家数据、插件和配置可整包 ZIP 备份 / 导入</li>
+            <li>运行状态、PID、端口和日志一屏可见</li>
+          </ul>
+          <div class="feature-tags"><span>Paper</span><span>Spigot</span><span>Fabric</span><span>Forge</span><span>NeoForge</span></div>
+        </article>
+
+        <article class="feature-card reveal">
+          <div class="feature-icon"><svg class="icon"><use href="#i-terminal"></use></svg></div>
+          <span class="feature-no">07</span>
+          <h3>Ctrl+K，常用操作不用翻菜单</h3>
+          <p>快捷命令面板可以启动游戏、打开任意页面、创建世界快照、生成诊断包或切换主题；安全模式会临时禁用 Mod，退出后自动恢复。</p>
+          <ul class="feature-points">
+            <li>世界与配置快照，恢复时只覆盖同名文件</li>
+            <li>诊断包收集日志、系统和 Mod 信息，自动脱敏令牌</li>
+            <li>运行日志随时展开，排查启动问题</li>
+            <li>浅色 / 深色主题一键切换</li>
+          </ul>
+          <div class="feature-tags"><span>Ctrl+K</span><span>快照</span><span>诊断包</span><span>安全模式</span></div>
+        </article>
+
+        <article class="feature-card reveal">
+          <div class="feature-icon"><svg class="icon"><use href="#i-refresh"></use></svg></div>
+          <span class="feature-no">08</span>
+          <h3>更新只换代码，存档和账户原地不动</h3>
+          <p>更新时只替换 app.py、darkitten/、assets/ 和依赖清单；config.json、social.json、minecraft/、skins/、servers/ 不会被覆盖。先校验 SHA-256，失败自动回滚。</p>
+          <ul class="feature-points">
+            <li>关闭窗口可选后台运行、退出程序或取消</li>
+            <li>同一用户只允许一个实例，重复启动会唤醒已有窗口</li>
+            <li>更新完成后自动重新打开启动器</li>
+            <li>桌宠独立更新，data/config.json 保留</li>
+          </ul>
+          <div class="feature-tags"><span>SHA-256</span><span>备份回滚</span><span>后台运行</span><span>单实例</span></div>
+        </article>
+      </div>
+
+      <div class="flow-strip reveal" aria-label="从下载到进入游戏的流程">
+        <div class="flow-step">
+          <span>01</span>
+          <strong>选版本</strong>
+          <p>原版、快照，或把已有的版本 ZIP / 文件夹拖进来。</p>
+        </div>
+        <div class="flow-step">
+          <span>02</span>
+          <strong>绑加载器</strong>
+          <p>装好 Fabric、Forge 或 NeoForge，绑定到目标版本。</p>
+        </div>
+        <div class="flow-step">
+          <span>03</span>
+          <strong>装 Mod / 整合包</strong>
+          <p>双源搜索、前置跳转，或者直接拖入整合包。</p>
+        </div>
+        <div class="flow-step">
+          <span>04</span>
+          <strong>启动 / 联机 / 开服</strong>
+          <p>单机直接进游戏，也可以开房间或启服务端。</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="section release-section" id="release">
+      <div class="section-head reveal">
+        <span class="kicker">LATEST RELEASE</span>
+        <h2>这次更新，<br>猫猫学会了好好关门。</h2>
+        <p>版本清单、更新包和校验值都由 update.json 驱动，启动器读取同一份清单。完整包、更新包和源码 TXT 统一放在下面的下载区。</p>
+      </div>
+
+      <div class="release-card reveal">
+        <div class="release-main">
+          <div class="release-top">
+            <span class="tag">STABLE</span>
+            <span class="release-date">发布于 <b data-date>2026-10-30</b></span>
+          </div>
+          <h3><span class="release-v">v<span data-version>1.11.6</span></span><span class="release-name">猫猫晚安</span></h3>
+          <ul class="release-notes" id="release-notes">
+            <li>修复托盘菜单「退出启动器」只关闭窗口、进程仍留在后台的问题；现在退出会结束事件循环，并正常释放托盘图标、联机服务和后台任务。</li>
+            <li>关闭主窗口时新增选择：可以「后台运行」「退出程序」或「取消」。选择后台运行后，下载、服务端和联机会继续运行，可从托盘重新打开。</li>
+            <li>应用更新时改为强制退出后再替换代码，不再被「关闭到托盘」拦截，更新完成后会自动重新启动。</li>
+            <li>无界面自动化测试保留原来的直接隐藏行为，不影响 QA 截图和回归脚本。</li>
+          </ul>
+          <a class="release-link" href="#download">查看完整包、更新包与源码 TXT <svg class="icon"><use href="#i-arrow"></use></svg></a>
+        </div>
+        <aside class="release-aside">
+          <div class="integrity">
+            <div class="integrity-head"><svg class="icon"><use href="#i-hash"></use></svg><span>SHA-256 · 更新包</span></div>
+            <code data-sha>等待读取更新清单…</code>
+            <button class="copy-btn" type="button" data-copy-sha><svg class="icon"><use href="#i-copy"></use></svg>复制</button>
+          </div>
+          <div class="mini-row"><span>更新清单</span><a href="update.json">update.json</a></div>
+          <div class="mini-row"><span>当前版本</span><span>v<span data-version>1.11.6</span> · Windows</span></div>
+          <p class="aside-note">启动器会先校验 SHA-256，再解压并替换代码。校验失败的文件会被删除；旧代码会备份到 updates/backup-*。</p>
+        </aside>
+      </div>
+    </section>
+
+    <section class="section safety-section" id="safety">
+      <div class="safety-grid">
+        <div class="code-panel reveal">
+          <div class="code-head"><span class="dots"><i></i><i></i><i></i></span><span>updates/apply.log</span></div>
+          <pre><code><span class="c"># 更新时只会替换</span>
+<span class="g">app.py</span>
+<span class="g">darkitten/</span>
+<span class="g">assets/</span>
+<span class="g">requirements.txt</span>
+
+<span class="c"># 永远不会碰</span>
+<span class="p">config.json</span>      <span class="m">账户 + 设置</span>
+<span class="p">social.json</span>      <span class="m">好友 + 房间</span>
+<span class="p">minecraft/</span>       <span class="m">版本 + 存档 + Mod</span>
+<span class="p">skins/</span>           <span class="m">皮肤</span>
+<span class="p">servers/</span>         <span class="m">服务端</span>
+<span class="p">logs/</span>            <span class="m">运行日志</span></code></pre>
+          <div class="code-foot"><span class="pulse"></span>旧代码会备份到 updates/backup-*</div>
+        </div>
+        <div class="safety-copy reveal">
+          <span class="kicker">DATA SAFETY</span>
+          <h2>更新不是重装。</h2>
+          <p>启动器退出后，独立的更新脚本会等待进程释放文件，只替换代码，并保留一份旧代码备份。账户令牌、好友列表、每个版本的 Mod 和存档都不会被覆盖。</p>
+          <ul class="check-list">
+            <li><svg class="icon"><use href="#i-check"></use></svg>SHA-256 校验通过后才开始解压</li>
+            <li><svg class="icon"><use href="#i-check"></use></svg>防路径穿越的安全解压</li>
+            <li><svg class="icon"><use href="#i-check"></use></svg>替换失败自动回滚旧代码</li>
+            <li><svg class="icon"><use href="#i-check"></use></svg>更新完成后自动重新打开启动器</li>
+          </ul>
+          <div class="safety-badge"><svg class="icon"><use href="#i-shield"></use></svg><span>你的世界，猫猫不碰。</span></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section download-section" id="download">
+      <div class="section-head reveal">
+        <span class="kicker">DOWNLOAD</span>
+        <h2>选一个适合你的包。</h2>
+        <p>第一次安装选完整源码包；已经装过启动器就让它自己更新，或者只下更新包；只想读代码就下源码 TXT。</p>
+      </div>
+
+      <div class="download-options reveal">
+        <article class="download-option is-featured">
+          <span class="option-badge">推荐 · 首次安装</span>
+          <h3>完整源码包</h3>
+          <p>包含启动器全部源码、资源、依赖清单和启动脚本。解压后双击 <code>启动.bat</code>，首次运行需要 Python 3.10+ 与 PySide6。</p>
+          <ul class="option-points">
+            <li>app.py + darkitten/ + assets/</li>
+            <li>不会包含账户、日志和游戏数据</li>
+            <li>适合新机器、换机和完整备份</li>
+          </ul>
+          <div class="option-meta"><span>ZIP</span><span><strong data-size>约 1.1 MB</strong></span></div>
+          <a class="btn btn-primary" href="downloads/DarkittenLauncher-1.11.6-source.zip" data-source-download>
+            <svg class="icon"><use href="#i-download"></use></svg>下载完整包
+          </a>
+        </article>
+
+        <article class="download-option">
+          <span class="option-badge">已有旧版</span>
+          <h3>更新包</h3>
+          <p>只替换启动器代码，保留 config.json、好友、皮肤、游戏版本、Mod 和服务端。启动器里也可以直接检查更新。</p>
+          <ul class="option-points">
+            <li>只含运行所需文件</li>
+            <li>SHA-256 校验后解压</li>
+            <li>适合 1.9.14 及更早版本的更新器</li>
+          </ul>
+          <div class="option-meta"><span>ZIP</span><span><strong data-update-size>读取中…</strong></span></div>
+          <a class="btn btn-ghost" data-update-download href="downloads/DKL-1.11.6-update.zip">
+            <svg class="icon"><use href="#i-download"></use></svg>下载更新包
+          </a>
+        </article>
+
+        <article class="download-option">
+          <span class="option-badge">阅读 / 分享</span>
+          <h3>源码 TXT</h3>
+          <p>把文本类源码拼成一个带文件头的 TXT，适合快速搜索、贴给朋友或在没有解压工具的环境里阅读。</p>
+          <ul class="option-points">
+            <li>纯文本，不含二进制资源</li>
+            <li>保留文件分隔头</li>
+            <li>适合审查和分享片段</li>
+          </ul>
+          <div class="option-meta"><span>TXT</span><span><strong data-source-txt-size>读取中…</strong></span></div>
+          <a class="btn btn-ghost" data-source-txt href="downloads/DarkittenLauncher-1.11.6-source.txt">
+            <svg class="icon"><use href="#i-download"></use></svg>下载源码 TXT
+          </a>
+        </article>
+      </div>
+
+      <div class="download-auto-note reveal">
+        <svg class="icon"><use href="#i-refresh"></use></svg>
+        <p><strong>日常更新不用来下载站。</strong>启动器启动时会读取 <a href="update.json">update.json</a>，设置页也可以手动检查；下载完成后会自动校验、替换并重新打开。</p>
+        <span>Windows 10 / 11 · 开发者 LFELKEEA</span>
+      </div>
+
+      <div class="download-card pet-card reveal" id="pet">
+        <div class="download-copy">
+          <div class="pet-head">
+            <img class="pet-avatar" src="assets/chibi_face.png" alt="">
+            <span class="kicker">DESKTOP PET</span>
+          </div>
+          <h2>把 LFELKEEA 放在桌面上。</h2>
+          <p>会眨眼、会闲聊的桌面小猫。1.1.0 起可以定时看一眼屏幕、结合画面主动搭话，也支持插件扩展；1.1.1 起插件还能带自己的设置面板，在插件管理里点「设置」就能配置，不用手改 JSON。1.2.0 起支持自动更新：设置页或托盘菜单可以检查、下载并重启替换，插件也能在插件管理里直接更新。完整包解压后运行 <code>LFELKEEA.exe</code>；也可以在启动器首页的「桌宠 LFELKEEA」入口一键下载、安装和启动。API Key 只保存在桌宠自己的设置页，启动器不读取也不上传。</p>
+          <div class="pet-meta">
+            <span>版本 <strong data-pet-version>1.2.0</strong></span>
+            <span>大小 <strong data-pet-size>读取中…</strong></span>
+            <span>发布 <strong data-pet-date>—</strong></span>
+          </div>
+        </div>
+        <div class="download-actions">
+          <a class="btn btn-primary big" data-pet-download href="https://github.com/LFELKEEA/darkitten-launcher/releases">
+            <svg class="icon"><use href="#i-download"></use></svg>
+            下载桌宠
+          </a>
+          <button class="btn btn-ghost" type="button" data-pet-copy-sha>
+            <svg class="icon"><use href="#i-hash"></use></svg>
+            复制 SHA-256
+          </button>
+          <a class="btn btn-ghost" href="plugins.html">
+            <svg class="icon"><use href="#i-spark"></use></svg>
+            浏览插件
+          </a>
+          <a class="btn btn-ghost" href="https://github.com/LFELKEEA/darkitten-pet" target="_blank" rel="noopener">
+            <svg class="icon"><use href="#i-terminal"></use></svg>
+            桌宠源码
+          </a>
+          <span class="pet-note">GitHub Releases 托管 · 约 136 MB</span>
+        </div>
+      </div>
+    </section>
+
+    <section class="section feedback-section" id="feedback">
+      <div class="section-head reveal">
+        <span class="kicker">FEEDBACK LOOP</span>
+        <h2>把虫子丢进来，<br>把主意也丢进来。</h2>
+        <p>Bug 反馈和改进建议会直接进入 DKL 下载站的反馈区。网站用 GitHub Issues 保存内容，开发者从启动器的开发者入口打开反馈表统一查看和处理。</p>
+      </div>
+      <div class="feedback-grid">
+        <article class="feedback-card feedback-bug reveal">
+          <span class="feedback-tag">BUG REPORT</span>
+          <h3>猫猫收到一只虫子。</h3>
+          <p>崩溃、报错、下载失败、界面错位——带上启动器版本号和复现步骤，最容易定位。</p>
+          <button class="btn btn-primary" type="button" data-feedback-kind="bug">
+            <svg class="icon"><use href="#i-spark"></use></svg>
+            报告 Bug
+          </button>
+        </article>
+        <article class="feedback-card feedback-idea reveal">
+          <span class="feedback-tag">IMPROVEMENT</span>
+          <h3>让猫窝更顺手一点。</h3>
+          <p>希望新增什么功能、哪个流程太绕、哪句文案不对劲，都可以写下来。具体的使用场景比“优化一下”更有用。</p>
+          <button class="btn btn-ghost" type="button" data-feedback-kind="suggestion">
+            <svg class="icon"><use href="#i-arrow"></use></svg>
+            提改进建议
+          </button>
+        </article>
+      </div>
+      <div class="feedback-note reveal">
+        <span class="pulse"></span>
+        网站是纯静态页面，提交时会打开 GitHub 新建 Issue 页面；没有 GitHub 账号时可以用邮件发送。反馈表只能从启动器的开发者入口进入。
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div class="footer-brand">
+      <img src="assets/chibi_face.png" alt="">
+      <div><strong>Darkitten Launcher</strong><span>恶魔小猫的秘密基地</span></div>
+    </div>
+    <p>开发者 LFELKEEA · <a href="mailto:lfel278623@outlook.com">lfel278623@outlook.com</a><br>非 Mojang 或 Microsoft 官方产品。Minecraft 是 Mojang Studios 的商标。</p>
+    <div class="footer-links">
+      <a href="plugins.html">插件库</a>
+      <a href="update.json">更新清单</a>
+      <a href="https://github.com/LFELKEEA/darkitten-launcher" target="_blank" rel="noopener">GitHub 仓库</a>
+      <a href="https://github.com/LFELKEEA/darkitten-pet" target="_blank" rel="noopener">桌宠源码</a>
+      <button class="footer-link" type="button" data-feedback-kind="bug">反馈 Bug</button>
+      <button class="footer-link" type="button" data-feedback-kind="suggestion">改进建议</button>
+      <a href="#safety">数据安全</a>
+      <a href="#top">回到顶部</a>
+    </div>
+  </footer>
+
+  <div class="shot-lightbox" id="shotLightbox" hidden>
+    <div class="lightbox-backdrop" data-shot-close></div>
+    <div class="lightbox-body" role="dialog" aria-modal="true" aria-label="界面截图大图">
+      <button class="lightbox-close" type="button" data-shot-close aria-label="关闭大图">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-close"></use></svg>
+      </button>
+      <button class="lightbox-nav lightbox-prev" type="button" data-shot-prev aria-label="上一张">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-chevron-left"></use></svg>
+      </button>
+      <img id="shotLightboxImage" src="assets/screenshots/home.webp" alt="">
+      <button class="lightbox-nav lightbox-next" type="button" data-shot-next aria-label="下一张">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-chevron-right"></use></svg>
+      </button>
+      <div class="lightbox-caption"><strong id="shotLightboxTitle">首页 · 所有版本，一个猫窝</strong><span id="shotLightboxCounter">01 / 09</span></div>
+    </div>
+  </div>
+
+  <div class="modal" id="feedbackModal" hidden>
+    <div class="modal-backdrop" data-feedback-close></div>
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="feedbackTitle">
+      <button class="modal-close" type="button" data-feedback-close aria-label="关闭反馈窗口">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+      </button>
+      <span class="kicker" id="feedbackKicker">BUG REPORT</span>
+      <h2 id="feedbackTitle">猫猫收到一只虫子。</h2>
+      <p class="modal-lede" id="feedbackLede">描述发生了什么、你期待什么，以及能否稳定复现。带版本号的信息最有用。</p>
+      <form id="feedbackForm" class="feedback-form" novalidate>
+        <div class="form-grid">
+          <label>问题类型
+            <select name="type">
+              <option value="bug">Bug / 崩溃</option>
+              <option value="suggestion">改进建议</option>
+              <option value="ui">界面 / 显示</option>
+              <option value="download">下载 / 安装</option>
+              <option value="update">更新 / 启动</option>
+              <option value="other">其他</option>
+            </select>
+          </label>
+          <label>启动器版本
+            <input name="version" value="1.11.6" readonly>
+          </label>
+        </div>
+        <label>一句话标题
+          <input name="title" type="text" maxlength="80" required placeholder="例如：安装 1.21.1 NeoForge 后启动报错">
+        </label>
+        <label>详细描述
+          <textarea name="description" rows="6" maxlength="4000" required placeholder="操作步骤、看到的报错、复现频率。请勿填写账号密码或令牌。"></textarea>
+        </label>
+        <label>联系方式（可选）
+          <input name="contact" type="text" maxlength="120" placeholder="邮箱、QQ 或论坛 ID">
+        </label>
+        <label class="hp-field" aria-hidden="true">不要填写这一项
+          <input name="website" type="text" tabindex="-1" autocomplete="off">
+        </label>
+        <div class="form-foot">
+          <span class="form-hint">提交后会打开 GitHub 新建 Issue 页面，登录 GitHub 确认即可。不会自动收集账号、令牌或存档内容。</span>
+          <button class="btn btn-primary" type="submit" id="feedbackSubmit">提交反馈</button>
+        </div>
+        <div class="form-fallback" id="feedbackFallback" hidden>
+          <p>如果浏览器拦截了 GitHub 页面，可以直接点下面的按钮，或把内容发邮件给开发者。</p>
+          <div class="fallback-actions">
+            <a class="btn btn-ghost btn-small" id="feedbackGithub" href="https://github.com/LFELKEEA/darkitten-launcher/issues/new" target="_blank" rel="noopener">在 GitHub 提交</a>
+            <a class="btn btn-ghost btn-small" id="feedbackMail" href="mailto:lfel278623@outlook.com">用邮件发送</a>
+            <button class="btn btn-ghost btn-small" type="button" id="feedbackCopy">复制内容</button>
+          </div>
+        </div>
+        <p class="form-status" id="feedbackStatus" role="status" aria-live="polite"></p>
+      </form>
+    </div>
+  </div>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+  <script src="app.js"></script>
+</body>
+</html>

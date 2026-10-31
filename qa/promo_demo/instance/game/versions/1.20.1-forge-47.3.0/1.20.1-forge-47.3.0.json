@@ -1,0 +1,1 @@
+{"id": "1.20.1-forge-47.3.0", "inheritsFrom": "1.20.1", "type": "release", "mainClass": "cpw.mods.bootstraplauncher.BootstrapLauncher", "libraries": [{"name": "net.minecraftforge:forge:1.20.1-47.3.0"}], "javaVersion": {"majorVersion": 17}, "releaseTime": ""}
