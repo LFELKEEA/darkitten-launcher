@@ -6,7 +6,7 @@
     {
       "id": "lfelkeea.qq_bridge",
       "name": "QQ 桥接（SnowLuma）",
-      "version": "1.1.0",
+      "version": "1.1.1",
       "author": "LFELKEEA",
       "description": "通过 SnowLuma 把 QQ 私聊和群聊接进桌宠：可视化设置面板、人格卡、长期记忆、黑话库、白名单、习惯化回复、表情和 QQ 空间。",
       "api_version": 1,
@@ -96,9 +96,9 @@
       },
       "bundled": false,
       "featured": true,
-      "file": "plugins/lfelkeea.qq_bridge-1.1.0.zip",
-      "size": 47070,
-      "sha256": "b30fa37a5039373ff3e13d42807f3f1b4d14f3cad578d24556c40f6d5bafb880"
+      "file": "plugins/lfelkeea.qq_bridge-1.1.1.zip",
+      "size": 47583,
+      "sha256": "4991e0799754a9a19f4c84c795e3161a74430928935a387e04181e817cfd1146"
     },
     {
       "id": "lfelkeea.focus_guard",
