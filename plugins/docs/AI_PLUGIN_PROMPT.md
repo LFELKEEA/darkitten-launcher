@@ -70,11 +70,17 @@ def setup(api):
 def teardown():
     # 可选
     ...
+
+
+def open_settings(api, parent=None):
+    # 可选：返回 QDialog，插件管理里会出现「设置」按钮
+    ...
 ```
 
 要求：
 
 - `setup(api)` 必须存在，且不能长时间阻塞。
+- 需要可视化配置时实现 `open_settings(api, parent=None)`，返回 `QDialog`；只有插件运行中才会显示设置按钮。
 - 定时器用 `api.every(ms, callback)` 或 `api.after(ms, callback)`，不要自己创建 Qt 定时器。
 - 事件用 `api.on("事件名", callback)`，可用事件：
   `startup`、`shutdown`、`settings.saved`、`chat.reply`、`screen.context`、`screen.comment`、`pet.pat`、`pet.poke`。

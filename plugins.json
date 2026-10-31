@@ -1,14 +1,14 @@
 {
   "updated": "2026-10-31",
   "api_version": 1,
-  "pet_version": "1.1.0",
+  "pet_version": "1.1.1",
   "plugins": [
     {
       "id": "lfelkeea.qq_bridge",
       "name": "QQ 桥接（SnowLuma）",
-      "version": "1.0.0",
+      "version": "1.1.0",
       "author": "LFELKEEA",
-      "description": "通过 SnowLuma 把 QQ 私聊和群聊接进桌宠：人格卡、长期记忆、黑话库、白名单、习惯化回复、表情和 QQ 空间。",
+      "description": "通过 SnowLuma 把 QQ 私聊和群聊接进桌宠：可视化设置面板、人格卡、长期记忆、黑话库、白名单、习惯化回复、表情和 QQ 空间。",
       "api_version": 1,
       "permissions": [
         "pet.say",
@@ -28,9 +28,19 @@
           "version": ">=2.2.1",
           "url": "https://github.com/SnowLuma/SnowLuma/releases",
           "note": "本地运行并扫码登录 QQ；插件通过 OneBot 11 HTTP 连接。"
+        },
+        {
+          "name": "桌宠 LFELKEEA",
+          "version": ">=1.1.1",
+          "url": "https://github.com/LFELKEEA/darkitten-launcher/releases",
+          "note": "1.1.1 起支持插件自带设置面板；旧版本没有“设置”按钮。"
         }
       ],
       "highlights": [
+        {
+          "label": "配置方式",
+          "value": "可视化面板"
+        },
         {
           "label": "连接方式",
           "value": "OneBot 11 HTTP"
@@ -42,10 +52,6 @@
         {
           "label": "外发范围",
           "value": "白名单"
-        },
-        {
-          "label": "QQ 空间",
-          "value": "手动开启"
         }
       ],
       "settings": {
@@ -90,9 +96,9 @@
       },
       "bundled": false,
       "featured": true,
-      "file": "plugins/lfelkeea.qq_bridge-1.0.0.zip",
-      "size": 34414,
-      "sha256": "8d3b9d55a7f1b0d55bc0697b677b48991a506fe3a9340bdf5dd769da7edafc68"
+      "file": "plugins/lfelkeea.qq_bridge-1.1.0.zip",
+      "size": 47070,
+      "sha256": "b30fa37a5039373ff3e13d42807f3f1b4d14f3cad578d24556c40f6d5bafb880"
     },
     {
       "id": "lfelkeea.focus_guard",
