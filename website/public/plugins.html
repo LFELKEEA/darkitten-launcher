@@ -57,7 +57,7 @@
       <div class="pl-hero-copy reveal">
         <div class="eyebrow"><span class="pulse"></span>PLUGIN LIBRARY<span class="eyebrow-sep">/</span>API V1</div>
         <h1>给小猫<br><em>装个新技能。</em></h1>
-        <p class="lede">插件是桌宠 1.1.0 起开放的小扩展：用几行 Python 就能让它定时提醒、读取屏幕上下文，或者把 QQ 私聊和群聊接进来。桌宠 1.1.1 起，带设置面板的插件会在插件管理里多一个「设置」按钮，配置不用再手改 JSON。<strong>新插件默认不会运行，要你在插件管理里手动勾选启用。</strong></p>
+        <p class="lede">插件是桌宠 1.1.0 起开放的小扩展：用几行 Python 就能让它定时提醒、读取屏幕上下文，或者把 QQ 私聊和群聊接进来。桌宠 1.1.1 起，带设置面板的插件会在插件管理里多一个「设置」按钮，配置不用再手改 JSON；1.2.0 起还能在插件管理里直接检查并更新插件，旧版本会自动备份。<strong>新插件默认不会运行，要你在插件管理里手动勾选启用。</strong></p>
         <div class="pl-hero-actions">
           <a class="btn btn-primary" href="#library">
             <svg class="icon"><use href="#i-plug"></use></svg>
@@ -70,7 +70,7 @@
         </div>
         <div class="pl-hero-meta">
           <span><strong data-plugin-total>4</strong> 个可用插件</span>
-          <span>适配桌宠 <strong data-pet-version>1.1.1</strong></span>
+          <span>适配桌宠 <strong data-pet-version>1.2.0</strong></span>
           <span>接口版本 <strong>v1</strong></span>
         </div>
       </div>
@@ -158,7 +158,7 @@
       </div>
       <div class="pl-tip pl-tip-dependency reveal" id="snowluma">
         <svg class="icon"><use href="#i-shield"></use></svg>
-        <p><strong>QQ 桥接要先装 SnowLuma，桌宠要 1.1.1 或更高。</strong>SnowLuma 是独立运行的 QQ → OneBot 桥，不包含在插件包里，也不允许二次打包。到 <a href="https://github.com/SnowLuma/SnowLuma/releases" target="_blank" rel="noopener">官方 Releases</a> 下载 <code>win-x64</code> 完整包（自带 Node，开箱即用），按 <a href="https://snowluma.github.io/zh/docs/guide/deploy/windows" target="_blank" rel="noopener">Windows 部署说明</a>登录 QQ。装好插件后打开「设置」面板，填 SnowLuma 的 HTTP 地址和 accessToken，事件地址 <code>http://127.0.0.1:8766/onebot</code> 面板里会自动算好并可一键复制，粘回 SnowLuma 即可。白名单、人格卡、记忆、黑话和 QQ 空间也都在面板里。插件 ZIP 里的 <code>README.md</code> 有逐项说明。</p>
+        <p><strong>QQ 桥接要先装 SnowLuma，桌宠要 1.1.1 或更高。</strong>SnowLuma 是独立运行的 QQ → OneBot 桥，不包含在插件包里，也不允许二次打包。到 <a href="https://github.com/SnowLuma/SnowLuma/releases" target="_blank" rel="noopener">官方 Releases</a> 下载 <code>win-x64</code> 完整包（自带 Node，开箱即用），按 <a href="https://snowluma.github.io/zh/docs/guide/deploy/windows" target="_blank" rel="noopener">Windows 部署说明</a>登录 QQ。装好插件后打开「设置」面板，填 SnowLuma 的 HTTP 地址和 accessToken，事件地址 <code>http://127.0.0.1:8766/onebot</code> 面板里会自动算好并可一键复制，粘回 SnowLuma 即可。白名单、人格卡、记忆、黑话、QQ 空间和语音包也都在面板里；1.4.0 起可以导入或扫描本机语音包，手动发 QQ 语音，也能让 AI 回复按概率自动带一条语音。插件 ZIP 里的 <code>README.md</code> 有逐项说明。</p>
       </div>
     </section>
 
