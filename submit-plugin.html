@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#100a10">
+  <title>投稿插件 · Darkitten Launcher 桌宠插件</title>
+  <meta name="description" content="把自己的 LFELKEEA 桌宠插件投稿到插件库。先在浏览器里检查 ZIP 和权限，再到 GitHub 附上插件包；维护者审核通过后自动发布。">
+  <link rel="icon" href="assets/dkl.ico">
+  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="plugins.css">
+  <link rel="stylesheet" href="submit-plugin.css">
+</head>
+<body>
+  <svg class="svg-sprite" aria-hidden="true">
+    <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 3v11m0 0 4-4m-4 4-4-4M5 21h14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M5 12h14m-5-5 5 5-5 5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12 4 4L19 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 3 5 6v5c0 4.5 2.9 8.2 7 10 4.1-1.8 7-5.5 7-10V6l-7-3Z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><path d="m9 12 2 2 4-4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-plug" viewBox="0 0 24 24"><path d="M9 3v5M15 3v5M7 8h10v3a5 5 0 0 1-5 5 5 5 0 0 1-5-5V8ZM12 16v5" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-folder" viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7Z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/></symbol>
+    <symbol id="i-book" viewBox="0 0 24 24"><path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H20v16H6.5A2.5 2.5 0 0 0 4 21.5v-16Z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><path d="M8 7h8M8 11h6" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></symbol>
+    <symbol id="i-upload" viewBox="0 0 24 24"><path d="M12 21V9m0 0 4 4m-4-4-4 4M4 4h16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-copy" viewBox="0 0 24 24"><rect x="8" y="8" width="11" height="11" rx="2" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></symbol>
+  </svg>
+
+  <div class="bg-grid" aria-hidden="true"></div>
+  <div class="glow glow-a" aria-hidden="true"></div>
+  <div class="glow glow-b" aria-hidden="true"></div>
+  <div class="noise" aria-hidden="true"></div>
+
+  <header class="site-header" id="top">
+    <a class="brand" href="index.html" aria-label="Darkitten Launcher 首页">
+      <span class="brand-logo"><img src="assets/chibi_face.png" alt="DKL 猫猫图标"></span>
+      <span class="brand-text"><strong>DARKITTEN</strong><small>LAUNCHER</small></span>
+    </a>
+    <nav class="nav" aria-label="主导航">
+      <a href="index.html#gallery">界面</a>
+      <a href="index.html#features">能力</a>
+      <a href="index.html#release">更新</a>
+      <a href="index.html#download">下载</a>
+      <a href="plugins.html">插件</a>
+      <a href="submit-plugin.html" class="is-current" aria-current="page">投稿</a>
+      <a href="index.html#pet">桌宠</a>
+    </nav>
+    <div class="header-actions">
+      <span class="version-chip"><i></i><span>v<span data-version>1.11.6</span></span></span>
+      <a class="btn btn-small" href="plugins.html"><svg class="icon"><use href="#i-plug"></use></svg>插件库</a>
+    </div>
+  </header>
+
+  <main class="submit-main">
+    <section class="submit-hero">
+      <div class="submit-hero-copy">
+        <div class="eyebrow"><span class="pulse"></span>PLUGIN SUBMISSION<span class="eyebrow-sep">/</span>REVIEW REQUIRED</div>
+        <h1>把你的插件<br><em>交给小猫。</em></h1>
+        <p class="lede">
+          写好插件后不用自己找地方托管。先在浏览器里检查 ZIP、<code>plugin.json</code> 和权限，
+          再按提示把插件包附到 GitHub 投稿 Issue；维护者审核通过后，它会自动出现在插件库和桌宠插件市场里。
+          <strong>所有投稿都要经过人工审核，不会下载即运行。</strong>
+        </p>
+        <div class="submit-hero-actions">
+          <a class="btn btn-primary" href="#submitForm">
+            <svg class="icon"><use href="#i-upload"></use></svg>
+            开始投稿
+          </a>
+          <a class="btn btn-ghost" href="plugins/docs/PLUGIN_DEV.md">
+            <svg class="icon"><use href="#i-book"></use></svg>
+            先看开发文档
+          </a>
+        </div>
+        <div class="submit-hero-meta">
+          <span><strong>1</strong> 个 ZIP</span>
+          <span><strong>6 MB</strong> 上限</span>
+          <span><strong>人工</strong> 审核</span>
+          <span><strong>API v1</strong></span>
+        </div>
+      </div>
+      <div class="submit-hero-art" aria-label="投稿流程示意">
+        <div class="submit-flow">
+          <div class="submit-flow-item"><span>01</span><strong>浏览器校验</strong><small>ZIP 结构和权限</small></div>
+          <div class="submit-flow-line" aria-hidden="true"></div>
+          <div class="submit-flow-item"><span>02</span><strong>GitHub 附包</strong><small>把 ZIP 拖进 Issue</small></div>
+          <div class="submit-flow-line" aria-hidden="true"></div>
+          <div class="submit-flow-item"><span>03</span><strong>自动检查</strong><small>Actions 再验一遍</small></div>
+          <div class="submit-flow-line" aria-hidden="true"></div>
+          <div class="submit-flow-item"><span>04</span><strong>审核发布</strong><small>维护者 /approve</small></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section submit-section" id="submit">
+      <div class="submit-layout">
+        <form class="submit-card" id="submitForm" novalidate>
+          <div class="submit-card-head">
+            <span class="kicker">STEP 01 / CHECK</span>
+            <h2>选择并检查插件包</h2>
+            <p>文件只在这个页面里读取，不会上传到本站。根目录必须和 <code>plugin.json</code> 的 <code>id</code> 一致。</p>
+          </div>
+
+          <div class="submit-drop" id="dropZone">
+            <input type="file" id="zipFile" accept=".zip,application/zip,application/x-zip-compressed" hidden>
+            <span class="submit-drop-icon"><svg class="icon"><use href="#i-upload"></use></svg></span>
+            <strong>把插件 ZIP 拖到这里</strong>
+            <span class="submit-drop-or">或者</span>
+            <button class="btn btn-ghost" type="button" id="pickFile">选择文件</button>
+            <small>最大 6 MB · 不要包含 data/、__pycache__、可执行文件或密钥</small>
+          </div>
+
+          <div class="submit-file" id="fileSummary" hidden>
+            <div class="submit-file-head">
+              <span class="submit-file-icon"><svg class="icon"><use href="#i-plug"></use></svg></span>
+              <div>
+                <strong id="pluginName">—</strong>
+                <span id="pluginId">—</span>
+              </div>
+              <button class="btn btn-ghost btn-small" type="button" id="clearFile">换一个</button>
+            </div>
+            <p class="submit-file-desc" id="pluginDescription"></p>
+            <dl class="submit-meta">
+              <div><dt>版本</dt><dd id="pluginVersion">—</dd></div>
+              <div><dt>作者</dt><dd id="pluginAuthor">—</dd></div>
+              <div><dt>大小</dt><dd id="pluginSize">—</dd></div>
+              <div><dt>文件数</dt><dd id="pluginFiles">—</dd></div>
+            </dl>
+            <div class="submit-perms" id="pluginPerms"></div>
+            <div class="submit-sha"><span>SHA-256</span><code id="pluginSha">—</code></div>
+          </div>
+
+          <div class="submit-errors" id="formErrors" hidden role="alert"></div>
+          <div class="submit-warnings" id="formWarnings" hidden role="status"></div>
+
+          <label class="submit-field">
+            <span>给审核者的说明 <small>（可选，会公开显示在 Issue 里，不要写密钥）</small></span>
+            <textarea id="notes" maxlength="2000" rows="4" placeholder="例如：插件依赖某个本地程序、需要重点检查哪段逻辑、已知限制……"></textarea>
+          </label>
+
+          <label class="submit-agree">
+            <input type="checkbox" id="agree">
+            <span>我确认这是我自己制作或有权分发的插件，并且只使用上面列出的权限。</span>
+          </label>
+
+          <div class="submit-actions">
+            <button class="btn btn-primary big" type="submit" id="createIssue" disabled>
+              <svg class="icon"><use href="#i-arrow"></use></svg>
+              生成投稿 Issue
+            </button>
+            <a class="btn btn-ghost" href="plugins.html">返回插件库</a>
+          </div>
+          <p class="form-status" id="formStatus" role="status" aria-live="polite"></p>
+        </form>
+
+        <aside class="submit-side">
+          <div class="submit-side-card">
+            <span class="kicker">REVIEW CHECKLIST</span>
+            <h3>审核会看什么</h3>
+            <ul>
+              <li>ZIP 根目录、<code>plugin.json</code> 和入口文件是否完整。</li>
+              <li>权限是否和实际行为一致，有没有偷偷多要权限。</li>
+              <li>是否读取、上传或记录不该碰的数据。</li>
+              <li>外部依赖是否说明清楚，链接是否指向官方来源。</li>
+              <li>描述、版本号和作者信息是否准确。</li>
+            </ul>
+          </div>
+          <div class="submit-side-card">
+            <span class="kicker">WILL BE REJECTED</span>
+            <h3>这些会被退回</h3>
+            <ul>
+              <li>包含可执行文件、脚本、密钥、<code>config.json</code> 或 <code>data/</code>。</li>
+              <li>使用 <code>lfelkeea.</code> / <code>example.</code> 保留前缀。</li>
+              <li>覆盖官方插件或别人的插件 id。</li>
+              <li>权限和代码明显不符，或包含恶意行为。</li>
+              <li>没有实际功能、只是空壳或重复投稿。</li>
+            </ul>
+          </div>
+          <div class="submit-side-card submit-side-links">
+            <h3>相关入口</h3>
+            <a href="plugins/docs/PLUGIN_DEV.md">插件开发文档 <svg class="icon"><use href="#i-arrow"></use></svg></a>
+            <a href="plugins/docs/AI_PLUGIN_PROMPT.md">AI 写插件提示词 <svg class="icon"><use href="#i-arrow"></use></svg></a>
+            <a href="plugins/docs/SUBMIT_PLUGIN.md">投稿规则与审核说明 <svg class="icon"><use href="#i-arrow"></use></svg></a>
+            <a href="plugin-review.html">审核队列 <svg class="icon"><use href="#i-arrow"></use></svg></a>
+            <a href="https://github.com/LFELKEEA/darkitten-launcher/issues?q=label%3Aplugin-submission" target="_blank" rel="noopener">GitHub 投稿列表 <svg class="icon"><use href="#i-arrow"></use></svg></a>
+          </div>
+          <p class="submit-side-note">
+            没有 GitHub 账号？可以把 ZIP、<code>plugin.json</code> 和说明发到
+            <a href="mailto:lfel278623@outlook.com">lfel278623@outlook.com</a>，同样走审核。
+          </p>
+        </aside>
+      </div>
+    </section>
+
+    <section class="section handoff" id="handoff" hidden>
+      <div class="handoff-card">
+        <div class="handoff-head">
+          <span class="kicker">STEP 02 / GITHUB</span>
+          <h2>到 GitHub 附上 ZIP，然后提交</h2>
+          <p>浏览器不能直接把文件写进我们的仓库。下面的按钮会打开一个已经填好标题和元数据的投稿 Issue，你只需要把 ZIP 拖进去。</p>
+        </div>
+        <ol class="handoff-steps">
+          <li><strong>打开投稿页。</strong>点下面的按钮，登录 GitHub 后进入新建 Issue 页面。</li>
+          <li><strong>粘贴正文。</strong>如果正文没有自动填好，点「复制正文」再粘贴进去。</li>
+          <li><strong>拖入 ZIP。</strong>把刚才选择的 <code id="handoffFileName">插件.zip</code> 拖到正文的「插件包」区域，等 GitHub 显示上传完成。</li>
+          <li><strong>提交。</strong>点 <em>Submit new issue</em>。自动校验结果会以评论出现在 Issue 里。</li>
+        </ol>
+        <div class="handoff-actions">
+          <a class="btn btn-primary big" id="openIssue" href="#" target="_blank" rel="noopener">
+            <svg class="icon"><use href="#i-upload"></use></svg>
+            打开 GitHub 投稿页
+          </a>
+          <button class="btn btn-ghost" type="button" id="copyBody">
+            <svg class="icon"><use href="#i-copy"></use></svg>
+            复制正文
+          </button>
+        </div>
+        <label class="handoff-body-label">
+          Issue 正文（可手动复制）
+          <textarea id="issueBody" readonly rows="14"></textarea>
+        </label>
+        <p class="handoff-note">
+          ZIP 由 GitHub 托管，本站不保存投稿文件。审核通过后，维护者会评论 <code>/approve</code>，
+          Actions 会再次校验并自动发布；退回时会说明原因。
+        </p>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div class="footer-brand">
+      <img src="assets/chibi_face.png" alt="">
+      <div><strong>Darkitten Launcher</strong><span>恶魔小猫的秘密基地</span></div>
+    </div>
+    <p>开发者 LFELKEEA · <a href="mailto:lfel278623@outlook.com">lfel278623@outlook.com</a><br>非 Mojang 或 Microsoft 官方产品。Minecraft 是 Mojang Studios 的商标。</p>
+    <div class="footer-links">
+      <a href="index.html#download">下载启动器</a>
+      <a href="plugins.html">插件库</a>
+      <a href="plugins/docs/PLUGIN_DEV.md">开发文档</a>
+      <a href="plugin-review.html">审核队列</a>
+      <a href="https://github.com/LFELKEEA/darkitten-launcher" target="_blank" rel="noopener">GitHub 仓库</a>
+      <a href="#top">回到顶部</a>
+    </div>
+  </footer>
+
+  <script src="submit-plugin.js" defer></script>
+</body>
+</html>
