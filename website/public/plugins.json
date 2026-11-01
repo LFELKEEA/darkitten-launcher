@@ -6,9 +6,9 @@
     {
       "id": "lfelkeea.qq_bridge",
       "name": "QQ 桥接（SnowLuma）",
-      "version": "1.4.3",
+      "version": "1.4.4",
       "author": "LFELKEEA",
-      "description": "通过 SnowLuma 把 QQ 私聊和群聊接进桌宠：可视化设置面板、人格卡、长期记忆、黑话库、白名单、习惯化回复、表情、QQ 空间、SnowLuma 自动启停、聊天图片识别和语音包发送。",
+      "description": "通过 SnowLuma 把 QQ 私聊和群聊接进桌宠：可视化设置面板、人格卡、长期记忆、黑话库、可加备注的白名单、习惯化回复、表情、QQ 空间、SnowLuma 自动启停、聊天图片识别和语音包发送。",
       "api_version": 1,
       "permissions": [
         "pet.say",
@@ -72,6 +72,7 @@
         "owner_qq": "",
         "allow_private": [],
         "allow_groups": [],
+        "allow_notes": {},
         "qzone_enabled": false,
         "group_trigger": "at",
         "memory_enabled": true,
@@ -114,9 +115,9 @@
       },
       "bundled": false,
       "featured": true,
-      "file": "plugins/lfelkeea.qq_bridge-1.4.3.zip",
-      "size": 73067,
-      "sha256": "cb6d16b43ecb79cd0ac50fb7370bfb754925d7c7e073a958621cb5118fbae1ff"
+      "file": "plugins/lfelkeea.qq_bridge-1.4.4.zip",
+      "size": 74722,
+      "sha256": "50302a53e5cb87fc3a432e07aea67533889f4e84e2b9bcbff87d4da2e723b88c"
     },
     {
       "id": "lfelkeea.focus_guard",
