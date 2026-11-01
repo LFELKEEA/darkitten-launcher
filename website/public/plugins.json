@@ -6,9 +6,9 @@
     {
       "id": "lfelkeea.qq_bridge",
       "name": "QQ 桥接（SnowLuma）",
-      "version": "1.5.0",
+      "version": "1.6.0",
       "author": "LFELKEEA",
-      "description": "通过 SnowLuma 把 QQ 私聊和群聊接进桌宠：可视化设置面板、人格卡、长期记忆、黑话库、可加备注的白名单、盯人即时回复、习惯化回复、收藏表情、QQ 空间与评论自动回复、SnowLuma 自动启停、聊天图片识别，以及 Windows 本地语音 / GPT-SoVITS 自定义音色的 TTS 语音回复。",
+      "description": "通过 SnowLuma 把 QQ 私聊和群聊接进桌宠：可视化设置面板、人格卡、长期记忆、黑话库、可加备注的白名单、盯人即时回复、习惯化回复、收藏表情、QQ 空间与评论自动回复、SnowLuma 自动启停、聊天图片识别，以及 Windows 本地语音 / GPT-SoVITS 自定义音色的 TTS 语音回复。1.6.0 起 GPT-SoVITS 也能自动探测安装目录、后台无窗口启动，并在设置面板里切换参考音色。",
       "api_version": 1,
       "permissions": [
         "pet.say",
@@ -63,7 +63,7 @@
         },
         {
           "label": "语音消息",
-          "value": "TTS 合成 / 自定义音色"
+          "value": "TTS / 音色可切换"
         },
         {
           "label": "盯人",
@@ -130,6 +130,8 @@
         "tts_rate": 0,
         "tts_volume": 100,
         "tts_gpt_sovits_url": "http://127.0.0.1:9880",
+        "tts_sovits_dir": "",
+        "tts_auto_start": true,
         "tts_ref_audio": "",
         "tts_prompt_text": "",
         "tts_prompt_lang": "zh",
@@ -144,9 +146,9 @@
       },
       "bundled": false,
       "featured": true,
-      "file": "plugins/lfelkeea.qq_bridge-1.5.0.zip",
-      "size": 87279,
-      "sha256": "e00ff43f7888c6cc1469caabe47aa2587d1477039d9af5717e8bd02861571dec"
+      "file": "plugins/lfelkeea.qq_bridge-1.6.0.zip",
+      "size": 95272,
+      "sha256": "efd221c193d163bf7e31f2d24b2e63649aa620cbcc9b1309e0ac77912b7efb1b"
     },
     {
       "id": "lfelkeea.focus_guard",
