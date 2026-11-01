@@ -8,6 +8,7 @@
   const MAX_PAGES = 3;
   const MARKER = "<!-- dkl-plugin-submission:v1 -->";
   const JSON_BLOCK = /```json\s*([\s\S]*?)```/i;
+  const SNAPSHOT_URL = "plugin-queue.json";
 
   const PERMISSIONS = {
     "pet.say": "让桌宠说话",
@@ -59,6 +60,7 @@
   const emptyTitle = document.getElementById("reviewEmptyTitle");
   const emptyText = document.getElementById("reviewEmptyText");
   const notice = document.getElementById("reviewNotice");
+  const updated = document.getElementById("reviewUpdated");
   const refresh = document.getElementById("refreshQueue");
   const search = document.getElementById("reviewSearch");
   const toast = document.getElementById("reviewToast");
@@ -69,6 +71,8 @@
     query: "",
     loading: false,
     loaded: false,
+    snapshotAt: "",
+    apiFailed: false,
     toastTimer: 0
   };
 
@@ -91,6 +95,19 @@
     return date.getFullYear() + "-" + pad(date.getMonth() + 1) + "-" + pad(date.getDate());
   }
 
+  function formatDateTime(value) {
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return "";
+    const pad = (part) => String(part).padStart(2, "0");
+    return (
+      date.getFullYear() +
+      "-" + pad(date.getMonth() + 1) +
+      "-" + pad(date.getDate()) +
+      " " + pad(date.getHours()) +
+      ":" + pad(date.getMinutes())
+    );
+  }
+
   function labelSet(issue) {
     return new Set(
       (issue.labels || []).map((label) => (typeof label === "string" ? label : label && label.name)).filter(Boolean)
@@ -109,6 +126,7 @@
   }
 
   function metadataOf(issue) {
+    if (issue.plugin && typeof issue.plugin === "object") return issue.plugin;
     const body = issue.body || "";
     if (!body.includes(MARKER)) return null;
     const match = JSON_BLOCK.exec(body);
@@ -207,6 +225,27 @@
     link.textContent = "直接打开 GitHub 队列";
     notice.appendChild(link);
     notice.hidden = false;
+  }
+
+  function updateUpdated() {
+    if (!updated) return;
+    if (state.snapshotAt) {
+      text(
+        updated,
+        "队列快照更新于 " +
+          formatDateTime(state.snapshotAt) +
+          (state.apiFailed ? "（GitHub 实时接口暂时不可用，状态可能略有延迟）" : "")
+      );
+      updated.hidden = false;
+      return;
+    }
+    if (state.loaded && !state.apiFailed) {
+      text(updated, "已从 GitHub 实时读取。");
+      updated.hidden = false;
+      return;
+    }
+    text(updated, "");
+    updated.hidden = true;
   }
 
   function showToast(message) {
@@ -333,46 +372,86 @@
     grid.appendChild(fragment);
   }
 
-  async function loadIssues() {
+  async function fetchSnapshot() {
+    try {
+      const response = await fetch(SNAPSHOT_URL + "?t=" + Date.now(), { cache: "no-store" });
+      if (!response.ok) throw new Error("快照返回 " + response.status);
+      const data = await response.json();
+      const items = Array.isArray(data) ? data : data && Array.isArray(data.items) ? data.items : null;
+      if (!items) throw new Error("快照格式无法识别。");
+      return {
+        items: items.filter((item) => item && Number.isFinite(Number(item.number))),
+        generatedAt: (data && data.generated_at) || ""
+      };
+    } catch (error) {
+      return null;
+    }
+  }
+
+  async function fetchIssues() {
+    const collected = [];
+    for (let page = 1; page <= MAX_PAGES; page += 1) {
+      const url =
+        API +
+        "?state=all&labels=" + encodeURIComponent(LABEL) +
+        "&sort=created&direction=desc&per_page=" + PAGE_SIZE +
+        "&page=" + page;
+      const response = await fetch(url, {
+        headers: { Accept: "application/vnd.github+json" }
+      });
+      if (!response.ok) {
+        if (response.status === 403 || response.status === 429) {
+          throw new Error("GitHub 公共接口暂时限流（未登录时每小时 60 次）。");
+        }
+        throw new Error("GitHub 接口返回 " + response.status + "。");
+      }
+      const data = await response.json();
+      if (!Array.isArray(data)) throw new Error("GitHub 返回了无法识别的数据。");
+      data
+        .filter((item) => item && !item.pull_request)
+        .forEach((item) => collected.push(item));
+      if (data.length < PAGE_SIZE) break;
+    }
+    return collected;
+  }
+
+  async function loadQueue() {
     if (state.loading) return;
     state.loading = true;
     state.loaded = false;
+    state.apiFailed = false;
     refresh.disabled = true;
     showNotice("");
     render();
+
+    // 优先读站点同源快照：即使浏览器访问不了 api.github.com，审核队列也能正常显示。
+    const snapshot = await fetchSnapshot();
+    if (snapshot) {
+      state.issues = snapshot.items;
+      state.snapshotAt = snapshot.generatedAt;
+      state.loaded = true;
+      state.loading = false;
+      render();
+    }
+
+    // 再尝试 GitHub 公共接口拿实时状态；失败时保留快照，不打断阅读。
     try {
-      const collected = [];
-      for (let page = 1; page <= MAX_PAGES; page += 1) {
-        const url =
-          API +
-          "?state=all&labels=" + encodeURIComponent(LABEL) +
-          "&sort=created&direction=desc&per_page=" + PAGE_SIZE +
-          "&page=" + page;
-        const response = await fetch(url, {
-          headers: { Accept: "application/vnd.github+json" }
-        });
-        if (!response.ok) {
-          if (response.status === 403 || response.status === 429) {
-            throw new Error("GitHub 公共接口暂时限流（未登录时每小时 60 次）。");
-          }
-          throw new Error("GitHub 接口返回 " + response.status + "。");
-        }
-        const data = await response.json();
-        if (!Array.isArray(data)) throw new Error("GitHub 返回了无法识别的数据。");
-        data
-          .filter((item) => item && !item.pull_request)
-          .forEach((item) => collected.push(item));
-        if (data.length < PAGE_SIZE) break;
-      }
+      const collected = await fetchIssues();
       state.issues = collected;
+      state.snapshotAt = "";
       state.loaded = true;
+      showNotice("");
     } catch (error) {
-      state.issues = [];
-      state.loaded = true;
-      showNotice((error && error.message) || "读取投稿队列失败。");
+      state.apiFailed = true;
+      if (!snapshot) {
+        state.issues = [];
+        state.loaded = true;
+        showNotice((error && error.message) || "读取投稿队列失败。");
+      }
     } finally {
       state.loading = false;
       refresh.disabled = false;
+      updateUpdated();
       render();
     }
   }
@@ -394,8 +473,8 @@
     render();
   });
 
-  refresh.addEventListener("click", loadIssues);
+  refresh.addEventListener("click", loadQueue);
 
   render();
-  loadIssues();
+  loadQueue();
 })();

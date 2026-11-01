@@ -83,6 +83,8 @@ Issue 创建或编辑后，GitHub Actions 会：
 
 ### 2.3 人工审核
 
+审核看板：<https://lfelkeea.github.io/darkitten-launcher/plugin-review.html>。看板优先读取 Actions 生成的同源队列快照，再尝试 GitHub 公开接口；即使浏览器访问不了 `api.github.com`，也能看到队列和 Issue 链接。最终状态以 Issue 标签和评论为准。
+
 维护者会检查：
 
 - `main.py` 和依赖模块的实际行为；
