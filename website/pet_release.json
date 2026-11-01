@@ -1,14 +1,14 @@
 {
   "name": "LFELKEEA 桌宠",
-  "version": "1.2.1",
+  "version": "1.3.0",
   "released": "2026-11-01",
-  "size": 134446300,
-  "sha256": "daac62a7bb9e6f4ba7966422144b3e183b57bfb1883dd797f3a7dfcfc79f51c6",
-  "download_url": "https://github.com/LFELKEEA/darkitten-launcher/releases/download/pet-v1.2.1/LFELKEEA.zip",
+  "size": 136096812,
+  "sha256": "3a1d17f4065ca05bb77be885e0c0900c2d54a235301dcb58c172dbe85025be53",
+  "download_url": "https://github.com/LFELKEEA/darkitten-launcher/releases/download/pet-v1.3.0/LFELKEEA.zip",
   "notes": [
-    "修复 DeepSeek 等推理模型下 QQ 桥接记忆整理提示“接口返回了空回复”：思考模式默认开启，思维链会占掉回复的 token 预算。现在 DeepSeek 模型默认关闭思考，长聊天记录也能正常整理。",
-    "空回复时自动放宽一次输出上限，减少长输入被截断的情况；错误信息会带上 finish_reason、completion_tokens 和 reasoning_content 长度，方便定位问题。",
-    "兼容不认识 reasoning_effort 参数的第三方接口：返回 400/422 时会自动去掉该参数再试一次。",
-    "配套 QQ 桥接 1.4.5：记忆整理遇到空回复或非 JSON 时，自动用更短的输入和更少的条数重试一次；仍失败则保留聊天记录。"
+    "修复桌宠自身更新点了没反应的问题：之前用 DETACHED_PROCESS 启动更新脚本，PowerShell 会立即退出，脚本一行都没执行。现在换成隐藏窗口方式启动，并确认脚本真的跑起来才退出桌宠。",
+    "更新失败时对话框会显示具体原因，并附上 apply.log 末尾内容，不再静默失败。",
+    "每次启动 9 秒后都会检查一次更新，不再因为“6 小时内查过”而跳过；定时检查仍保持 6 小时一次。",
+    "1.2.x 需要手动下载安装一次 1.3.0；从 1.3.0 起可以在设置页或托盘菜单直接检查、下载并重启更新。"
   ]
 }
