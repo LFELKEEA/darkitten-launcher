@@ -41,7 +41,12 @@ PERMISSION_LABELS = {
 EXCLUDED_PARTS = {"__pycache__", ".state"}
 EXCLUDED_SUFFIXES = {".pyc", ".pyo", ".log"}
 
-FEATURED = {"lfelkeea.focus_guard", "lfelkeea.qq_bridge"}
+FEATURED = {
+    "lfelkeea.alive_core",
+    "lfelkeea.focus_guard",
+    "lfelkeea.qq_bridge",
+    "lfelkeea.self_dev",
+}
 
 
 def plugin_files(folder: Path) -> list[Path]:

@@ -274,6 +274,80 @@
       "sha256": "1023979d7074a70f4cca52da1f7c7bbd361189f5b40d19ed5e0311bb708e38b3"
     },
     {
+      "id": "lfelkeea.self_dev",
+      "name": "自开发工坊（Agent 工具链）",
+      "version": "1.0.0",
+      "author": "LFELKEEA",
+      "description": "让桌宠拥有一套自己的编程工具：在专属开发区里读文件、改代码、跑命令、查语法、搜资料，并把成果做成新的桌宠插件安装到自己的插件目录。工作台会实时展示每一步调用，危险操作默认要主人点头；所有路径都相对于开发区，换一台电脑、换一个安装目录也能直接用。",
+      "api_version": 1,
+      "permissions": [
+        "pet.say",
+        "pet.action",
+        "settings",
+        "storage"
+      ],
+      "permission_labels": [
+        "说话",
+        "动作",
+        "设置",
+        "本地存储"
+      ],
+      "requires": [],
+      "highlights": [
+        {
+          "label": "工作区",
+          "value": "data/dev，路径自解析"
+        },
+        {
+          "label": "工具",
+          "value": "读 / 写 / 改 / 搜 / 跑"
+        },
+        {
+          "label": "流程",
+          "value": "先读后改，改完验证"
+        },
+        {
+          "label": "产物",
+          "value": "直接生成可启用插件"
+        },
+        {
+          "label": "安全",
+          "value": "目录沙箱 + 改动前备份"
+        },
+        {
+          "label": "审批",
+          "value": "命令与启用插件需确认"
+        },
+        {
+          "label": "记录",
+          "value": "每次任务留会话日志"
+        },
+        {
+          "label": "可移植",
+          "value": "不带本机路径和密钥"
+        }
+      ],
+      "settings": {
+        "approval_mode": "confirm_danger",
+        "shell_mode": "auto",
+        "max_steps": 24,
+        "max_tokens": 4096,
+        "temperature": 0.3,
+        "allow_network": true,
+        "allow_private_network": false,
+        "allow_self_modify": false,
+        "auto_enable_plugin": true,
+        "notify_on_finish": true,
+        "model_override": "",
+        "workspace_dir": ""
+      },
+      "bundled": false,
+      "featured": true,
+      "file": "plugins/lfelkeea.self_dev-1.0.0.zip",
+      "size": 48753,
+      "sha256": "7145322ee5c6a2dcacb8fc5650b06a2570f5277228cd676416eacb52cd6cc1ec"
+    },
+    {
       "id": "example.hello",
       "name": "示例：定时问候",
       "version": "1.0.0",
