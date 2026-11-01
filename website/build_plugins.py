@@ -46,6 +46,7 @@ FEATURED = {
     "lfelkeea.alive_core",
     "lfelkeea.focus_guard",
     "lfelkeea.qq_bridge",
+    "lfelkeea.qq_inspiration",
     "lfelkeea.self_dev",
 }
 
