@@ -276,9 +276,9 @@
     {
       "id": "lfelkeea.self_dev",
       "name": "自开发工坊（Agent 工具链）",
-      "version": "1.0.0",
+      "version": "1.1.0",
       "author": "LFELKEEA",
-      "description": "让桌宠拥有一套自己的编程工具：在专属开发区里读文件、改代码、跑命令、查语法、搜资料，并把成果做成新的桌宠插件安装到自己的插件目录。工作台会实时展示每一步调用，危险操作默认要主人点头；所有路径都相对于开发区，换一台电脑、换一个安装目录也能直接用。",
+      "description": "让桌宠拥有一套自己的编程工具：在专属开发区里读文件、改代码、跑命令、查语法、搜资料，并把成果做成新的桌宠插件安装到自己的插件目录。不再限制步数和输出长度，可以一直做到任务完成；改动会自动记录基线，一键就能还原到最初状态；做好的插件还能导出成 ZIP 分享或投稿。工作台会实时展示每一步调用，危险操作默认要主人点头；所有路径都相对于开发区，换一台电脑、换一个安装目录也能直接用。",
       "api_version": 1,
       "permissions": [
         "pet.say",
@@ -304,7 +304,7 @@
         },
         {
           "label": "流程",
-          "value": "先读后改，改完验证"
+          "value": "不限步数，做到完成"
         },
         {
           "label": "产物",
@@ -319,6 +319,14 @@
           "value": "命令与启用插件需确认"
         },
         {
+          "label": "还原",
+          "value": "一键退回初始状态"
+        },
+        {
+          "label": "导出",
+          "value": "插件打包成 ZIP"
+        },
+        {
           "label": "记录",
           "value": "每次任务留会话日志"
         },
@@ -330,8 +338,6 @@
       "settings": {
         "approval_mode": "confirm_danger",
         "shell_mode": "auto",
-        "max_steps": 24,
-        "max_tokens": 4096,
         "temperature": 0.3,
         "allow_network": true,
         "allow_private_network": false,
@@ -343,9 +349,9 @@
       },
       "bundled": false,
       "featured": true,
-      "file": "plugins/lfelkeea.self_dev-1.0.0.zip",
-      "size": 48753,
-      "sha256": "7145322ee5c6a2dcacb8fc5650b06a2570f5277228cd676416eacb52cd6cc1ec"
+      "file": "plugins/lfelkeea.self_dev-1.1.0.zip",
+      "size": 56354,
+      "sha256": "11c89947f6d0731a2fe1a7b9967ea04d262c8f2279503f673e7021558523f303"
     },
     {
       "id": "example.hello",
