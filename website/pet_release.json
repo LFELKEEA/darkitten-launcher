@@ -1,14 +1,14 @@
 {
   "name": "LFELKEEA 桌宠",
-  "version": "1.3.0",
+  "version": "1.3.1",
   "released": "2026-11-01",
-  "size": 136096812,
-  "sha256": "3a1d17f4065ca05bb77be885e0c0900c2d54a235301dcb58c172dbe85025be53",
-  "download_url": "https://github.com/LFELKEEA/darkitten-launcher/releases/download/pet-v1.3.0/LFELKEEA.zip",
+  "size": 136099233,
+  "sha256": "a59bb6566c6c43cf4d2c1062234152575f7c2f425ecfa644cf1390fd9be0110b",
+  "download_url": "https://github.com/LFELKEEA/darkitten-launcher/releases/download/pet-v1.3.1/LFELKEEA.zip",
   "notes": [
-    "修复桌宠自身更新点了没反应的问题：之前用 DETACHED_PROCESS 启动更新脚本，PowerShell 会立即退出，脚本一行都没执行。现在换成隐藏窗口方式启动，并确认脚本真的跑起来才退出桌宠。",
-    "更新失败时对话框会显示具体原因，并附上 apply.log 末尾内容，不再静默失败。",
-    "每次启动 9 秒后都会检查一次更新，不再因为“6 小时内查过”而跳过；定时检查仍保持 6 小时一次。",
-    "1.2.x 需要手动下载安装一次 1.3.0；从 1.3.0 起可以在设置页或托盘菜单直接检查、下载并重启更新。"
+    "修复互动卡顿：之前每次按下桌宠都会在界面线程里同步打开麦克风，实测要 46–64 毫秒，冷启动能到 209 毫秒，所以按下、拖动起步和松手都会顿一下。现在麦克风改到后台线程打开，按下立即响应（约 0.9 毫秒）。",
+    "还没等到麦克风就绪就松手时，会直接取消这次录音并提示“我没听到声音”，不会让麦克风空挂 30 秒。",
+    "麦克风打开失败时静默退避 20 秒再重试，不再每次按下都卡一下还弹提示；关闭麦克风也移到后台，松手不再阻塞界面。",
+    "1.3.0 及以上可在设置页或托盘菜单直接检查更新；更早的版本请手动下载覆盖 LFELKEEA.exe 和 _internal/，data/ 目录保持不动。"
   ]
 }
