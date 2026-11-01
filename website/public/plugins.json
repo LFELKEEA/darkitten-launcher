@@ -276,7 +276,7 @@
     {
       "id": "lfelkeea.self_dev",
       "name": "自开发工坊（Agent 工具链）",
-      "version": "1.1.0",
+      "version": "1.1.1",
       "author": "LFELKEEA",
       "description": "让桌宠拥有一套自己的编程工具：在专属开发区里读文件、改代码、跑命令、查语法、搜资料，并把成果做成新的桌宠插件安装到自己的插件目录。不再限制步数和输出长度，可以一直做到任务完成；改动会自动记录基线，一键就能还原到最初状态；做好的插件还能导出成 ZIP 分享或投稿。工作台会实时展示每一步调用，危险操作默认要主人点头；所有路径都相对于开发区，换一台电脑、换一个安装目录也能直接用。",
       "api_version": 1,
@@ -349,9 +349,9 @@
       },
       "bundled": false,
       "featured": true,
-      "file": "plugins/lfelkeea.self_dev-1.1.0.zip",
-      "size": 56354,
-      "sha256": "11c89947f6d0731a2fe1a7b9967ea04d262c8f2279503f673e7021558523f303"
+      "file": "plugins/lfelkeea.self_dev-1.1.1.zip",
+      "size": 56329,
+      "sha256": "d63ed7bb02f854c915772104256c5fee96e49d3e89dd93e128f5434b0f82402a"
     },
     {
       "id": "example.hello",
