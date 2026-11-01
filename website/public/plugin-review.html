@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#100a10">
+  <title>审核队列 · Darkitten Launcher 桌宠插件</title>
+  <meta name="description" content="查看 Darkitten Launcher 社区插件投稿的审核队列、自动校验结果和发布状态。维护者通过 GitHub Issue 评论 /approve 或 /reject 完成审核。">
+  <link rel="icon" href="assets/dkl.ico">
+  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="plugins.css">
+  <link rel="stylesheet" href="plugin-review.css">
+</head>
+<body>
+  <svg class="svg-sprite" aria-hidden="true">
+    <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M5 12h14m-5-5 5 5-5 5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12 4 4L19 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 3 5 6v5c0 4.5 2.9 8.2 7 10 4.1-1.8 7-5.5 7-10V6l-7-3Z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><path d="m9 12 2 2 4-4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-plug" viewBox="0 0 24 24"><path d="M9 3v5M15 3v5M7 8h10v3a5 5 0 0 1-5 5 5 5 0 0 1-5-5V8ZM12 16v5" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M20 7v5h-5M4 17v-5h5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M6.1 9a7 7 0 0 1 11.6-1.7L20 10M4 14l2.3 2.7A7 7 0 0 0 17.9 15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-book" viewBox="0 0 24 24"><path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H20v16H6.5A2.5 2.5 0 0 0 4 21.5v-16Z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><path d="M8 7h8M8 11h6" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></symbol>
+    <symbol id="i-upload" viewBox="0 0 24 24"><path d="M12 21V9m0 0 4 4m-4-4-4 4M4 4h16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-copy" viewBox="0 0 24 24"><rect x="8" y="8" width="11" height="11" rx="2" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></symbol>
+    <symbol id="i-eye" viewBox="0 0 24 24"><path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12Z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="1.7"/></symbol>
+    <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M12 7.5V12l3 1.8" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  </svg>
+
+  <div class="bg-grid" aria-hidden="true"></div>
+  <div class="glow glow-a" aria-hidden="true"></div>
+  <div class="glow glow-b" aria-hidden="true"></div>
+  <div class="noise" aria-hidden="true"></div>
+
+  <header class="site-header" id="top">
+    <a class="brand" href="index.html" aria-label="Darkitten Launcher 首页">
+      <span class="brand-logo"><img src="assets/chibi_face.png" alt="DKL 猫猫图标"></span>
+      <span class="brand-text"><strong>DARKITTEN</strong><small>LAUNCHER</small></span>
+    </a>
+    <nav class="nav" aria-label="主导航">
+      <a href="index.html#gallery">界面</a>
+      <a href="index.html#features">能力</a>
+      <a href="index.html#release">更新</a>
+      <a href="index.html#download">下载</a>
+      <a href="plugins.html">插件</a>
+      <a href="submit-plugin.html">投稿</a>
+      <a href="index.html#pet">桌宠</a>
+    </nav>
+    <div class="header-actions">
+      <span class="version-chip"><i></i><span>v<span data-version>1.11.6</span></span></span>
+      <a class="btn btn-small" href="submit-plugin.html"><svg class="icon"><use href="#i-upload"></use></svg>投稿插件</a>
+    </div>
+  </header>
+
+  <main class="review-main">
+    <section class="review-hero">
+      <div class="review-hero-copy">
+        <div class="eyebrow"><span class="pulse"></span>PLUGIN REVIEW<span class="eyebrow-sep">/</span>HUMAN IN THE LOOP</div>
+        <h1>每份投稿<br><em>都要先过审。</em></h1>
+        <p class="lede">
+          这里展示社区插件的投稿状态和自动检查结果。浏览器只读取公开的 GitHub Issue，不会执行任何插件代码；
+          真正的通过或退回收在 Issue 评论区完成。<strong>没有维护者确认，任何投稿都不会进入插件库。</strong>
+        </p>
+        <div class="review-hero-actions">
+          <a class="btn btn-primary" href="submit-plugin.html">
+            <svg class="icon"><use href="#i-upload"></use></svg>
+            投稿一个插件
+          </a>
+          <a class="btn btn-ghost" href="https://github.com/LFELKEEA/darkitten-launcher/issues?q=label%3Aplugin-submission" target="_blank" rel="noopener">
+            <svg class="icon"><use href="#i-eye"></use></svg>
+            打开 GitHub 队列
+          </a>
+        </div>
+      </div>
+      <div class="review-stats" id="reviewStats" aria-label="投稿统计">
+        <div class="review-stat" data-tone="pending"><strong data-stat="pending">—</strong><span>待审核</span></div>
+        <div class="review-stat" data-tone="validated"><strong data-stat="validated">—</strong><span>已通过自动检查</span></div>
+        <div class="review-stat" data-tone="published"><strong data-stat="published">—</strong><span>已发布</span></div>
+        <div class="review-stat" data-tone="rejected"><strong data-stat="rejected">—</strong><span>已退回 / 无效</span></div>
+      </div>
+    </section>
+
+    <section class="section review-section" id="queue">
+      <div class="review-head">
+        <div>
+          <span class="kicker">REVIEW QUEUE</span>
+          <h2>投稿队列</h2>
+          <p>状态来自 Issue 标签：<code>plugin-validated</code>、<code>plugin-approved</code>、<code>plugin-published</code>、<code>plugin-rejected</code>。</p>
+        </div>
+        <button class="btn btn-ghost btn-small" type="button" id="refreshQueue">
+          <svg class="icon"><use href="#i-refresh"></use></svg>
+          刷新
+        </button>
+      </div>
+
+      <div class="review-toolbar">
+        <div class="review-filters" role="group" aria-label="筛选投稿状态">
+          <button class="review-filter is-active" type="button" data-filter="pending" aria-pressed="true">待审核 <span data-count="pending">0</span></button>
+          <button class="review-filter" type="button" data-filter="validated" aria-pressed="false">已校验 <span data-count="validated">0</span></button>
+          <button class="review-filter" type="button" data-filter="published" aria-pressed="false">已发布 <span data-count="published">0</span></button>
+          <button class="review-filter" type="button" data-filter="rejected" aria-pressed="false">已退回 <span data-count="rejected">0</span></button>
+          <button class="review-filter" type="button" data-filter="all" aria-pressed="false">全部 <span data-count="all">0</span></button>
+        </div>
+        <label class="review-search">
+          <span class="review-search-icon" aria-hidden="true">⌕</span>
+          <input type="search" id="reviewSearch" placeholder="搜索插件 id、名称、投稿人或 Issue 编号" autocomplete="off">
+        </label>
+      </div>
+
+      <div class="review-notice" id="reviewNotice" hidden role="status"></div>
+      <div class="review-grid" id="reviewGrid" aria-live="polite"></div>
+      <div class="review-empty" id="reviewEmpty" hidden>
+        <span class="review-empty-icon"><svg class="icon"><use href="#i-plug"></use></svg></span>
+        <strong id="reviewEmptyTitle">当前没有待审核的投稿</strong>
+        <p id="reviewEmptyText">新的投稿会出现在这里。也可以直接去 GitHub 查看全部投稿 Issue。</p>
+        <a class="btn btn-ghost" href="https://github.com/LFELKEEA/darkitten-launcher/issues?q=label%3Aplugin-submission" target="_blank" rel="noopener">打开 GitHub 队列</a>
+      </div>
+    </section>
+
+    <section class="section review-guide" id="guide">
+      <div class="review-guide-head">
+        <span class="kicker">HOW TO REVIEW</span>
+        <h2>审核怎么做</h2>
+        <p>审核动作只接受仓库所有者、成员和协作者的评论。普通用户可以在 Issue 里补充说明，但不能触发发布。</p>
+      </div>
+      <div class="review-guide-grid">
+        <article class="review-guide-card">
+          <span class="review-guide-step">01</span>
+          <h3>先看自动检查</h3>
+          <p>Actions 会解压 ZIP、核对 <code>plugin.json</code>、扫描危险文件，并检查权限声明。只有 <code>plugin-validated</code> 的投稿才建议继续。</p>
+        </article>
+        <article class="review-guide-card">
+          <span class="review-guide-step">02</span>
+          <h3>再读代码和说明</h3>
+          <p>打开 Issue 下载附件，确认入口文件、权限和实际行为一致。重点看联网、读屏、存储和外部依赖，不要凭描述放行。</p>
+        </article>
+        <article class="review-guide-card">
+          <span class="review-guide-step">03</span>
+          <h3>评论指令</h3>
+          <p>通过时评论 <code>/approve</code>，Actions 会再次校验并发布到插件库；退回时评论 <code>/reject 原因</code>，Issue 会关闭并标注原因。</p>
+        </article>
+      </div>
+      <div class="review-security">
+        <svg class="icon"><use href="#i-shield"></use></svg>
+        <p><strong>安全边界：</strong>自动检查只解析 ZIP，不执行插件代码；发布前会拒绝覆盖官方 id、降低版本和保留前缀。人工审核仍然是必需环节。</p>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div class="footer-brand">
+      <img src="assets/chibi_face.png" alt="">
+      <div><strong>Darkitten Launcher</strong><span>恶魔小猫的秘密基地</span></div>
+    </div>
+    <p>开发者 LFELKEEA · <a href="mailto:lfel278623@outlook.com">lfel278623@outlook.com</a><br>非 Mojang 或 Microsoft 官方产品。Minecraft 是 Mojang Studios 的商标。</p>
+    <div class="footer-links">
+      <a href="plugins.html">插件库</a>
+      <a href="submit-plugin.html">投稿插件</a>
+      <a href="plugins/docs/SUBMIT_PLUGIN.md">投稿说明</a>
+      <a href="https://github.com/LFELKEEA/darkitten-launcher" target="_blank" rel="noopener">GitHub 仓库</a>
+      <a href="#top">回到顶部</a>
+    </div>
+  </footer>
+
+  <div class="review-toast" id="reviewToast" hidden role="status" aria-live="polite"></div>
+
+  <template id="reviewCardTemplate">
+    <article class="review-card">
+      <div class="review-card-top">
+        <span class="review-status" data-role="status">待审核</span>
+        <span class="review-issue" data-role="issue"></span>
+      </div>
+      <h3 data-role="title"></h3>
+      <p class="review-desc" data-role="description"></p>
+      <dl class="review-meta">
+        <div><dt>插件 id</dt><dd data-role="id"></dd></div>
+        <div><dt>版本</dt><dd data-role="version"></dd></div>
+        <div><dt>作者</dt><dd data-role="author"></dd></div>
+        <div><dt>投稿人</dt><dd data-role="submitter"></dd></div>
+      </dl>
+      <div class="review-perms" data-role="perms"></div>
+      <div class="review-integrity">
+        <span data-role="size"></span>
+        <code data-role="sha"></code>
+      </div>
+      <div class="review-card-foot">
+        <a class="btn btn-ghost btn-small" data-role="open" target="_blank" rel="noopener">
+          <svg class="icon"><use href="#i-eye"></use></svg>
+          打开 Issue
+        </a>
+        <button class="btn btn-ghost btn-small" type="button" data-role="copy-approve">
+          <svg class="icon"><use href="#i-copy"></use></svg>
+          复制 /approve
+        </button>
+        <button class="btn btn-ghost btn-small" type="button" data-role="copy-reject">
+          <svg class="icon"><use href="#i-copy"></use></svg>
+          复制 /reject
+        </button>
+      </div>
+    </article>
+  </template>
+
+  <script src="plugin-review.js" defer></script>
+</body>
+</html>

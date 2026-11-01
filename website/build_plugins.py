@@ -26,6 +26,7 @@ SOURCE = PET / "plugins"
 DOCS = PET / "docs"
 DEST = PUBLIC / "plugins"
 REGISTRY = PUBLIC / "plugins.json"
+COMMUNITY = SITE / "community_plugins.json"
 
 PERMISSION_LABELS = {
     "pet.say": "说话",
@@ -146,6 +147,41 @@ def main() -> int:
             raise SystemExit(f"{manifest_path} 缺少 id")
         entries.append(package(folder, manifest))
 
+    official_ids = {item["id"] for item in entries}
+    community = []
+    if COMMUNITY.is_file():
+        data = json.loads(COMMUNITY.read_text(encoding="utf-8"))
+        for item in data.get("plugins", []):
+            if not isinstance(item, dict):
+                continue
+            plugin_id = str(item.get("id", ""))
+            file_name = Path(str(item.get("file", ""))).name
+            target = DEST / file_name
+            if not plugin_id or plugin_id in official_ids or not target.is_file():
+                continue
+            # 新版记录把完整条目放在 entry 里；旧记录只有最小字段，直接用自身兜底。
+            base = item.get("entry")
+            entry = dict(base) if isinstance(base, dict) else dict(item)
+            entry["id"] = plugin_id
+            entry["name"] = str(entry.get("name") or plugin_id)
+            entry["version"] = str(entry.get("version") or item.get("version") or "0.0.0")
+            entry["author"] = str(entry.get("author") or "")
+            entry["description"] = str(entry.get("description") or "")
+            entry["api_version"] = int(entry.get("api_version") or 1)
+            entry["permissions"] = [str(value) for value in (entry.get("permissions") or [])]
+            entry["permission_labels"] = [PERMISSION_LABELS.get(value, value) for value in entry["permissions"]]
+            entry["requires"] = entry.get("requires") or []
+            entry["highlights"] = entry.get("highlights") or []
+            entry["settings"] = entry.get("settings") or {}
+            entry["bundled"] = False
+            entry["featured"] = False
+            entry["community"] = True
+            entry["file"] = f"plugins/{file_name}"
+            entry["size"] = target.stat().st_size
+            entry["sha256"] = sha256(target)
+            community.append(entry)
+
+    entries.extend(community)
     entries.sort(key=lambda item: (not item["featured"], item["bundled"], item["name"]))
 
     registry = {
@@ -160,7 +196,7 @@ def main() -> int:
     total = sum(item["size"] for item in entries)
     for item in entries:
         print(f"{item['id']:<28} {item['version']:<8} {item['size']:>8} B  {item['file']}")
-    print(f"{len(entries)} plugins, {total} B total -> {REGISTRY}")
+    print(f"{len(entries)} plugins ({len(community)} community), {total} B total -> {REGISTRY}")
     return 0
 
 
