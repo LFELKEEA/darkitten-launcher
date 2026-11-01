@@ -240,6 +240,13 @@
 
 .review-notice a { color: #fff; text-decoration: underline; }
 
+.review-updated {
+  margin: -4px 0 16px;
+  color: var(--muted);
+  font-size: 11.5px;
+  line-height: 1.7;
+}
+
 /* 投稿卡片 ---------------------------------------------------------------- */
 
 .review-grid {

@@ -494,5 +494,64 @@ class ReportTests(unittest.TestCase):
         self.assertIn("plugins.html", markdown)
 
 
+class QueueSnapshotTests(unittest.TestCase):
+    def issue(self, number=1, labels=("plugin-submission",), state="open", body=None):
+        data = manifest(id="test.demo", version="1.0.0")
+        body = body if body is not None else (
+            submission.MARKER + "\n\n```json\n" + json.dumps(data, ensure_ascii=False) + "\n```\n"
+        )
+        return {
+            "number": number,
+            "title": "[插件投稿] 测试插件",
+            "state": state,
+            "html_url": f"https://github.com/LFELKEEA/darkitten-launcher/issues/{number}",
+            "created_at": f"2026-11-0{number}T10:00:00Z",
+            "user": {"login": "alice"},
+            "labels": [{"name": name} for name in labels],
+            "body": body,
+        }
+
+    def test_snapshot_keeps_metadata_and_status(self):
+        snapshot = submission.build_queue(
+            [self.issue(1), self.issue(2, ("plugin-submission", "plugin-validated"))],
+            repo="LFELKEEA/darkitten-launcher",
+        )
+        self.assertEqual(snapshot["schema"], 1)
+        self.assertEqual(snapshot["count"], 2)
+        self.assertEqual(snapshot["generated_at"][-1], "Z")
+        self.assertEqual(snapshot["items"][0]["number"], 2)
+        self.assertEqual(snapshot["items"][0]["status"], "validated")
+        self.assertEqual(snapshot["items"][1]["status"], "pending")
+        self.assertEqual(snapshot["items"][0]["plugin"]["id"], "test.demo")
+        self.assertEqual(snapshot["items"][0]["plugin"]["permissions"], ["pet.say"])
+
+    def test_snapshot_status_precedence_and_filters(self):
+        snapshot = submission.build_queue(
+            [
+                self.issue(1, ("plugin-submission", "plugin-published"), state="closed"),
+                self.issue(2, ("plugin-submission", "plugin-invalid", "plugin-rejected"), state="closed"),
+                self.issue(3, ("plugin-submission",), state="closed"),
+                self.issue(4, ("other",)),
+                dict(self.issue(5), pull_request={}),
+            ]
+        )
+        statuses = {item["number"]: item["status"] for item in snapshot["items"]}
+        self.assertEqual(statuses, {1: "published", 2: "rejected", 3: "closed"})
+
+    def test_snapshot_tolerates_broken_body(self):
+        snapshot = submission.build_queue([self.issue(1, body="没有元数据")])
+        self.assertEqual(snapshot["count"], 1)
+        self.assertIsNone(snapshot["items"][0]["plugin"])
+
+    def test_write_snapshot_skips_unchanged(self):
+        snapshot = submission.build_queue([self.issue(1)])
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "plugin-queue.json"
+            self.assertTrue(submission.write_queue_snapshot(snapshot, path=path))
+            before = path.read_text(encoding="utf-8")
+            self.assertFalse(submission.write_queue_snapshot(snapshot, path=path))
+            self.assertEqual(path.read_text(encoding="utf-8"), before)
+
+
 if __name__ == "__main__":
     unittest.main()

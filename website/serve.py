@@ -23,6 +23,7 @@ STATIC_FILES = {
     "/plugin-review.html",
     "/plugin-review.css",
     "/plugin-review.js",
+    "/plugin-queue.json",
     "/feedback.html",
     "/style.css",
     "/plugins.css",

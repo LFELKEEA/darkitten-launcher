@@ -21,11 +21,12 @@ import re
 import stat
 import subprocess
 import sys
+import time
 import urllib.error
 import urllib.request
 import zipfile
 from dataclasses import dataclass, field
-from datetime import date
+from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any, Iterable
 
@@ -740,6 +741,180 @@ def deploy_result(result: dict[str, Any], repo: str = "LFELKEEA/darkitten-launch
     upload_tree(gh, target, "gh-pages", pages_files, message, base_tree=True)
 
 
+QUEUE_PATH = PUBLIC / "plugin-queue.json"
+
+
+def _label_names(issue: dict[str, Any]) -> set[str]:
+    names: set[str] = set()
+    for label in issue.get("labels") or []:
+        if isinstance(label, str):
+            names.add(label)
+        elif isinstance(label, dict) and label.get("name"):
+            names.add(str(label["name"]))
+    return names
+
+
+def queue_status(issue: dict[str, Any]) -> str:
+    names = _label_names(issue)
+    if "plugin-published" in names:
+        return "published"
+    if "plugin-rejected" in names:
+        return "rejected"
+    if "plugin-invalid" in names:
+        return "invalid"
+    if "plugin-approved" in names:
+        return "approved"
+    if "plugin-validated" in names:
+        return "validated"
+    if str(issue.get("state") or "").lower() == "closed":
+        return "closed"
+    return "pending"
+
+
+def _queue_plugin(meta: dict[str, Any] | None) -> dict[str, Any] | None:
+    if not meta:
+        return None
+    permissions = meta.get("permissions")
+    return {
+        "id": clean_text(meta.get("id"), 64),
+        "name": clean_text(meta.get("name"), MAX_NAME),
+        "version": clean_text(meta.get("version"), 40),
+        "author": clean_text(meta.get("author"), MAX_AUTHOR),
+        "description": clean_text(meta.get("description"), MAX_DESCRIPTION),
+        "permissions": [str(item) for item in permissions if isinstance(item, str)][:20]
+        if isinstance(permissions, list)
+        else [],
+        "sha256": clean_text(meta.get("sha256"), 64),
+        "size": meta.get("size") if isinstance(meta.get("size"), int) else None,
+    }
+
+
+def build_queue(issues: Iterable[dict[str, Any]], *, repo: str = "") -> dict[str, Any]:
+    items: list[dict[str, Any]] = []
+    for issue in issues:
+        if not isinstance(issue, dict) or "pull_request" in issue:
+            continue
+        names = _label_names(issue)
+        if "plugin-submission" not in names:
+            continue
+        meta, _errors = parse_issue_body(str(issue.get("body") or ""))
+        item = {
+            "number": issue.get("number"),
+            "title": clean_text(issue.get("title"), 200),
+            "state": str(issue.get("state") or "open"),
+            "html_url": str(issue.get("html_url") or ""),
+            "created_at": str(issue.get("created_at") or ""),
+            "user": {"login": str((issue.get("user") or {}).get("login") or "")},
+            "labels": [{"name": name} for name in sorted(names)],
+            "status": queue_status(issue),
+            "plugin": _queue_plugin(meta),
+        }
+        items.append(item)
+    items.sort(key=lambda item: (item["created_at"], item["number"] or 0), reverse=True)
+    return {
+        "schema": 1,
+        "repo": repo,
+        "generated_at": datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z"),
+        "count": len(items),
+        "items": items,
+    }
+
+
+def fetch_queue(repo: str, *, gh: str = "gh") -> dict[str, Any]:
+    issues: list[dict[str, Any]] = []
+    query = "state=all&labels=plugin-submission&per_page=100"
+    try:
+        for page in range(1, 11):
+            result = _run_gh(gh, "api", f"repos/{repo}/issues?{query}&page={page}")
+            data = json.loads(result.stdout or "[]")
+            if not isinstance(data, list):
+                raise RuntimeError("GitHub 返回了无法识别的数据。")
+            issues.extend(data)
+            if len(data) < 100:
+                break
+    except (RuntimeError, ValueError, FileNotFoundError):
+        # 没有 gh 或 gh 未登录时退回公开 REST 接口（未登录每小时 60 次）。
+        items: list[dict[str, Any]] = []
+        for page in range(1, 11):
+            url = f"https://api.github.com/repos/{repo}/issues?{query}&page={page}"
+            request = urllib.request.Request(
+                url,
+                headers={
+                    "Accept": "application/vnd.github+json",
+                    "User-Agent": "DKL-Plugin-Review/1.0",
+                },
+            )
+            with urllib.request.urlopen(request, timeout=45) as response:
+                data = json.loads(response.read().decode("utf-8"))
+            if not isinstance(data, list):
+                raise RuntimeError("GitHub 返回了无法识别的数据。")
+            items.extend(data)
+            if len(data) < 100:
+                break
+        issues = items
+    return build_queue(issues, repo=repo)
+
+
+def _queue_equivalent(left: str, right: dict[str, Any]) -> bool:
+    try:
+        old = json.loads(left)
+    except ValueError:
+        return False
+    if not isinstance(old, dict):
+        return False
+    copy = dict(right)
+    old.pop("generated_at", None)
+    copy.pop("generated_at", None)
+    return old == copy
+
+
+def write_queue_snapshot(
+    snapshot: dict[str, Any],
+    *,
+    path: Path = QUEUE_PATH,
+    repo: str = "LFELKEEA/darkitten-launcher",
+    repo_root: Path = ROOT,
+    upload: bool = False,
+) -> bool:
+    payload = json.dumps(snapshot, ensure_ascii=False, indent=2) + "\n"
+    old = path.read_text(encoding="utf-8") if path.is_file() else ""
+    if _queue_equivalent(old, snapshot):
+        print("queue: unchanged", flush=True)
+        return False
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(payload, encoding="utf-8")
+    print(f"queue: wrote {len(snapshot.get('items') or [])} items to {path}", flush=True)
+    if not upload:
+        return True
+
+    sys.path.insert(0, str(repo_root / "website"))
+    from build_release import ensure_repo, find_gh, upload_tree  # noqa: E402
+
+    gh = find_gh()
+    target = ensure_repo(gh, repo)
+    message = f"chore: update plugin review queue ({len(snapshot.get('items') or [])} items)"
+    last_error: BaseException | None = None
+    for attempt in range(3):
+        try:
+            upload_tree(
+                gh, target, "main",
+                [("website/public/plugin-queue.json", path)],
+                message, base_tree=True,
+            )
+            upload_tree(
+                gh, target, "gh-pages",
+                [("plugin-queue.json", path)],
+                message, base_tree=True,
+            )
+            print("queue: uploaded to main and gh-pages", flush=True)
+            return True
+        except BaseException as exc:  # gh_api 失败时会抛 SystemExit
+            last_error = exc
+            if attempt < 2:
+                time.sleep(2 * (attempt + 1))
+    raise RuntimeError(f"队列快照上传失败：{last_error}") from last_error
+
+
 def _human_size(value: Any) -> str:
     try:
         size = int(value)
@@ -918,7 +1093,23 @@ def main(argv: list[str] | None = None) -> int:
     report.add_argument("--result", required=True, help="validate/publish 生成的结果 JSON")
     report.add_argument("--kind", choices=("validate", "publish"), default="validate")
 
+    queue = sub.add_parser("queue")
+    queue.add_argument("--repo", default="LFELKEEA/darkitten-launcher")
+    queue.add_argument("--out", default=str(QUEUE_PATH))
+    queue.add_argument("--repo-root", default=str(ROOT))
+    queue.add_argument("--upload", action="store_true", help="把快照提交到 main 和 gh-pages")
+
     args = parser.parse_args(argv)
+    if args.command == "queue":
+        snapshot = fetch_queue(args.repo)
+        write_queue_snapshot(
+            snapshot,
+            path=Path(args.out),
+            repo=args.repo,
+            repo_root=Path(args.repo_root),
+            upload=args.upload,
+        )
+        return 0
     if args.command == "report":
         result = _load_json(Path(args.result), {})
         write_stdout_utf8(markdown_report(result, args.kind))
