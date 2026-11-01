@@ -6,9 +6,9 @@
     {
       "id": "lfelkeea.qq_bridge",
       "name": "QQ 桥接（SnowLuma）",
-      "version": "1.4.5",
+      "version": "1.4.6",
       "author": "LFELKEEA",
-      "description": "通过 SnowLuma 把 QQ 私聊和群聊接进桌宠：可视化设置面板、人格卡、长期记忆、黑话库、可加备注的白名单、习惯化回复、表情、QQ 空间、SnowLuma 自动启停、聊天图片识别和语音包发送。",
+      "description": "通过 SnowLuma 把 QQ 私聊和群聊接进桌宠：可视化设置面板、人格卡、长期记忆、黑话库、可加备注的白名单、盯人即时回复、习惯化回复、收藏表情、QQ 空间与评论自动回复、SnowLuma 自动启停、聊天图片识别和语音包发送。",
       "api_version": 1,
       "permissions": [
         "pet.say",
@@ -64,6 +64,18 @@
         {
           "label": "语音消息",
           "value": "语音包导入 / 本机扫描"
+        },
+        {
+          "label": "盯人",
+          "value": "私聊或白名单群即时回复"
+        },
+        {
+          "label": "QQ 空间",
+          "value": "新评论自动回复"
+        },
+        {
+          "label": "收藏表情",
+          "value": "按概率自动发送"
         }
       ],
       "settings": {
@@ -73,7 +85,11 @@
         "allow_private": [],
         "allow_groups": [],
         "allow_notes": {},
+        "watch_users": [],
         "qzone_enabled": false,
+        "qzone_auto_reply": false,
+        "qzone_reply_interval": 10,
+        "qzone_reply_max": 3,
         "group_trigger": "at",
         "memory_enabled": true,
         "slang_enabled": true,
@@ -111,13 +127,16 @@
         "vision_enabled": true,
         "voice_packs": [],
         "voice_reply_enabled": false,
-        "voice_reply_probability": 0.08
+        "voice_reply_probability": 0.08,
+        "custom_face_enabled": false,
+        "custom_face_probability": 0.05,
+        "custom_face_ids": []
       },
       "bundled": false,
       "featured": true,
-      "file": "plugins/lfelkeea.qq_bridge-1.4.5.zip",
-      "size": 75243,
-      "sha256": "002c343c89d2a175470238ba07ab5a81f049dd35b32ccc715a2e6cf454fde23e"
+      "file": "plugins/lfelkeea.qq_bridge-1.4.6.zip",
+      "size": 81636,
+      "sha256": "d3499760bedbef9617a35cb2067c613c9d877b6722038ca55ed87039f2f85260"
     },
     {
       "id": "lfelkeea.focus_guard",
