@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="theme-color" content="#100a10">
   <title>插件库 · Darkitten Launcher 桌宠插件</title>
-  <meta name="description" content="LFELKEEA 桌宠插件库：下载 QQ 桥接、专注时间等插件，查看权限、外部依赖、安装步骤和插件开发文档，让桌面小猫多一项技能。">
+  <meta name="description" content="LFELKEEA 桌宠插件库：下载活人感内核、QQ 桥接、专注时间等插件，查看权限、外部依赖、安装步骤和插件开发文档，让桌面小猫多一项技能。">
   <link rel="icon" href="assets/dkl.ico">
   <link rel="stylesheet" href="style.css">
   <link rel="stylesheet" href="plugins.css">
@@ -69,7 +69,7 @@
           </a>
         </div>
         <div class="pl-hero-meta">
-          <span><strong data-plugin-total>4</strong> 个可用插件</span>
+          <span><strong data-plugin-total>5</strong> 个可用插件</span>
           <span>适配桌宠 <strong data-pet-version>1.3.0</strong></span>
           <span>接口版本 <strong>v1</strong></span>
         </div>
@@ -122,7 +122,7 @@
         <p class="pl-loading">正在读取插件清单…</p>
       </div>
       <noscript>
-        <p class="pl-noscript">站点用脚本读取 <a href="plugins.json">plugins.json</a> 来渲染插件卡片。启用 JavaScript 后可以在这里直接下载；也可以手动下载：<a href="plugins/lfelkeea.qq_bridge-1.6.0.zip">QQ 桥接（SnowLuma）</a>、<a href="plugins/lfelkeea.focus_guard-1.0.0.zip">专注时间</a>、<a href="plugins/example.hello-1.0.0.zip">示例：定时问候</a>、<a href="plugins/example.screen_note-1.0.0.zip">示例：屏幕观察补充</a>。</p>
+        <p class="pl-noscript">站点用脚本读取 <a href="plugins.json">plugins.json</a> 来渲染插件卡片。启用 JavaScript 后可以在这里直接下载；也可以手动下载：<a href="plugins/lfelkeea.alive_core-1.0.0.zip">活人感内核（姐妹人格与记忆）</a>、<a href="plugins/lfelkeea.qq_bridge-1.7.0.zip">QQ 桥接（SnowLuma）</a>、<a href="plugins/lfelkeea.focus_guard-1.0.0.zip">专注时间</a>、<a href="plugins/example.hello-1.0.0.zip">示例：定时问候</a>、<a href="plugins/example.screen_note-1.0.0.zip">示例：屏幕观察补充</a>。</p>
       </noscript>
       <p class="pl-empty" data-plugin-empty hidden>这个分类下暂时没有插件。</p>
     </section>
@@ -158,7 +158,7 @@
       </div>
       <div class="pl-tip pl-tip-dependency reveal" id="snowluma">
         <svg class="icon"><use href="#i-shield"></use></svg>
-        <p><strong>QQ 桥接要先装 SnowLuma，桌宠要 1.1.1 或更高。</strong>SnowLuma 是独立运行的 QQ → OneBot 桥，不包含在插件包里，也不允许二次打包。到 <a href="https://github.com/SnowLuma/SnowLuma/releases" target="_blank" rel="noopener">官方 Releases</a> 下载 <code>win-x64</code> 完整包（自带 Node，开箱即用），按 <a href="https://snowluma.github.io/zh/docs/guide/deploy/windows" target="_blank" rel="noopener">Windows 部署说明</a>登录 QQ。装好插件后打开「设置」面板，填 SnowLuma 的 HTTP 地址和 accessToken，事件地址 <code>http://127.0.0.1:8766/onebot</code> 面板里会自动算好并可一键复制，粘回 SnowLuma 即可。白名单、人格卡、记忆、黑话和 QQ 空间也都在面板里。1.4.1 起设置窗口可以拖动、右下角可拉伸，打开时按屏幕自动收缩，十个标签页都能滚动。1.4.2 修好了记忆整理：模型输出被截断或夹带解释时会抢救可读部分，完全没返回 JSON 时保留聊天记录并说明原因，网络抖动会自动重试一次；「记忆」页多了「立即整理」，「习惯」页可以删除单个会话的统计。1.4.3 起自动启动或接管 SnowLuma 时不再弹出控制台窗口，关闭插件或桌宠后仍会结束后台进程。1.4.4 给白名单里的好友和群加了文字备注：列表显示「号码 · 备注」，新增时可直接带备注，删除条目会一并清理；备注只用于辨认，不参与白名单匹配。1.4.5 修复 DeepSeek 等推理模型下记忆整理提示“接口返回了空回复”：桌宠 1.2.1 起在 DeepSeek 模型上关闭思考模式，插件遇到空回复或非 JSON 时也会用更短的输入自动重试一次。1.4.6 新增盯人名单，被盯的 QQ 私聊或在白名单群发言时直接回复，不受 @ 和接话概率限制；QQ 空间可以自动回复最近说说下的新评论，首次开启只建立基线，已回复评论会去重；还能读取并勾选自己收藏的 QQ 表情，AI 回复后按概率补发一条。1.6.0 让 GPT-SoVITS 也能像 SnowLuma 一样自动托管：自动探测整合包目录，用自带 runtime 隐藏窗口后台启动 api_v2.py，合成前自动等服务就绪，关闭插件或桌宠时一并结束；「语音」页可以直接改安装目录、开关自动启动、手动启停服务，音色下拉会扫描 refs 里的 wav 并自动带出同名 txt 的参考文字。1.5.0 把语音包换成 TTS：可以直接用 Windows 自带语音朗读，也可以连接本机 GPT-SoVITS，用参考音频克隆音色（支持中/英/日/韩/粤语）；「语音」页能试听和手动发送，AI 回复可按概率附带语音，`[voice]` 标记和 `/voice 文字` 指令也保留。GPT-SoVITS 模型和音色素材需要自己部署，插件不附带；数据集素材请遵守其 CC BY-NC 等授权。插件 ZIP 里的 <code>README.md</code> 有逐项说明。</p>
+        <p><strong>QQ 桥接要先装 SnowLuma，桌宠要 1.1.1 或更高。</strong>SnowLuma 是独立运行的 QQ → OneBot 桥，不包含在插件包里，也不允许二次打包。到 <a href="https://github.com/SnowLuma/SnowLuma/releases" target="_blank" rel="noopener">官方 Releases</a> 下载 <code>win-x64</code> 完整包（自带 Node，开箱即用），按 <a href="https://snowluma.github.io/zh/docs/guide/deploy/windows" target="_blank" rel="noopener">Windows 部署说明</a>登录 QQ。装好插件后打开「设置」面板，填 SnowLuma 的 HTTP 地址和 accessToken，事件地址 <code>http://127.0.0.1:8766/onebot</code> 面板里会自动算好并可一键复制，粘回 SnowLuma 即可。白名单、人格卡、记忆、黑话和 QQ 空间也都在面板里。1.4.1 起设置窗口可以拖动、右下角可拉伸，打开时按屏幕自动收缩，十个标签页都能滚动。1.4.2 修好了记忆整理：模型输出被截断或夹带解释时会抢救可读部分，完全没返回 JSON 时保留聊天记录并说明原因，网络抖动会自动重试一次；「记忆」页多了「立即整理」，「习惯」页可以删除单个会话的统计。1.4.3 起自动启动或接管 SnowLuma 时不再弹出控制台窗口，关闭插件或桌宠后仍会结束后台进程。1.4.4 给白名单里的好友和群加了文字备注：列表显示「号码 · 备注」，新增时可直接带备注，删除条目会一并清理；备注只用于辨认，不参与白名单匹配。1.4.5 修复 DeepSeek 等推理模型下记忆整理提示“接口返回了空回复”：桌宠 1.2.1 起在 DeepSeek 模型上关闭思考模式，插件遇到空回复或非 JSON 时也会用更短的输入自动重试一次。1.4.6 新增盯人名单，被盯的 QQ 私聊或在白名单群发言时直接回复，不受 @ 和接话概率限制；QQ 空间可以自动回复最近说说下的新评论，首次开启只建立基线，已回复评论会去重；还能读取并勾选自己收藏的 QQ 表情，AI 回复后按概率补发一条。1.6.0 让 GPT-SoVITS 也能像 SnowLuma 一样自动托管：自动探测整合包目录，用自带 runtime 隐藏窗口后台启动 api_v2.py，合成前自动等服务就绪，关闭插件或桌宠时一并结束；「语音」页可以直接改安装目录、开关自动启动、手动启停服务，音色下拉会扫描 refs 里的 wav 并自动带出同名 txt 的参考文字。1.5.0 把语音包换成 TTS：可以直接用 Windows 自带语音朗读，也可以连接本机 GPT-SoVITS，用参考音频克隆音色（支持中/英/日/韩/粤语）；「语音」页能试听和手动发送，AI 回复可按概率附带语音，`[voice]` 标记和 `/voice 文字` 指令也保留。1.7.0 可以接入「活人感内核」：回复会带上她当前的状态、最近的自我认识和按话题召回的记忆，聊天也会写回内核；没装内核时完全按原逻辑工作。活人感内核把身份、记忆、状态和节律分开管理：情节只追加、按遗忘曲线变淡、被真正用过才加固，更正保留历史；主动说话有每日额度、夜间静默和话题去重，没信号就允许沉默。GPT-SoVITS 模型和音色素材需要自己部署，插件不附带；数据集素材请遵守其 CC BY-NC 等授权。插件 ZIP 里的 <code>README.md</code> 有逐项说明。</p>
       </div>
     </section>
 
