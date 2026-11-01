@@ -276,9 +276,9 @@
     {
       "id": "lfelkeea.qq_inspiration",
       "name": "灵感获取（QQ桥接 / 桌宠对话）",
-      "version": "1.1.0",
+      "version": "1.1.1",
       "author": "LFELKEEA",
-      "description": "从 QQ 桥接记忆、桌宠对话里提炼可做插件的灵感，也可以直接让 AI 按主题生成新点子；灵感存在本地，可一键复制到自开发工坊。",
+      "description": "从 QQ 桥接记忆、桌宠对话里提炼可做插件的灵感，也可以直接让 AI 按主题生成新点子；支持一键删除、Ctrl/Shift 多选批量删除，灵感存在本地，可一键复制到自开发工坊。",
       "api_version": 1,
       "permissions": [
         "pet.say",
@@ -317,6 +317,10 @@
           "value": "只读记忆，跳过配置与密钥"
         },
         {
+          "label": "整理",
+          "value": "一键删除、多选批量删除"
+        },
+        {
           "label": "工坊",
           "value": "一键复制到自开发工坊"
         }
@@ -329,9 +333,9 @@
       },
       "bundled": false,
       "featured": true,
-      "file": "plugins/lfelkeea.qq_inspiration-1.1.0.zip",
-      "size": 17619,
-      "sha256": "c1b85b72073605c0e763745636f7d7d3026614341a899e42c547b8799e47f9ec"
+      "file": "plugins/lfelkeea.qq_inspiration-1.1.1.zip",
+      "size": 18465,
+      "sha256": "c5767da30f53880a6edc39839dd85fc68ad017792f94da3bb6861da9816ce236"
     },
     {
       "id": "lfelkeea.self_dev",
