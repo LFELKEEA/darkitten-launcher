@@ -358,9 +358,9 @@
     {
       "id": "lfelkeea.self_dev",
       "name": "自开发工坊（Agent 工具链）",
-      "version": "1.1.1",
+      "version": "1.2.0",
       "author": "LFELKEEA",
-      "description": "让桌宠拥有一套自己的编程工具：在专属开发区里读文件、改代码、跑命令、查语法、搜资料，并把成果做成新的桌宠插件安装到自己的插件目录。不再限制步数和输出长度，可以一直做到任务完成；改动会自动记录基线，一键就能还原到最初状态；做好的插件还能导出成 ZIP 分享或投稿。工作台会实时展示每一步调用，危险操作默认要主人点头；所有路径都相对于开发区，换一台电脑、换一个安装目录也能直接用。",
+      "description": "让桌宠拥有一套会积累的编程工具：在专属开发区里读文件、改代码、跑命令、查语法，还能用技能沉淀做法、用本地知识库检索旧结论、用连接器接入 HTTP API 和 MCP 服务器，并在不熟悉的库或报错面前主动搜索网页、GitHub 和 PyPI。成果可以直接做成新的桌宠插件安装到插件目录；不再限制步数和输出长度，可以一直做到任务完成。改动会自动记录基线，一键就能还原到最初状态；做好的插件还能导出成 ZIP 分享或投稿。工作台会实时展示每一步调用，危险操作默认要主人点头；所有路径都相对于开发区，换一台电脑、换一个安装目录也能直接用。",
       "api_version": 1,
       "permissions": [
         "pet.say",
@@ -377,12 +377,20 @@
       "requires": [],
       "highlights": [
         {
-          "label": "工作区",
-          "value": "data/dev，路径自解析"
+          "label": "技能",
+          "value": "可复用做法库"
         },
         {
-          "label": "工具",
-          "value": "读 / 写 / 改 / 搜 / 跑"
+          "label": "知识库",
+          "value": "本地检索 + 引用"
+        },
+        {
+          "label": "连接器",
+          "value": "HTTP API / MCP"
+        },
+        {
+          "label": "联网",
+          "value": "搜网页 / GitHub / PyPI"
         },
         {
           "label": "流程",
@@ -394,23 +402,15 @@
         },
         {
           "label": "安全",
-          "value": "目录沙箱 + 改动前备份"
+          "value": "目录沙箱 + 密钥打码"
         },
         {
           "label": "审批",
-          "value": "命令与启用插件需确认"
+          "value": "命令、连接器、删除需确认"
         },
         {
           "label": "还原",
           "value": "一键退回初始状态"
-        },
-        {
-          "label": "导出",
-          "value": "插件打包成 ZIP"
-        },
-        {
-          "label": "记录",
-          "value": "每次任务留会话日志"
         },
         {
           "label": "可移植",
@@ -423,17 +423,19 @@
         "temperature": 0.3,
         "allow_network": true,
         "allow_private_network": false,
+        "allow_connectors": true,
         "allow_self_modify": false,
         "auto_enable_plugin": true,
+        "auto_learn": true,
         "notify_on_finish": true,
         "model_override": "",
         "workspace_dir": ""
       },
       "bundled": false,
       "featured": true,
-      "file": "plugins/lfelkeea.self_dev-1.1.1.zip",
-      "size": 56329,
-      "sha256": "d63ed7bb02f854c915772104256c5fee96e49d3e89dd93e128f5434b0f82402a"
+      "file": "plugins/lfelkeea.self_dev-1.2.0.zip",
+      "size": 99899,
+      "sha256": "e2a19d7091f15614eb98e0e63af0a7427442bee34f34472c48862c768acc48ad"
     },
     {
       "id": "example.hello",
