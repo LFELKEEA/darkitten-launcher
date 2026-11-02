@@ -454,8 +454,8 @@
       "bundled": false,
       "featured": true,
       "file": "plugins/lfelkeea.self_dev-1.5.0.zip",
-      "size": 155332,
-      "sha256": "891fdbb02eb92426820e93621d391205e058701f359d9288bbf56194bf37d6d6"
+      "size": 155341,
+      "sha256": "d81074b2f91bfacf0a38bfbeb89f2190c4137e3b47a9f5bd5ae8513f9f5b9529"
     },
     {
       "id": "example.hello",
