@@ -6,9 +6,9 @@
     {
       "id": "lfelkeea.qq_bridge",
       "name": "QQ 桥接（SnowLuma）",
-      "version": "1.7.0",
+      "version": "1.8.0",
       "author": "LFELKEEA",
-      "description": "通过 SnowLuma 把 QQ 私聊和群聊接进桌宠：可视化设置面板、人格卡、长期记忆、黑话库、可加备注的白名单、盯人即时回复、习惯化回复、收藏表情、QQ 空间与评论自动回复、SnowLuma 自动启停、聊天图片识别，以及 Windows 本地语音 / GPT-SoVITS 自定义音色的 TTS 语音回复。1.6.0 起 GPT-SoVITS 也能自动探测安装目录、后台无窗口启动，并在设置面板里切换参考音色。1.7.0 起可以接入「活人感内核」：回复会带上她当前的状态、最近的自我认识和按话题召回的记忆，聊天也会写回内核，成为下一次重逢的素材；没安装内核时完全按原来的逻辑工作。",
+      "description": "通过 SnowLuma 把 QQ 私聊和群聊接进桌宠：可视化设置面板、人格卡、长期记忆、黑话库、可加备注的白名单、盯人即时回复、习惯化回复、收藏表情、QQ 空间与评论自动回复、SnowLuma 自动启停、聊天图片识别，以及 Windows 本地语音 / GPT-SoVITS 自定义音色的 TTS 语音回复。1.6.0 起 GPT-SoVITS 也能自动探测安装目录、后台无窗口启动，并在设置面板里切换参考音色。1.7.0 起可以接入「活人感内核」：回复会带上她当前的状态、最近的自我认识和按话题召回的记忆，聊天也会写回内核，成为下一次重逢的素材；1.8.0 起提示词进一步接入身份核心、工作记忆、能力边界和隐私规则，群聊默认不召回私聊内容，消息按 message_id 幂等写回，避免重复记账；没安装内核时完全按原来的逻辑工作。",
       "api_version": 1,
       "permissions": [
         "pet.say",
@@ -51,7 +51,7 @@
         },
         {
           "label": "活人感内核",
-          "value": "状态 + 记忆联动（可选）"
+          "value": "身份 + 状态 + 记忆 + 边界（可选）"
         },
         {
           "label": "外发范围",
@@ -153,9 +153,9 @@
       },
       "bundled": false,
       "featured": true,
-      "file": "plugins/lfelkeea.qq_bridge-1.7.0.zip",
-      "size": 103675,
-      "sha256": "4fc4ec7dc8c7c08567b94dbe2c36574e4647b984f5b3d9db18cde9d9b528cd40"
+      "file": "plugins/lfelkeea.qq_bridge-1.8.0.zip",
+      "size": 104988,
+      "sha256": "3afaed7440e17e4f72589aa6f6548b5bcc2740922c668dc491a06a5db86cb864"
     },
     {
       "id": "lfelkeea.focus_guard",
@@ -193,9 +193,9 @@
     {
       "id": "lfelkeea.alive_core",
       "name": "活人感内核（姐妹人格与记忆）",
-      "version": "1.0.0",
+      "version": "2.0.0",
       "author": "LFELKEEA",
-      "description": "把身份、记忆、状态和节律串起来：长期记住主人的偏好和约定，按遗忘曲线变淡、被用过的才加固，更正保留历史；有自己的昼夜节律和主动额度，没有真实信号就允许沉默；把状态和可召回的记忆导出给 QQ 桥接，让私聊和群聊也能接上连续的生活。",
+      "description": "按《姐妹人格与记忆系统》实现的活人感内核：身份、长期记忆 v2、工作记忆、功能状态、节律与有界探索。桌宠聊天、语音、屏幕观察和 QQ 桥接共用同一份身份、记忆和边界；巩固只产出候选，更正和删除保留墓碑与审计，群聊默认不召回私聊内容。",
       "api_version": 1,
       "permissions": [
         "pet.say",
@@ -203,7 +203,8 @@
         "ai.chat",
         "timer",
         "events",
-        "settings"
+        "settings",
+        "chat.context"
       ],
       "permission_labels": [
         "说话",
@@ -211,41 +212,46 @@
         "AI 对话",
         "定时器",
         "事件",
-        "设置"
+        "设置",
+        "聊天上下文"
       ],
       "requires": [],
       "highlights": [
         {
           "label": "身份层",
-          "value": "core + 可成长段"
+          "value": "core 不可自改 + 可成长段"
         },
         {
-          "label": "记忆",
-          "value": "情节 / 印象 / 偏好"
+          "label": "长期记忆",
+          "value": "证据 / 来源等级 / 派生链"
+        },
+        {
+          "label": "工作记忆",
+          "value": "刚才聊到哪、还没弄明白什么"
         },
         {
           "label": "遗忘",
           "value": "曲线衰减 + 复述加固"
         },
         {
-          "label": "更正",
-          "value": "旧版保留可回滚"
+          "label": "更正与删除",
+          "value": "旧版保留、墓碑、可审计"
         },
         {
-          "label": "状态",
-          "value": "节律慢变，只管语气"
+          "label": "候选审核",
+          "value": "巩固不直接改记忆"
         },
         {
-          "label": "主动",
-          "value": "有信号才醒，有每日额度"
+          "label": "桌宠接入",
+          "value": "聊天 / 语音 / 屏幕统一注入"
+        },
+        {
+          "label": "QQ 接入",
+          "value": "私聊与群聊共用身份和记忆"
         },
         {
           "label": "边界",
-          "value": "不碰权限与外发"
-        },
-        {
-          "label": "协作",
-          "value": "向 QQ 桥接导出上下文"
+          "value": "情绪和记忆不产生权限"
         }
       ],
       "settings": {
@@ -265,13 +271,21 @@
         "consolidate_batch": 30,
         "share_with_qq": true,
         "recall_limit": 6,
-        "recall_chars": 420
+        "recall_chars": 420,
+        "context_injection": true,
+        "working_memory": true,
+        "candidate_review": true,
+        "group_private_recall": false,
+        "max_context_chars": 1600,
+        "explore_per_day": 3,
+        "explore_minutes": 5,
+        "explore_sources": 3
       },
       "bundled": false,
       "featured": true,
-      "file": "plugins/lfelkeea.alive_core-1.0.0.zip",
-      "size": 40226,
-      "sha256": "1023979d7074a70f4cca52da1f7c7bbd361189f5b40d19ed5e0311bb708e38b3"
+      "file": "plugins/lfelkeea.alive_core-2.0.0.zip",
+      "size": 57470,
+      "sha256": "92817681c279a110a0b45552382ba45e2a98b2f6b1fc11fa6cbf8b02af8d64af"
     },
     {
       "id": "lfelkeea.qq_inspiration",

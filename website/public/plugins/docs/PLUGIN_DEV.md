@@ -256,6 +256,23 @@ api.on("screen.context", on_screen)
 - 回调参数以关键字形式传入，参数名必须和事件表一致。
 - 同一个事件可以注册多个回调。
 
+### 5.7.1 向聊天注入上下文
+
+```python
+def context(query, viewer, source, channel):
+    # query: 用户这句话；viewer: owner / private:<id> / group:<id>
+    # source: pet / screen；channel: private / group
+    return "【我的上下文】\n- 主人今天在赶一个截止日期。"
+
+handle = api.register_prompt_provider(context)
+# 不再需要时：api.unregister_prompt_provider(handle)
+```
+
+- 权限：`chat.context`
+- 宿主会把返回值拼到聊天框、长按语音和屏幕观察的 system prompt 末尾；返回空字符串表示这一轮不注入。
+- 多个插件按加载顺序拼接。不要在这里返回 API Key、密码或与当前会话无关的隐私内容。
+- 只能返回文字，不要修改权限或替用户执行动作。
+
 ### 5.8 设置
 
 ```python
@@ -327,6 +344,7 @@ api.log("定时器已启动")
 | `events` | `api.on()` |
 | `settings` | `api.settings` / `api.save_settings()` |
 | `storage` | `api.storage` / `api.save_storage()` |
+| `chat.context` | `api.register_prompt_provider()` / `api.unregister_prompt_provider()` |
 
 `api.log()` 不需要权限。没有声明的权限调用会抛 `PluginPermissionError`，`setup()` 阶段会直接导致加载失败。
 
@@ -339,7 +357,8 @@ api.log("定时器已启动")
 | `startup` | 插件加载完成、`setup()` 返回后 | 无 |
 | `shutdown` | 插件卸载、重载或桌宠退出前 | 无 |
 | `settings.saved` | 用户在设置窗口保存后 | 无 |
-| `chat.reply` | 聊天框收到 AI 回复后 | `reply: str` |
+| `chat.user` | 聊天框或语音识别出用户这句话后 | `text: str` |
+| `chat.reply` | 聊天框或语音说出 AI 回复后 | `reply: str` |
 | `screen.context` | 每次屏幕观察、请求 AI 之前 | `context: ScreenContext` |
 | `screen.comment` | 屏幕观察成功说出话之后 | `text: str, context: ScreenContext, mode: str` |
 | `pet.pat` | 用户摸桌宠的头 | 无 |

@@ -32,6 +32,7 @@ PERMISSION_LABELS = {
     "pet.say": "说话",
     "pet.action": "动作",
     "ai.chat": "AI 对话",
+    "chat.context": "聊天上下文",
     "screen.capture": "截屏",
     "timer": "定时器",
     "events": "事件",
