@@ -19,16 +19,15 @@
   "source_txt_size": 2282672,
   "pet": {
     "name": "LFELKEEA 桌宠",
-    "version": "1.3.4",
+    "version": "1.3.5",
     "released": "2026-11-02",
-    "size": 136124349,
-    "sha256": "b07183380364a28e076fd3596a3ee8d4d97ec356f01af436253da4d62db0dfc3",
-    "download_url": "https://github.com/LFELKEEA/darkitten-launcher/releases/download/pet-v1.3.4/LFELKEEA.zip",
+    "size": 137176296,
+    "sha256": "55119fbba79d32d7d419f2d35f6557063fcbb1ad299f6b54167810bfe94529b3",
+    "download_url": "https://github.com/LFELKEEA/darkitten-launcher/releases/download/pet-v1.3.5/LFELKEEA.zip",
     "notes": [
-      "插件管理里每张插件卡片新增「删除」，停用、加载失败、清单无效的插件也能删。",
-      "删除前会二次确认；确认后先停止插件：停止定时器、取消请求、关闭插件设置窗口、注销聊天上下文。",
-      "插件文件夹移入 Windows 回收站，可随时恢复；同时清理启用状态、设置和运行存储，内置示例删除后不会被自动复制回来。",
-      "删除失败会自动恢复插件运行；安装或更新中会提示稍后；符号链接和插件目录之外的路径会被拒绝，其他桌宠数据保持不变。"
+      "插件市场每次打开都会重新读取插件库，不再显示程序启动时缓存的旧版本。",
+      "市场刷新期间会暂时阻止安装，避免在清单更新完之前点到旧版本。",
+      "现在市场里的版本、下载地址和「检查更新」结果保持一致。"
     ]
   }
 }
