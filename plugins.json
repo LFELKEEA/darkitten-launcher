@@ -193,9 +193,9 @@
     {
       "id": "lfelkeea.alive_core",
       "name": "活人感内核（姐妹人格与记忆）",
-      "version": "2.0.0",
+      "version": "2.1.0",
       "author": "LFELKEEA",
-      "description": "按《姐妹人格与记忆系统》实现的活人感内核：身份、长期记忆 v2、工作记忆、功能状态、节律与有界探索。桌宠聊天、语音、屏幕观察和 QQ 桥接共用同一份身份、记忆和边界；巩固只产出候选，更正和删除保留墓碑与审计，群聊默认不召回私聊内容。",
+      "description": "按《姐妹人格与记忆系统》实现的活人感内核：身份、长期记忆 v2、工作记忆、功能状态、节律与有界探索。2.1 起高把握记忆自动沉淀，`## 可成长` 会自己更新和淡出；说话规则按“看不出是 AI 写的”重写，并在回复时清理明显的 AI 套话；身份历史与备份都有上限，可在设置里删除。",
       "api_version": 1,
       "permissions": [
         "pet.say",
@@ -219,7 +219,11 @@
       "highlights": [
         {
           "label": "身份层",
-          "value": "core 不可自改 + 可成长段"
+          "value": "core 不可自改 + 可成长段自更新"
+        },
+        {
+          "label": "说话",
+          "value": "去 AI 腔 + 长短不一 + 回复清理套话"
         },
         {
           "label": "长期记忆",
@@ -239,7 +243,11 @@
         },
         {
           "label": "候选审核",
-          "value": "巩固不直接改记忆"
+          "value": "高把握自动记下，低把握才问"
+        },
+        {
+          "label": "历史",
+          "value": "有上限，可单个删除或清空"
         },
         {
           "label": "桌宠接入",
@@ -255,6 +263,7 @@
         }
       ],
       "settings": {
+        "settings_version": 3,
         "enabled": true,
         "name": "喵呜",
         "quiet_start": "23:30",
@@ -274,18 +283,26 @@
         "recall_chars": 420,
         "context_injection": true,
         "working_memory": true,
-        "candidate_review": true,
+        "candidate_review": false,
+        "auto_adopt": true,
+        "adopt_confidence": 0.6,
+        "auto_growth": true,
+        "growth_minutes": 180,
+        "growth_confidence": 0.6,
+        "history_keep": 20,
+        "backup_keep": 10,
         "group_private_recall": false,
-        "max_context_chars": 1600,
+        "max_context_chars": 3200,
         "explore_per_day": 3,
         "explore_minutes": 5,
-        "explore_sources": 3
+        "explore_sources": 3,
+        "natural_voice": true
       },
       "bundled": false,
       "featured": true,
-      "file": "plugins/lfelkeea.alive_core-2.0.0.zip",
-      "size": 57470,
-      "sha256": "92817681c279a110a0b45552382ba45e2a98b2f6b1fc11fa6cbf8b02af8d64af"
+      "file": "plugins/lfelkeea.alive_core-2.1.0.zip",
+      "size": 68168,
+      "sha256": "923e6291ef14625540c1acb29d1a8afa17b5b8f1b0cee2093dc1b2864a94684a"
     },
     {
       "id": "lfelkeea.qq_inspiration",
