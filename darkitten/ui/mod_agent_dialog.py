@@ -24,7 +24,7 @@ from .widgets import badge, repolish
 
 class ModAgentDialog(StyledDialog):
     def __init__(self, main, parent: QWidget | None = None) -> None:
-        super().__init__(parent, "暗猫模组工坊", "cube", width=560)
+        super().__init__(parent, "恶魔小猫工坊", "cube", width=560)
         self.main = main
         self._release: mod_agent.ModAgentRelease | None = None
         self._manifest_worker: ModAgentManifestWorker | None = None
@@ -67,7 +67,7 @@ class ModAgentDialog(StyledDialog):
         texts.setSpacing(4)
         name_row = QHBoxLayout()
         name_row.setSpacing(6)
-        name = QLabel("暗猫模组工坊")
+        name = QLabel("恶魔小猫工坊")
         name.setObjectName("H2")
         self.version_badge = badge("未安装", "gray")
         name_row.addWidget(name)
