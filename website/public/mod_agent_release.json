@@ -1,14 +1,14 @@
 {
   "name": "Darkitten Mod Agent",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "released": "2026-11-03",
-  "download_url": "https://github.com/LFELKEEA/darkitten-mod-agent/releases/download/mod-agent-v0.1.1/DarkittenModAgent-0.1.1.zip",
+  "download_url": "https://github.com/LFELKEEA/darkitten-mod-agent/releases/download/mod-agent-v0.1.2/DarkittenModAgent-0.1.2.zip",
   "page_url": "https://lfelkeea.github.io/darkitten-launcher/",
-  "sha256": "285556ec8f4c05f2123c004d3ea3fe5d09f059deba0e4c227e72abd80e3089ed",
-  "size": 44231298,
+  "sha256": "82028d726d19ebeb4e7f94cc4ab969c420f7af96b6d6f2dc16647dea7b368c4e",
+  "size": 44232352,
   "notes": [
-    "中文名称改为「恶魔小猫工坊」，更贴近启动器的恶魔小猫形象。",
-    "图标换成启动器同款恶魔小猫，并在右下角加入黑色像素锤子。",
-    "功能与数据目录保持不变：技能、连接器、记忆库和已有工程记录都会继续保留。"
+    "默认工程目录改到程序目录下的 data/projects，不再占用 C 盘用户目录。",
+    "旧版本默认的 Documents\\DarkittenModProjects 会自动迁移到新目录；已有工程文件不自动搬动。",
+    "工程数据继续放在 data 下，启动器更新模组工坊时会完整保留。"
   ]
 }
