@@ -33,6 +33,7 @@ STATIC_FILES = {
     "/feedback-admin.js",
     "/plugins.json",
     "/update.json",
+    "/mod_agent_release.json",
     "/robots.txt",
 }
 ASSET_SUFFIXES = {".png", ".jpg", ".jpeg", ".webp", ".gif", ".svg", ".ico"}

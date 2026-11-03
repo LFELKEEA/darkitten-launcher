@@ -1968,6 +1968,11 @@ class MainWindow(QWidget):
 
         PetDialog(self).exec()
 
+    def open_mod_agent_dialog(self) -> None:
+        from .mod_agent_dialog import ModAgentDialog
+
+        ModAgentDialog(self).exec()
+
     # ------------------------------------------------------------------
     # 快捷命令 / 开发者反馈提醒
 

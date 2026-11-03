@@ -19,8 +19,13 @@ PUBLIC = SITE / "public"
 DOWNLOADS = PUBLIC / "downloads"
 PET_RELEASE = SITE / "pet_release.json"
 DEFAULT_SOURCE = Path(os.environ.get("DKL_SOURCE", str(SITE.parent / "launcher")))
+MOD_AGENT_SOURCE = Path(os.environ.get("DMA_SOURCE", str(SITE.parent / "mod_agent")))
+MOD_AGENT_ASSETS = MOD_AGENT_SOURCE / "assets"
+MOD_AGENT_DIST = MOD_AGENT_SOURCE / "dist"
 DELIVERY = Path(os.environ.get("DKL_DELIVERY", str(Path.home() / "Tianxi")))
 DEFAULT_REPO = "darkitten-launcher"
+# GitHub Git Blob API 对单次请求体积有限制，超过这个大小的发布包必须走 Release 资源。
+MAX_PAGES_FILE_BYTES = 30 * 1024 * 1024
 
 EXCLUDED_NAMES = {
     "config.json",
@@ -275,6 +280,83 @@ def load_pet_release() -> dict | None:
     }
 
 
+def load_mod_agent_release() -> dict | None:
+    """模组工坊的发布包较小，直接跟随下载站发布；dist 有产物时自动同步。"""
+    source = MOD_AGENT_DIST / "mod_agent_release.json"
+    target = PUBLIC / "mod_agent_release.json"
+    if not source.is_file():
+        if not target.is_file():
+            print("mod agent: 没有找到发布清单，跳过", flush=True)
+            return None
+        source = target
+    try:
+        data = json.loads(source.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        raise SystemExit(f"mod_agent_release.json 读取失败：{exc}") from exc
+    if not isinstance(data, dict):
+        raise SystemExit("mod_agent_release.json 必须是一个 JSON 对象")
+    version = str(data.get("version") or "").strip()
+    url = str(data.get("download_url") or "").strip()
+    digest = str(data.get("sha256") or "").strip().lower()
+    try:
+        size = int(data.get("size") or 0)
+    except Exception:
+        size = 0
+    if not version:
+        raise SystemExit("mod_agent_release.json 缺少 version")
+    if not re.fullmatch(r"[0-9a-f]{64}", digest):
+        raise SystemExit("mod_agent_release.json 的 sha256 不是有效的 64 位十六进制")
+    if size <= 0:
+        raise SystemExit("mod_agent_release.json 的 size 无效")
+    if url.startswith(("http://", "https://")):
+        package = None
+    else:
+        name = Path(url).name
+        package = MOD_AGENT_DIST / name
+        if not package.is_file():
+            package = (PUBLIC / url).resolve()
+        if PUBLIC.resolve() not in package.parents and MOD_AGENT_DIST.resolve() not in package.parents:
+            raise SystemExit("mod_agent_release.json 的 download_url 越出网站目录")
+        if not package.is_file():
+            raise SystemExit(f"找不到模组工坊发布包：{url}")
+
+    if package is not None:
+        actual_sha = sha256(package)
+        actual_size = package.stat().st_size
+        if actual_sha != digest:
+            raise SystemExit(
+                f"模组工坊发布包 SHA-256 不匹配：清单 {digest}，实际 {actual_sha}"
+            )
+        if actual_size != size:
+            raise SystemExit(
+                f"模组工坊发布包大小不匹配：清单 {size}，实际 {actual_size}"
+            )
+        if package.parent != DOWNLOADS:
+            DOWNLOADS.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(package, DOWNLOADS / package.name)
+        if str(data.get("download_url", "")).startswith(("http://", "https://")):
+            data["download_url"] = f"downloads/{package.name}"
+    elif size >= 95 * 1024 * 1024:
+        raise SystemExit(
+            "模组工坊发布包超过 GitHub Pages 单文件建议上限，请改走 GitHub Releases。"
+        )
+
+    icon = MOD_AGENT_ASSETS / "dma.png"
+    if icon.is_file():
+        (PUBLIC / "assets").mkdir(parents=True, exist_ok=True)
+        shutil.copy2(icon, PUBLIC / "assets" / "dma.png")
+
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(
+        json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+    )
+    return {
+        "version": version,
+        "size": size,
+        "download_url": str(data.get("download_url") or ""),
+    }
+
+
 def sync_site_version(version: str) -> None:
     index = PUBLIC / "index.html"
     text = index.read_text(encoding="utf-8")
@@ -481,13 +563,21 @@ def deploy_github(version: str, repo: str, source: Path) -> str:
     full = ensure_repo(gh, repo)
     (PUBLIC / ".nojekyll").write_text("", encoding="utf-8")
 
-    public_files = [
-        (path.relative_to(PUBLIC).as_posix(), path)
-        for path in sorted(PUBLIC.rglob("*"))
-        if path.is_file()
-        and ".git" not in path.relative_to(PUBLIC).parts
-        and ".sync-part" not in path.name
-    ]
+    public_files = []
+    for path in sorted(PUBLIC.rglob("*")):
+        if not path.is_file():
+            continue
+        relative = path.relative_to(PUBLIC)
+        if ".git" in relative.parts or ".sync-part" in path.name:
+            continue
+        if path.stat().st_size > MAX_PAGES_FILE_BYTES:
+            print(
+                f"skip pages upload: {relative.as_posix()} "
+                f"({path.stat().st_size} bytes) 请使用 Release 资源",
+                flush=True,
+            )
+            continue
+        public_files.append((relative.as_posix(), path))
     # 增量覆盖 gh-pages：以远端现有 tree 为基底，历史版本的下载包不会被删除。
     upload_tree(
         gh, full, "gh-pages", public_files,
@@ -578,6 +668,7 @@ def build(source: Path, version: str, deploy: bool, repo: str) -> int:
     pet_meta = load_pet_release()
     if pet_meta:
         manifest["pet"] = pet_meta
+    mod_agent_meta = load_mod_agent_release()
     (PUBLIC / "update.json").write_text(
         json.dumps(manifest, ensure_ascii=False, indent=2) + "\n",
         encoding="utf-8",
@@ -607,6 +698,14 @@ def build(source: Path, version: str, deploy: bool, repo: str) -> int:
             pet_meta["size"],
             "bytes",
             pet_meta["download_url"],
+        )
+    if mod_agent_meta:
+        print(
+            "mod agent:",
+            mod_agent_meta["version"],
+            mod_agent_meta["size"],
+            "bytes",
+            mod_agent_meta["download_url"],
         )
 
     if deploy:

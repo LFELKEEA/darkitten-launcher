@@ -1,0 +1,15 @@
+{
+  "name": "Darkitten Mod Agent",
+  "version": "0.1.0",
+  "released": "2026-11-03",
+  "download_url": "https://github.com/LFELKEEA/darkitten-mod-agent/releases/download/mod-agent-v0.1.0/DarkittenModAgent-0.1.0.zip",
+  "page_url": "https://lfelkeea.github.io/darkitten-launcher/",
+  "sha256": "152907a047475d0faf115211f05af1540ed1a721418e9ee320c713f6760934f8",
+  "size": 44291892,
+  "notes": [
+    "首个公开版本：独立运行的 Minecraft Java 模组开发 Agent。",
+    "内置 Fabric / NeoForge / Architectury 工程工作流，强制确认 MC 版本、加载器和 Mod ID。",
+    "支持技能、连接器、记忆库；生成文件默认先进入待写入列表，覆盖前自动备份。",
+    "首次启动可创建桌面快捷方式，支持从下载站清单检查并自动更新。"
+  ]
+}

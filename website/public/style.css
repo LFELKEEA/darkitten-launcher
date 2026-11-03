@@ -873,6 +873,26 @@ main {
 .pet-meta strong { color: var(--text); font-weight: 600; }
 .pet-note { color: var(--muted-2); font-size: 10.5px; text-align: center; }
 
+.agent-card {
+  border-color: rgba(139, 124, 255, 0.28);
+  background:
+    radial-gradient(560px 240px at 12% 0%, rgba(139, 124, 255, 0.16), transparent 70%),
+    linear-gradient(130deg, rgba(28, 24, 46, 0.95), rgba(14, 12, 24, 0.97));
+}
+
+.agent-card::after { content: "MOD"; right: 26px; bottom: -30px; font-size: 150px; }
+.agent-card .pet-avatar { background: rgba(15, 17, 23, 0.9); }
+
+.agent-sha {
+  margin-top: 10px;
+  color: var(--muted-2);
+  font-size: 10.5px;
+  line-height: 1.6;
+  word-break: break-all;
+}
+
+.agent-sha code { color: #b7adff; font-family: var(--mono); font-size: 10px; }
+
 .feedback-section { padding-bottom: 10px; }
 
 .feedback-grid {

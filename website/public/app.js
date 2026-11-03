@@ -85,6 +85,29 @@
     }
   }
 
+  let agentManifest = null;
+
+  async function loadAgent() {
+    try {
+      const response = await fetch("mod_agent_release.json", { cache: "no-store" });
+      if (!response.ok) throw new Error("HTTP " + response.status);
+      agentManifest = await response.json();
+    } catch (error) {
+      console.warn("mod_agent_release.json 读取失败", error);
+      return;
+    }
+    const version = String(agentManifest.version || "").replace(/^v/i, "");
+    setText("[data-agent-version]", version);
+    setText("[data-agent-size]", formatBytes(agentManifest.size));
+    setText("[data-agent-date]", agentManifest.released || "—");
+    setText("[data-agent-sha]", agentManifest.sha256 || "未提供校验值");
+    setHref("[data-agent-download]", agentManifest.download_url);
+    const link = $("[data-agent-download]");
+    if (link && agentManifest.size) {
+      link.setAttribute("title", "模组工坊完整包 · " + formatBytes(agentManifest.size));
+    }
+  }
+
   let toastTimer = 0;
   function showToast(text) {
     const toast = $("#toast");
@@ -131,6 +154,20 @@
       }
       const copied = await copyText(digest);
       showToast(copied ? "桌宠 SHA-256 已复制" : "复制失败，请手动复制");
+    });
+  }
+
+  function bindAgentCopy() {
+    const button = $("[data-agent-copy-sha]");
+    if (!button) return;
+    button.addEventListener("click", async () => {
+      const digest = agentManifest && agentManifest.sha256;
+      if (!digest) {
+        showToast("还没有读取到模组工坊 SHA-256");
+        return;
+      }
+      const copied = await copyText(digest);
+      showToast(copied ? "模组工坊 SHA-256 已复制" : "复制失败，请手动复制");
     });
   }
 
@@ -303,7 +340,7 @@
 
   const FEEDBACK_EMAIL = "lfel278623@outlook.com";
   const GITHUB_NEW_ISSUE = "https://github.com/LFELKEEA/darkitten-launcher/issues/new";
-  const FEEDBACK_VERSION_FALLBACK = "1.11.7";
+  const FEEDBACK_VERSION_FALLBACK = "1.11.8";
   const KIND_LABELS = {
     bug: "Bug",
     suggestion: "改进建议",
@@ -593,10 +630,12 @@
     bindReveal();
     bindCopy();
     bindPetCopy();
+    bindAgentCopy();
     bindParallax();
     bindGallery();
     bindFeedback();
     loadManifest();
+    loadAgent();
     if (!prefillFeedbackFromQuery()) openFeedbackFromHash();
     window.addEventListener("hashchange", openFeedbackFromHash);
   });
