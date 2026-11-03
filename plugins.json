@@ -193,9 +193,9 @@
     {
       "id": "lfelkeea.alive_core",
       "name": "活人感内核（姐妹人格与记忆）",
-      "version": "2.1.1",
+      "version": "2.1.2",
       "author": "LFELKEEA",
-      "description": "按《姐妹人格与记忆系统》实现的活人感内核：身份、长期记忆 v2、工作记忆、功能状态、节律与有界探索。2.1 起高把握记忆自动沉淀，`## 可成长` 会自己更新和淡出；说话规则按“看不出是 AI 写的”重写，并在回复时清理明显的 AI 套话；身份历史与备份都有上限，可在设置里删除。",
+      "description": "按《姐妹人格与记忆系统》实现的活人感内核：身份、长期记忆 v2、工作记忆、功能状态、节律与有界探索。2.1 起高把握记忆自动沉淀，`## 可成长` 会自己更新和淡出；说话规则按“看不出是 AI 写的”重写，并在回复时清理明显的 AI 套话；可成长段默认保留 60 条（可调到 200 条），超出才淡出；身份历史与备份也有上限，可在设置里删除。",
       "api_version": 1,
       "permissions": [
         "pet.say",
@@ -296,13 +296,14 @@
         "explore_per_day": 3,
         "explore_minutes": 5,
         "explore_sources": 3,
-        "natural_voice": true
+        "natural_voice": true,
+        "growth_keep": 60
       },
       "bundled": false,
       "featured": true,
-      "file": "plugins/lfelkeea.alive_core-2.1.1.zip",
-      "size": 69890,
-      "sha256": "508bcbb7c462ce2bf28c7fde3788c8f99f890c76f3626b03bccc78ef8fe469b4"
+      "file": "plugins/lfelkeea.alive_core-2.1.2.zip",
+      "size": 70778,
+      "sha256": "25922420a4dd16b2e9d4d85d638d08fc0c0e723ce841b88c172d278b871fc603"
     },
     {
       "id": "lfelkeea.qq_inspiration",
