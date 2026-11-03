@@ -358,9 +358,9 @@
     {
       "id": "lfelkeea.self_dev",
       "name": "自开发工坊（Agent 工具链）",
-      "version": "1.6.3",
+      "version": "1.6.4",
       "author": "LFELKEEA",
-      "description": "让桌宠拥有一套会积累的编程工具：在专属开发区里读文件、改代码、跑命令、查语法，还能用技能沉淀做法、用本地知识库检索旧结论、用连接器接入 HTTP API 和 MCP 服务器。技能和连接器改成开关式管理，不用删除就能停用，默认全部关闭；插件自带 45 个技能和 43 个连接器，开发专区按编程核心、文档与创作、API 专用、HTTP 连接器、MCP 连接器分成五组，支持一键开启推荐套装或全部开启。连接器里的旧式双花括号环境变量占位符会在加载时自动迁移成 ${ENV_NAME}，避免请求头把变量名当成令牌原样发出去。GitHub 访问拆成两条通道：github-public 浏览别人的公开仓库、issue、PR 和文件，只读且不需要令牌；github 操作自己的仓库，支持私有仓库和写操作，才需要 GITHUB_PAT。MCP Git 改用 npx 启动 @selfagency/git-mcp，默认操作当前工作区，不再依赖可能损坏的 uvx。这些条目除了 GitHub、飞书、Notion、SearXNG、只读 SQL 网关、Context7、Playwright、Blender 和常用 MCP，也把日常在用的 Word/PDF/Excel/PPT 处理、长文写作、知识库、draw.io、技术图表、图像生成、联网调研、本地文件搜索和自然化写作收了进来，还补了 OpenAI 兼容 API、Tavily、arXiv、Crossref、OpenAlex、维基百科。启用后可以先做依赖体检：检查缺少哪些环境变量、启动命令或下载资源；环境变量可在「环境与依赖」里本机保存，只显示状态不回传明文；MCP 的 npm/PyPI 包、Playwright 浏览器和技能声明的资源可以在确认后预下载。代理需要用到关闭的条目时，会说明理由并弹窗申请打开。缺技能时会自己上 GitHub 搜索、浏览仓库目录并安装回来，缺连接器时会找 MCP 服务器、读 README、推断 npx/uvx 启动命令后保存，不熟悉的库或报错也会主动搜索网页、GitHub 和 PyPI。成果可以直接做成新的桌宠插件安装到插件目录；不再限制步数和输出长度，可以一直做到任务完成。改动会自动记录基线，一键就能还原到最初状态；做好的插件还能导出成 ZIP 分享或投稿。工作台会实时展示每一步调用，危险操作默认要主人点头；所有路径都相对于开发区，换一台电脑、换一个安装目录也能直接用。知识库和网页搜索不依赖 SQLite 或 XML 解析器，打包版桌宠也能直接运行。",
+      "description": "让桌宠拥有一套会积累的编程工具：在专属开发区里读文件、改代码、跑命令、查语法，还能用技能沉淀做法、用本地知识库检索旧结论、用连接器接入 HTTP API 和 MCP 服务器。技能和连接器改成开关式管理，不用删除就能停用，默认全部关闭；插件自带 45 个技能和 43 个连接器，开发专区按编程核心、文档与创作、API 专用、HTTP 连接器、MCP 连接器分成五组，支持一键开启推荐套装或全部开启。连接器里的旧式双花括号环境变量占位符会在加载时自动迁移成 ${ENV_NAME}，避免请求头把变量名当成令牌原样发出去。GitHub 访问拆成两条通道：github-public 浏览别人的公开仓库、issue、PR 和文件，只读且不需要令牌；github 操作自己的仓库，支持私有仓库和写操作，才需要 GITHUB_PAT。MCP Git 使用 uvx 启动 mcp-server-git，默认操作当前工作区，需要先确认 uv/uvx 可用。这些条目除了 GitHub、飞书、Notion、SearXNG、只读 SQL 网关、Context7、Playwright、Blender 和常用 MCP，也把日常在用的 Word/PDF/Excel/PPT 处理、长文写作、知识库、draw.io、技术图表、图像生成、联网调研、本地文件搜索和自然化写作收了进来，还补了 OpenAI 兼容 API、Tavily、arXiv、Crossref、OpenAlex、维基百科。启用后可以先做依赖体检：检查缺少哪些环境变量、启动命令或下载资源；环境变量可在「环境与依赖」里本机保存，只显示状态不回传明文；MCP 的 npm/PyPI 包、Playwright 浏览器和技能声明的资源可以在确认后预下载。代理需要用到关闭的条目时，会说明理由并弹窗申请打开。缺技能时会自己上 GitHub 搜索、浏览仓库目录并安装回来，缺连接器时会找 MCP 服务器、读 README、推断 npx/uvx 启动命令后保存，不熟悉的库或报错也会主动搜索网页、GitHub 和 PyPI。成果可以直接做成新的桌宠插件安装到插件目录；不再限制步数和输出长度，可以一直做到任务完成。改动会自动记录基线，一键就能还原到最初状态；做好的插件还能导出成 ZIP 分享或投稿。工作台会实时展示每一步调用，危险操作默认要主人点头；所有路径都相对于开发区，换一台电脑、换一个安装目录也能直接用。知识库和网页搜索不依赖 SQLite 或 XML 解析器，打包版桌宠也能直接运行。",
       "api_version": 1,
       "permissions": [
         "pet.say",
@@ -457,9 +457,9 @@
       },
       "bundled": false,
       "featured": true,
-      "file": "plugins/lfelkeea.self_dev-1.6.3.zip",
-      "size": 164515,
-      "sha256": "e09270471dad3a28face4f0477cf8f82fcfcedce25462727ee96e2c5b6e706c1"
+      "file": "plugins/lfelkeea.self_dev-1.6.4.zip",
+      "size": 164366,
+      "sha256": "403d025bc53f7bd515ed58e2265f354aca641eb6c10aee63074e25dafef21c59"
     },
     {
       "id": "example.hello",
