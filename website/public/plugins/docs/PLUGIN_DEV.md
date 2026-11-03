@@ -453,6 +453,18 @@ def teardown():
 
 注意：桌宠首次运行会把内置示例复制到 `data/plugins/`。如果你在源码目录里改示例，需要删掉 `data/plugins/example.*` 再重新运行，或者直接改 `data/plugins/` 里的副本。
 
+### 9.1 删除插件
+
+插件卡片右下角的「删除」会先停止插件，然后：
+
+- 把 `data/plugins/<插件目录>` 移入系统回收站，可以从回收站恢复；
+- 清理 `plugins.enabled` 和 `plugins.settings` 里对应的配置；
+- 清理 `data/plugins/.state/<id>.json` 运行存储。
+
+如果删的是内置示例，删除记录会写进 `plugins.removed`，下次启动不会再把示例复制回来。把插件目录重新放回 `data/plugins/` 或从插件市场重装，删除记录会自动失效。
+
+插件目录必须是 `data/plugins/` 的直接子目录；删除操作不会跟随符号链接删除插件目录之外的内容。
+
 ---
 
 ## 10. 版本兼容

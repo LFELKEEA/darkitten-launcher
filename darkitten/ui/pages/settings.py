@@ -36,7 +36,7 @@ from ...config import (
     DEFAULT_UPDATE_URL,
 )
 from ...java import JavaInfo, probe_java
-from ...microsoft_auth import MicrosoftAuthError, normalize_client_id
+from ...microsoft_auth import is_legacy_client_id
 from ...snapshots import list_snapshots, snapshot_dir
 from ...workers import (
     CleanupWorker,
@@ -235,7 +235,7 @@ class SettingsPage(QWidget):
         self.client_edit = QLineEdit(self.main.config.microsoft_client_id)
         self.client_edit.setMinimumWidth(300)
         self.client_edit.setPlaceholderText(
-            "Azure 应用的客户端 ID（GUID）"
+            "客户端 ID（GUID 或 16 位应用 ID）"
         )
         self.client_edit.editingFinished.connect(self._save_client_id)
         portal_btn = QPushButton("Azure 门户")
@@ -246,11 +246,27 @@ class SettingsPage(QWidget):
         client_layout.addWidget(portal_btn)
         layout.addWidget(
             self._row(
-                "Azure 客户端 ID",
-                "正版登录和令牌刷新需要你自己的 Azure 公共客户端应用。",
+                "客户端 ID",
+                "正版登录和令牌刷新需要应用客户端 ID；GUID 使用 Azure 应用，"
+                "16 位应用 ID 使用旧版验证码登录。登录窗口中也可以临时改。",
                 client_box,
             )
         )
+        self.client_note = QLabel("")
+        self.client_note.setObjectName("Tiny")
+        self.client_note.setWordWrap(True)
+        self.client_note.setContentsMargins(0, 0, 0, 8)
+        self.client_note.setVisible(False)
+        layout.addWidget(self.client_note)
+        self.legacy_note = QLabel(
+            "你选择的是 16 位旧版应用 ID。是否使用由你自行决定，"
+            "启动器不对该应用 ID 的可用性、稳定性与安全性负责。"
+        )
+        self.legacy_note.setObjectName("Tiny")
+        self.legacy_note.setWordWrap(True)
+        self.legacy_note.setContentsMargins(0, 0, 0, 8)
+        self.legacy_note.setVisible(False)
+        layout.addWidget(self.legacy_note)
         layout.addWidget(hline())
 
         buttons = QWidget()
@@ -306,6 +322,8 @@ class SettingsPage(QWidget):
             "重定向 URI 填写 http://localhost，并启用“允许公共客户端流”，"
             "然后把“应用程序(客户端) ID”填到上方。客户端 ID 和邮箱只保存在本机，"
             "密码不会经过启动器，登录令牌使用 Windows DPAPI 加密。"
+            "如果你填写 16 位旧版应用 ID，启动器会改用旧版验证码登录；"
+            "该方式由你自行选择并承担风险，启动器不对其可用性与安全性负责。"
         )
         help_label.setObjectName("Tiny")
         help_label.setWordWrap(True)
@@ -1138,8 +1156,25 @@ class SettingsPage(QWidget):
     # ------------------------------------------------------------------
     def refresh_account(self) -> None:
         account = self.main.current_account()
-        self.client_edit.setText(self.main.config.microsoft_client_id)
+        current_client_id = str(
+            self.main.config.microsoft_client_id or ""
+        ).strip()
+        stored_client_id = (
+            str(getattr(account, "client_id", "") or "").strip()
+            if account.is_msa
+            else ""
+        )
+        self.client_edit.setText(current_client_id)
         self.email_edit.setText(self.main.config.microsoft_email)
+        if stored_client_id and stored_client_id != current_client_id:
+            self.client_note.setText(
+                f"当前账户登录时使用的是 {stored_client_id}，"
+                "刷新令牌会继续用它；重新登录才会换成上方 ID。"
+            )
+            self.client_note.setVisible(True)
+        else:
+            self.client_note.setVisible(False)
+        self._update_legacy_note()
         if account.is_msa:
             self.account_badge.setText("微软正版")
             self.account_badge.setProperty("badge", "green")
@@ -1179,8 +1214,18 @@ class SettingsPage(QWidget):
         )
         repolish(self.account_badge)
 
+    def _update_legacy_note(self) -> None:
+        legacy = is_legacy_client_id(self.client_edit.text())
+        self.legacy_note.setVisible(legacy)
+        self.login_btn.setToolTip(
+            "当前是 16 位旧版应用 ID，将使用验证码登录"
+            if legacy
+            else "打开系统浏览器，用 Microsoft 邮箱登录，授权完成后自动返回"
+        )
+
     def _save_client_id(self) -> None:
         value = self.client_edit.text().strip()
+        self._update_legacy_note()
         if value == self.main.config.microsoft_client_id:
             return
         self.main.config.microsoft_client_id = value
@@ -1202,32 +1247,34 @@ class SettingsPage(QWidget):
         )
 
     def _login_microsoft(self) -> None:
-        client_id = self.client_edit.text().strip()
-        try:
-            client_id = normalize_client_id(client_id)
-        except MicrosoftAuthError as exc:
-            self.main.toast(str(exc), "error")
-            self.client_edit.setFocus()
-            return
         self._save_client_id()
         self._save_email()
-        dialog = BrowserLoginDialog(
-            self.main, client_id, self.main.config.microsoft_email
-        )
-        if dialog.exec() and dialog.account is not None:
+        client_id = self.main.config.microsoft_client_id
+        if is_legacy_client_id(client_id):
+            # 16 位应用 ID 走不了浏览器回调，直接使用验证码流程。
+            dialog = MicrosoftLoginDialog(self.main, client_id)
+        else:
+            dialog = BrowserLoginDialog(
+                self.main,
+                client_id,
+                self.main.config.microsoft_email,
+            )
+        accepted = dialog.exec()
+        # 登录窗口里可能改过客户端 ID，回到设置页时同步显示。
+        self.client_edit.setText(self.main.config.microsoft_client_id)
+        self._update_legacy_note()
+        if accepted and dialog.account is not None:
             self._apply_account(dialog.account)
 
     def _login_device_code(self) -> None:
-        client_id = self.client_edit.text().strip()
-        try:
-            client_id = normalize_client_id(client_id)
-        except MicrosoftAuthError as exc:
-            self.main.toast(str(exc), "error")
-            self.client_edit.setFocus()
-            return
         self._save_client_id()
-        dialog = MicrosoftLoginDialog(self.main, client_id)
-        if dialog.exec() and dialog.account is not None:
+        dialog = MicrosoftLoginDialog(
+            self.main, self.main.config.microsoft_client_id
+        )
+        accepted = dialog.exec()
+        self.client_edit.setText(self.main.config.microsoft_client_id)
+        self._update_legacy_note()
+        if accepted and dialog.account is not None:
             self._apply_account(dialog.account)
 
     def _apply_account(self, account) -> None:

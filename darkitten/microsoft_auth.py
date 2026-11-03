@@ -24,6 +24,11 @@ DEVICE_CODE_URL = (
 )
 AUTHORIZE_URL = "https://login.microsoftonline.com/consumers/oauth2/v2.0/authorize"
 TOKEN_URL = "https://login.microsoftonline.com/consumers/oauth2/v2.0/token"
+# 16 位应用 ID 是 Live SDK 时代的应用标识，微软身份平台 v2 不接受，
+# 只能走 login.live.com 的旧版 Live Connect 流程。
+LIVE_DEVICE_CODE_URL = "https://login.live.com/oauth20_connect.srf"
+LIVE_TOKEN_URL = "https://login.live.com/oauth20_token.srf"
+LIVE_SCOPE = "service::user.auth.xboxlive.com::MBI_SSL"
 XBOX_USER_URL = "https://user.auth.xboxlive.com/user/authenticate"
 XSTS_URL = "https://xsts.auth.xboxlive.com/xsts/authorize"
 MC_LOGIN_URL = "https://api.minecraftservices.com/authentication/login_with_xbox"
@@ -31,9 +36,13 @@ MC_PROFILE_URL = "https://api.minecraftservices.com/minecraft/profile"
 SCOPE = "XboxLive.signin offline_access"
 USER_AGENT = f"DarkittenLauncher/{APP_VERSION} (Minecraft Launcher)"
 
+LEGACY_CLIENT_ID_RE = re.compile(r"^[0-9a-fA-F]{16}$")
 CLIENT_ID_RE = re.compile(
-    r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-"
-    r"[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+    r"^(?:"
+    r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-"
+    r"[0-9a-fA-F]{4}-[0-9a-fA-F]{12}"
+    r"|[0-9a-fA-F]{16}"
+    r")$"
 )
 
 XSTS_MESSAGES = {
@@ -62,6 +71,8 @@ class DeviceCode:
     expires_in: int
     interval: int
     message: str
+    # Live Connect 会用 cookie 绑定设备码与轮询请求，v2 流程留空。
+    cookie: str = ""
 
 
 @dataclass
@@ -78,15 +89,20 @@ class _HttpFailure(Exception):
         super().__init__(str(payload.get("error") or status))
 
 
+def is_legacy_client_id(value: str) -> bool:
+    """16 位十六进制应用 ID 属于旧版 Live SDK，需要走 Live Connect。"""
+    return bool(LEGACY_CLIENT_ID_RE.fullmatch((value or "").strip()))
+
+
 def normalize_client_id(value: str) -> str:
     client_id = (value or "").strip()
     if not client_id:
         raise MicrosoftAuthError(
-            "还没有填写 Azure 客户端 ID。请先在设置中填写应用注册的客户端 ID。"
+            "还没有填写客户端 ID。请在设置页或登录窗口中填写应用注册的客户端 ID。"
         )
     if not CLIENT_ID_RE.fullmatch(client_id):
         raise MicrosoftAuthError(
-            "客户端 ID 格式不正确，应为类似 00000000-0000-0000-0000-000000000000 的 GUID。"
+            "客户端 ID 格式不正确，应为 GUID 或 16 位十六进制应用 ID。"
         )
     return client_id
 
@@ -99,13 +115,13 @@ def _decode(raw: bytes) -> dict[str, Any]:
     return data if isinstance(data, dict) else {}
 
 
-def _request(
+def _request_raw(
     url: str,
     *,
     data: bytes | None = None,
     headers: dict[str, str] | None = None,
     timeout: int = 30,
-) -> dict[str, Any]:
+) -> tuple[dict[str, Any], Any]:
     merged = {
         "User-Agent": USER_AGENT,
         "Accept": "application/json",
@@ -116,6 +132,7 @@ def _request(
     try:
         with urllib.request.urlopen(request, timeout=timeout) as response:
             raw = response.read()
+            response_headers = response.headers
     except urllib.error.HTTPError as exc:
         payload = _decode(exc.read())
         raise _HttpFailure(exc.code, payload) from None
@@ -126,17 +143,58 @@ def _request(
     payload = _decode(raw)
     if not payload:
         raise MicrosoftAuthError("Microsoft 服务返回了无法识别的数据。")
+    return payload, response_headers
+
+
+def _request(
+    url: str,
+    *,
+    data: bytes | None = None,
+    headers: dict[str, str] | None = None,
+    timeout: int = 30,
+) -> dict[str, Any]:
+    payload, _ = _request_raw(
+        url, data=data, headers=headers, timeout=timeout
+    )
     return payload
 
 
-def _post_form(url: str, fields: dict[str, str], timeout: int = 30) -> dict[str, Any]:
+def _cookie_header(headers: Any) -> str:
+    """把响应里的 Set-Cookie 压成一个 Cookie 请求头。"""
+    if headers is None:
+        return ""
+    cookies: list[str] = []
+    for raw in headers.get_all("Set-Cookie") or []:
+        first = str(raw).split(";", 1)[0].strip()
+        if first and "=" in first:
+            cookies.append(first)
+    return "; ".join(cookies)
+
+
+def _post_form(
+    url: str,
+    fields: dict[str, str],
+    timeout: int = 30,
+    headers: dict[str, str] | None = None,
+) -> dict[str, Any]:
     body = urllib.parse.urlencode(fields).encode("utf-8")
-    return _request(
+    merged = {"Content-Type": "application/x-www-form-urlencoded"}
+    if headers:
+        merged.update(headers)
+    return _request(url, data=body, headers=merged, timeout=timeout)
+
+
+def _post_form_with_cookie(
+    url: str, fields: dict[str, str], timeout: int = 30
+) -> tuple[dict[str, Any], str]:
+    body = urllib.parse.urlencode(fields).encode("utf-8")
+    payload, response_headers = _request_raw(
         url,
         data=body,
         headers={"Content-Type": "application/x-www-form-urlencoded"},
         timeout=timeout,
     )
+    return payload, _cookie_header(response_headers)
 
 
 def _post_json(
@@ -157,14 +215,14 @@ def _oauth_message(failure: _HttpFailure) -> str:
     code = str(failure.payload.get("error") or "")
     description = str(failure.payload.get("error_description") or "").strip()
     friendly = {
-        "invalid_client": "Azure 客户端 ID 无效，或应用没有启用公共客户端流程。",
+        "invalid_client": "客户端 ID 无效，或该应用不允许当前登录方式。",
         "unauthorized_client": (
-            "该 Azure 应用不允许当前登录方式，请启用公共客户端流，"
-            "并确认已注册 http://localhost 重定向 URI。"
+            "该应用不允许当前登录方式。GUID 应用请启用公共客户端流程，"
+            "16 位应用 ID 请使用验证码登录。"
         ),
         "invalid_grant": "登录授权已失效或被拒绝，请重新登录 Microsoft 账户。",
         "invalid_request": "登录请求无效，请检查客户端 ID、重定向 URI 与网络环境。",
-        "unsupported_response_type": "登录方式不受支持，请检查 Azure 应用配置。",
+        "unsupported_response_type": "登录方式不受支持，请检查应用配置。",
         "temporarily_unavailable": "Microsoft 登录服务暂时不可用，请稍后重试。",
     }
     if code in friendly:
@@ -176,10 +234,22 @@ def _oauth_message(failure: _HttpFailure) -> str:
 
 def request_device_code(client_id: str) -> DeviceCode:
     client_id = normalize_client_id(client_id)
+    legacy = is_legacy_client_id(client_id)
+    cookie = ""
     try:
-        payload = _post_form(
-            DEVICE_CODE_URL, {"client_id": client_id, "scope": SCOPE}
-        )
+        if legacy:
+            payload, cookie = _post_form_with_cookie(
+                LIVE_DEVICE_CODE_URL,
+                {
+                    "client_id": client_id,
+                    "scope": LIVE_SCOPE,
+                    "response_type": "device_code",
+                },
+            )
+        else:
+            payload = _post_form(
+                DEVICE_CODE_URL, {"client_id": client_id, "scope": SCOPE}
+            )
     except _HttpFailure as exc:
         raise MicrosoftAuthError(_oauth_message(exc)) from None
     device_code = str(payload.get("device_code") or "")
@@ -188,7 +258,10 @@ def request_device_code(client_id: str) -> DeviceCode:
         raise MicrosoftAuthError(
             str(payload.get("error_description") or "无法获取 Microsoft 登录验证码。")
         )
-    uri = str(payload.get("verification_uri") or "https://microsoft.com/devicelogin")
+    uri = str(
+        payload.get("verification_uri")
+        or ("https://www.microsoft.com/link" if legacy else "https://microsoft.com/devicelogin")
+    )
     complete = str(payload.get("verification_uri_complete") or "")
     try:
         expires_in = int(payload.get("expires_in") or 900)
@@ -206,6 +279,7 @@ def request_device_code(client_id: str) -> DeviceCode:
         expires_in=expires_in,
         interval=interval,
         message=str(payload.get("message") or ""),
+        cookie=cookie,
     )
 
 
@@ -215,10 +289,23 @@ def poll_device_code(
     *,
     interval: int = 5,
     expires_in: int = 900,
+    cookie: str = "",
     cancel_event=None,
     on_status: Callable[[str], None] | None = None,
 ) -> TokenResult:
     client_id = normalize_client_id(client_id)
+    legacy = is_legacy_client_id(client_id)
+    token_url = (
+        LIVE_TOKEN_URL + "?" + urllib.parse.urlencode({"client_id": client_id})
+        if legacy
+        else TOKEN_URL
+    )
+    fields = {
+        "grant_type": "urn:ietf:params:oauth:grant-type:device_code",
+        "client_id": client_id,
+        "device_code": device_code,
+    }
+    headers = {"Cookie": cookie} if legacy and cookie else None
     deadline = time.monotonic() + max(30, expires_in)
     delay = max(1, interval)
     while time.monotonic() < deadline:
@@ -228,14 +315,7 @@ def poll_device_code(
         else:
             time.sleep(delay)
         try:
-            payload = _post_form(
-                TOKEN_URL,
-                {
-                    "grant_type": "urn:ietf:params:oauth:grant-type:device_code",
-                    "client_id": client_id,
-                    "device_code": device_code,
-                },
-            )
+            payload = _post_form(token_url, fields, headers=headers)
         except _HttpFailure as exc:
             error = str(exc.payload.get("error") or "")
             if error == "authorization_pending":
@@ -254,6 +334,23 @@ def poll_device_code(
             if error == "bad_verification_code":
                 raise MicrosoftAuthError("验证码无效，请重新登录。") from None
             raise MicrosoftAuthError(_oauth_message(exc)) from None
+        # Live Connect 有时会用 200 返回错误对象，而不是 HTTP 错误码。
+        error = str(payload.get("error") or "")
+        if error == "authorization_pending":
+            if on_status:
+                on_status("等待在浏览器中完成登录…")
+            continue
+        if error == "slow_down":
+            delay += 5
+            if on_status:
+                on_status("登录服务要求降低轮询频率，继续等待…")
+            continue
+        if error == "authorization_declined":
+            raise MicrosoftAuthError("你取消了 Microsoft 登录授权。")
+        if error == "expired_token":
+            raise MicrosoftAuthError("登录验证码已过期，请重新登录。")
+        if error == "bad_verification_code":
+            raise MicrosoftAuthError("验证码无效，请重新登录。")
         token = str(payload.get("access_token") or "")
         if not token:
             raise MicrosoftAuthError(
@@ -375,7 +472,7 @@ def _browser_error_message(error: str, description: str) -> str:
             "该 Azure 应用不允许浏览器登录，请启用公共客户端流，"
             "并添加 http://localhost 重定向 URI。"
         ),
-        "invalid_client": "Azure 客户端 ID 无效，或应用没有启用公共客户端流程。",
+        "invalid_client": "客户端 ID 无效，或应用没有启用公共客户端流程。",
         "server_error": "Microsoft 登录服务出错，请稍后重试。",
         "temporarily_unavailable": "Microsoft 登录服务暂时不可用，请稍后重试。",
     }
@@ -401,6 +498,10 @@ def login_with_browser(
     预填到 Microsoft 官方登录页，授权完成后由本机回环地址自动接收授权码。
     """
     client_id = normalize_client_id(client_id)
+    if is_legacy_client_id(client_id):
+        raise MicrosoftAuthError(
+            "16 位应用 ID 需要使用验证码登录；浏览器回调方式只支持 GUID 应用。"
+        )
     login_hint = (login_hint or "").strip()
 
     try:
@@ -505,6 +606,7 @@ def login_with_browser(
         kind="msa",
         access_token=access_token,
         refresh_token=str(payload.get("refresh_token") or ""),
+        client_id=client_id,
         expires_at=time.time() + expires_in,
     )
     return _complete_chain(account)
@@ -514,14 +616,15 @@ def refresh_microsoft_token(client_id: str, refresh_token: str) -> TokenResult:
     client_id = normalize_client_id(client_id)
     if not refresh_token:
         raise MicrosoftAuthError("登录状态已失效，请重新登录 Microsoft 账户。")
+    legacy = is_legacy_client_id(client_id)
     try:
         payload = _post_form(
-            TOKEN_URL,
+            LIVE_TOKEN_URL if legacy else TOKEN_URL,
             {
                 "grant_type": "refresh_token",
                 "client_id": client_id,
                 "refresh_token": refresh_token,
-                "scope": SCOPE,
+                "scope": LIVE_SCOPE if legacy else SCOPE,
             },
         )
     except _HttpFailure as exc:
@@ -540,9 +643,17 @@ def refresh_microsoft_token(client_id: str, refresh_token: str) -> TokenResult:
     )
 
 
-def _xbox_user_token(ms_access_token: str) -> tuple[str, str, str]:
+def _xbox_user_token(
+    ms_access_token: str, *, legacy: bool = False
+) -> tuple[str, str, str]:
     last: _HttpFailure | None = None
-    for ticket in (f"d={ms_access_token}", ms_access_token):
+    # Live Connect 的令牌使用 t=，微软身份平台 v2 的令牌使用 d=。
+    tickets = (
+        (f"t={ms_access_token}", f"d={ms_access_token}", ms_access_token)
+        if legacy
+        else (f"d={ms_access_token}", ms_access_token)
+    )
+    for ticket in tickets:
         try:
             payload = _post_json(
                 XBOX_USER_URL,
@@ -663,7 +774,9 @@ def fetch_profile(mc_access_token: str) -> dict[str, Any]:
 
 
 def _complete_chain(account: Account) -> Account:
-    user_token, uhs, xuid = _xbox_user_token(account.access_token)
+    user_token, uhs, xuid = _xbox_user_token(
+        account.access_token, legacy=is_legacy_client_id(account.client_id)
+    )
     xsts_token, xsts_uhs, xsts_xuid = _xsts_token(user_token)
     mc_token, expires_in = minecraft_login(xsts_token, xsts_uhs or uhs)
     profile = fetch_profile(mc_token)
@@ -693,6 +806,7 @@ def login_with_device_code(
         device.device_code,
         interval=device.interval,
         expires_in=device.expires_in,
+        cookie=device.cookie,
         cancel_event=cancel_event,
         on_status=on_status,
     )
@@ -700,6 +814,7 @@ def login_with_device_code(
         kind="msa",
         access_token=token.access_token,
         refresh_token=token.refresh_token,
+        client_id=client_id,
         expires_at=time.time() + token.expires_in,
     )
     if on_status:
@@ -718,10 +833,16 @@ def ensure_minecraft_token(account: Account, client_id: str) -> Account:
         and account.uuid
     ):
         return account
-    if not client_id:
+    # 账户里记录的是登录时实际使用的应用；全局设置只作为兜底，
+    # 这样换过客户端 ID 之后，老账户仍然能用原来的应用刷新令牌。
+    preferred = str(account.client_id or client_id or "").strip()
+    if not preferred:
         raise MicrosoftAuthError(
-            "缺少 Azure 客户端 ID，无法刷新正版登录状态。请到设置中填写后重试。"
+            "缺少客户端 ID，无法刷新正版登录状态。请到设置中填写后重试。"
         )
+    client_id = normalize_client_id(preferred)
+    if not account.client_id:
+        account.client_id = client_id
     token = refresh_microsoft_token(client_id, account.refresh_token)
     account.access_token = token.access_token
     account.refresh_token = token.refresh_token or account.refresh_token

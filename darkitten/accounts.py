@@ -30,6 +30,7 @@ class Account:
     uuid: str = ""
     access_token: str = ""
     refresh_token: str = ""
+    client_id: str = ""
     client_token: str = ""
     expires_at: float = 0.0
     mc_access_token: str = ""
@@ -97,6 +98,7 @@ class Account:
             uuid=str(data.get("uuid") or ""),
             access_token=unprotect(str(data.get("access_token") or "")),
             refresh_token=unprotect(str(data.get("refresh_token") or "")),
+            client_id=str(data.get("client_id") or "").strip(),
             expires_at=float(data.get("expires_at") or 0),
             mc_access_token=unprotect(str(data.get("mc_access_token") or "")),
             mc_expires_at=float(data.get("mc_expires_at") or 0),
@@ -120,6 +122,7 @@ class Account:
             "uuid": self.uuid,
             "access_token": protect(self.access_token),
             "refresh_token": protect(self.refresh_token),
+            "client_id": self.client_id,
             "expires_at": self.expires_at,
             "mc_access_token": protect(self.mc_access_token),
             "mc_expires_at": self.mc_expires_at,

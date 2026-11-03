@@ -1017,10 +1017,13 @@ class SkinPage(QWidget):
         self.main.account_changed.emit()
 
     def _client_id(self, silent: bool = False) -> str | None:
-        client_id = str(self.main.config.microsoft_client_id or "").strip()
+        account = self.main.current_account()
+        client_id = str(getattr(account, "client_id", "") or "").strip()
+        if not client_id:
+            client_id = str(self.main.config.microsoft_client_id or "").strip()
         if not client_id:
             if not silent:
-                self.main.toast("请先在设置中填写 Azure 客户端 ID", "error")
+                self.main.toast("请先在设置中填写客户端 ID", "error")
                 self.main.switch_page("settings")
             return None
         return client_id

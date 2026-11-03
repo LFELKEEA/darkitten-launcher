@@ -223,7 +223,7 @@ def prepare_launch(
         access_token = account.mc_access_token
         auth_xuid = account.xuid
         user_type = "msa"
-        client_id = cfg.microsoft_client_id
+        client_id = account.client_id or cfg.microsoft_client_id
     elif account.is_littleskin:
         name = account.name.strip()
         if not name or not account.uuid or not account.access_token:
