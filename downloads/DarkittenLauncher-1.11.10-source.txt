@@ -1,5 +1,5 @@
 ﻿Darkitten Launcher 1.11.10 完整源代码
-生成时间：2026-11-04 23:39:30
+生成时间：2026-11-04 23:50:35
 文本文件：101
 ================================================================================
 目录
@@ -12138,13 +12138,48 @@ def _packed_version(app_dir: Path) -> str:
     return ""
 
 
+def _updated_version(app_dir: Path) -> str:
+    """旧版本没有 version.json 时，从更新包反推当前实际版本。
+
+    工坊在程序内更新后会把更新包留在 data/updates 里。用包里 exe 的
+    原始大小和已安装 exe 对比，大小一致的才是真正装进去的那一版；
+    还在等待应用的版本（存在 staging-<version> 目录）直接跳过。
+    """
+    try:
+        size = (app_dir / AGENT_EXE).stat().st_size
+    except OSError:
+        return ""
+    updates = app_dir / "data" / "updates"
+    matches: list[tuple[float, str]] = []
+    try:
+        candidates = list(updates.glob(f"{AGENT_ID}-*.zip"))
+    except OSError:
+        return ""
+    for path in candidates:
+        version = path.stem[len(AGENT_ID) + 1 :]
+        if not version or (updates / f"staging-{version}").exists():
+            continue
+        try:
+            with zipfile.ZipFile(path) as archive:
+                packed_size = archive.getinfo(AGENT_EXE).file_size
+            mtime = path.stat().st_mtime
+        except (OSError, KeyError, zipfile.BadZipFile):
+            continue
+        if packed_size == size:
+            matches.append((mtime, version))
+    if not matches:
+        return ""
+    return max(matches)[1]
+
+
 def installed_info(root: Path | None = None) -> dict:
     try:
         data = json.loads(mod_agent_state_path(root).read_text(encoding="utf-8"))
     except Exception:
         data = {}
     info = data if isinstance(data, dict) else {}
-    packed = _packed_version(mod_agent_app_dir(root))
+    app_dir = mod_agent_app_dir(root)
+    packed = _packed_version(app_dir) or _updated_version(app_dir)
     if packed:
         info["version"] = packed
     return info
