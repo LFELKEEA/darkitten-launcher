@@ -343,7 +343,7 @@
             <li>模组工坊中文名称改为「恶魔小猫工坊」，与启动器里的恶魔小猫形象保持一致。</li>
             <li>图标换成启动器同款恶魔小猫，并在右下角加上黑色像素锤子，更容易和普通桌宠区分。</li>
             <li>同步更新模组工坊到 0.1.1：启动器内的下载、安装、更新入口都显示新名称和新图标。</li>
-            <li>功能、数据目录和安装位置保持不变；升级不会影响已有技能、连接器、记忆库和工程记录。</li>
+            <li>功能、数据目录和安装位置保持不变；升级不会影响已有技能、连接器、知识库和工程记录。</li>
           </ul>
           <a class="release-link" href="#download">查看完整包、更新包与源码 TXT <svg class="icon"><use href="#i-arrow"></use></svg></a>
         </div>
@@ -496,9 +496,9 @@
             <span class="kicker">MOD AGENT</span>
           </div>
           <h2>把恶魔小猫工坊放进桌面。</h2>
-          <p>恶魔小猫工坊是独立运行的 Minecraft Java 模组开发 Agent，只做 Fabric / NeoForge / Architectury。它会先确认 MC 版本、加载器和 Mod ID，再按工程结构生成完整文件；所有写入先进入待确认列表，覆盖前自动备份。内置技能、连接器与记忆库，可以从下载站、GitHub 或启动器获取，并在程序内检查更新。0.1.4 加了「编译运行」页，可以直接执行 build / runClient / runServer / runDatagen 并实时看日志；0.1.5 又补了两枚按钮——工程没有构建脚本时点「让助手补全配置」，自动切到对话按版本和加载器生成 settings.gradle / build.gradle / gradle.properties；本机没装 Gradle 时点「生成 Wrapper」，写入内置的 Gradle 8.10.2 Wrapper，第一次编译再自动下载发行包。0.1.6 修复加速器环境下的证书问题：Gradle 下载遇到 `PKIX path building failed` 会自动改用 Windows 证书库重试，页面上也留了手动开关。0.1.7 把内置 Wrapper 升到 Gradle 9.8.2，和当前 Fabric loom 的要求对齐；编译报「requires at least Gradle X」时，页面会直接告诉你当前版本和该点哪个按钮。0.2.0 把这些步骤收成「一键准备」：缺 JDK 就自动下载 Temurin 21 装到程序自己的 data 目录，缺 Wrapper 就补齐，缺 Gradle 发行包就从国内镜像下载并校验 SHA-256；点编译、开发客户端、开发服务端或数据生成时都会先自动准备，再直接执行。0.2.1 加了「删除工程」：二次确认后把工程目录移到 Windows 回收站，并清掉最近记录和对话记录；有生成或 Gradle 任务在跑时会先拦住。</p>
+          <p>恶魔小猫工坊是独立运行的 Minecraft Java 模组开发 Agent，只做 Fabric / NeoForge / Architectury。它会先确认 MC 版本、加载器和 Mod ID，再按工程结构生成完整文件；所有写入先进入待确认列表，覆盖前自动备份。内置技能、连接器与知识库，可以从下载站、GitHub 或启动器获取，并在程序内检查更新。0.1.4 加了「编译运行」页，可以直接执行 build / runClient / runServer / runDatagen 并实时看日志；0.1.5 又补了两枚按钮——工程没有构建脚本时点「让助手补全配置」，自动切到对话按版本和加载器生成 settings.gradle / build.gradle / gradle.properties；本机没装 Gradle 时点「生成 Wrapper」，写入内置的 Gradle 8.10.2 Wrapper，第一次编译再自动下载发行包。0.1.6 修复加速器环境下的证书问题：Gradle 下载遇到 `PKIX path building failed` 会自动改用 Windows 证书库重试，页面上也留了手动开关。0.1.7 把内置 Wrapper 升到 Gradle 9.8.2，和当前 Fabric loom 的要求对齐；编译报「requires at least Gradle X」时，页面会直接告诉你当前版本和该点哪个按钮。0.2.0 把这些步骤收成「一键准备」：缺 JDK 就自动下载 Temurin 21 装到程序自己的 data 目录，缺 Wrapper 就补齐，缺 Gradle 发行包就从国内镜像下载并校验 SHA-256；点编译、开发客户端、开发服务端或数据生成时都会先自动准备，再直接执行。0.2.1 加了「删除工程」：二次确认后把工程目录移到 Windows 回收站，并清掉最近记录和对话记录；有生成或 Gradle 任务在跑时会先拦住。0.3.0 把「记忆库」换成「知识库」：可以直接导入 txt / md / docx / pdf 和代码配置文件，程序自动提取正文并分片；每轮对话前自动检索最相关资料，做模组时优先参考你导入的规范、笔记和文档，需要细节还能按关键词查或按编号读全文。</p>
           <div class="pet-meta">
-            <span>版本 <strong data-agent-version>0.2.1</strong></span>
+            <span>版本 <strong data-agent-version>0.3.0</strong></span>
             <span>大小 <strong data-agent-size>读取中…</strong></span>
             <span>发布 <strong data-agent-date>—</strong></span>
             <span>平台 <strong>Windows 10 / 11</strong></span>
@@ -506,7 +506,7 @@
           <p class="agent-sha">SHA-256：<code data-agent-sha>读取中…</code></p>
         </div>
         <div class="download-actions">
-          <a class="btn btn-primary big" data-agent-download href="https://github.com/LFELKEEA/darkitten-mod-agent/releases/download/mod-agent-v0.2.1/DarkittenModAgent-0.2.1.zip" download>
+          <a class="btn btn-primary big" data-agent-download href="https://github.com/LFELKEEA/darkitten-mod-agent/releases/download/mod-agent-v0.3.0/DarkittenModAgent-0.3.0.zip" download>
             <svg class="icon"><use href="#i-download"></use></svg>
             下载模组工坊
           </a>
