@@ -1,14 +1,13 @@
 {
   "name": "Darkitten Mod Agent",
-  "version": "0.3.10",
+  "version": "0.3.11",
   "released": "2026-11-04",
-  "download_url": "https://github.com/LFELKEEA/darkitten-mod-agent/releases/download/mod-agent-v0.3.10/DarkittenModAgent-0.3.10.zip",
+  "download_url": "https://github.com/LFELKEEA/darkitten-mod-agent/releases/download/mod-agent-v0.3.11/DarkittenModAgent-0.3.11.zip",
   "page_url": "https://lfelkeea.github.io/darkitten-launcher/",
-  "sha256": "8606b25d29c008d4106ad596ce175a6c6fdab6d908a0922f3c32d571f6be97b0",
-  "size": 48449791,
+  "sha256": "a20367cb32ebd2b83e225b36e08f4652abd9d6d90f712e854af1c4a573bd37c6",
+  "size": 48451563,
   "notes": [
-    "修掉知识库列表点击文件卡死的问题：预览只按需读取前 4 万字符，不再把整份资料全部取出再截断。实测 1600 万字的文档点开预览约 0.17 秒，界面不再冻结。",
-    "分块拼接从反复复制整段正文改成线性扫描，读取完整正文的耗时从分钟级降到 0.36 秒（1600 万字）；助手按 id 读取大资料时也不会再长时间卡住。",
-    "预览被截断时仍然显示「…（预览已截断）」，完整内容不变，只是界面不再一次性加载。"
+    "修掉安装目录或工程路径带空格时无法编译的问题：之前 Windows 下用 cmd /c 拼命令，路径里的空格会被 cmd 当成命令边界，报「'D:\\Darkitten' 不是内部或外部命令」。现在改用 cmd /d /s /c 并给整条命令行加外层引号，Wrapper 和 init script 路径含空格也能正常启动。",
+    "运行日志里直接显示实际执行的完整命令，路径有空格时能看出引号位置，方便排查。"
   ]
 }
