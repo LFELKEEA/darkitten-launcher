@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import sys
 import tempfile
+import zipfile
 from pathlib import Path
 
 PROJECT = Path(__file__).resolve().parents[1]
@@ -79,11 +80,31 @@ def test_mod_agent(tmp: Path) -> None:
     check("agent_root_marker_wins", mod_agent.installed_version(root) == "0.3.13")
 
 
+def test_mod_agent_legacy_update(tmp: Path) -> None:
+    root = tmp / "agent-legacy"
+    root.mkdir()
+    app_dir = mod_agent.mod_agent_app_dir(root)
+    app_dir.mkdir(parents=True)
+    (app_dir / "DarkittenModAgent.exe").write_bytes(b"new-exe-0311")
+    updates = app_dir / "data" / "updates"
+    updates.mkdir(parents=True)
+    with zipfile.ZipFile(updates / "DarkittenModAgent-0.3.11.zip", "w") as archive:
+        archive.writestr("DarkittenModAgent.exe", b"new-exe-0311")
+    with zipfile.ZipFile(updates / "DarkittenModAgent-0.3.12.zip", "w") as archive:
+        archive.writestr("DarkittenModAgent.exe", b"downloaded-but-not-applied")
+    write_state(root, "0.1.1")
+
+    check("agent_legacy_zip_fallback", mod_agent.installed_version(root) == "0.3.11")
+    (updates / "staging-0.3.11").mkdir()
+    check("agent_legacy_pending_ignored", mod_agent.installed_version(root) == "0.1.1")
+
+
 def main() -> int:
     with tempfile.TemporaryDirectory() as tmp:
         base = Path(tmp)
         test_pet(base)
         test_mod_agent(base)
+        test_mod_agent_legacy_update(base)
     print(f"PASS={PASS} FAIL={FAIL}")
     return 0 if FAIL == 0 else 1
 
