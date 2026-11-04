@@ -1,15 +1,16 @@
 {
   "name": "Darkitten Mod Agent",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "released": "2026-11-04",
-  "download_url": "https://github.com/LFELKEEA/darkitten-mod-agent/releases/download/mod-agent-v0.1.4/DarkittenModAgent-0.1.4.zip",
+  "download_url": "https://github.com/LFELKEEA/darkitten-mod-agent/releases/download/mod-agent-v0.1.5/DarkittenModAgent-0.1.5.zip",
   "page_url": "https://lfelkeea.github.io/darkitten-launcher/",
-  "sha256": "07514dd9e69a3945be385291a24b4f52c1da95676e1163c70d103be6ca7257a0",
-  "size": 44895383,
+  "sha256": "f09d4924f80c376f58a74bb21d73d8b6713bcf7caa036592d833b27cc8cf3587",
+  "size": 44945376,
   "notes": [
-    "新增「编译运行」页：一键执行 gradlew build / runClient / runServer / runDatagen，日志实时显示。",
+    "编译运行页新增「让助手补全配置」：自动切到对话并发出构建脚本请求，按工程版本和加载器生成 settings.gradle / build.gradle / gradle.properties。",
+    "编译运行页新增「生成 Wrapper」：内置 Gradle 8.10.2 Wrapper 文件，一键写入 gradlew / gradlew.bat / gradle-wrapper.jar，本机不装 Gradle 也能编译。",
+    "编译运行页：一键执行 gradlew build / runClient / runServer / runDatagen，日志实时显示。",
     "支持停止任务、复制日志、打开 build/libs 和工程目录；关闭工坊会结束正在运行的 Gradle 任务。",
-    "自动识别工程 Wrapper 或系统 Gradle；缺少时提示先在工程目录执行 gradle wrapper。",
-    "页面会提示 Java 版本风险：Java 22 及以上可能不被 Gradle / Loom 支持。"
+    "自动识别工程 Wrapper 或系统 Gradle；页面会提示 Java 版本风险（Java 22 及以上可能不被 Gradle / Loom 支持）。"
   ]
 }
