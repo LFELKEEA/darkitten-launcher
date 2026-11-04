@@ -1,6 +1,6 @@
 # Darkitten Launcher
 
-Minecraft 启动器 + 下载站源码。当前版本 `1.11.6`。
+Minecraft 启动器 + 下载站源码。当前版本 `1.11.10`。
 
 - 下载站：https://lfelkeea.github.io/darkitten-launcher/
 - 更新清单：[`update.json`](website/public/update.json)

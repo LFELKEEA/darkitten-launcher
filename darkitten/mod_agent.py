@@ -64,12 +64,34 @@ def is_installed(root: Path | None = None) -> bool:
     return mod_agent_exe_path(root).is_file()
 
 
+def _packed_version(app_dir: Path) -> str:
+    """读取工坊包内自带的 version.json。
+
+    state.json 只在启动器安装/更新时刷新；程序内更新或手动解压覆盖后，
+    以包内版本文件为准，避免把已经更新的工坊识别成旧版本。
+    """
+    for path in (app_dir / "version.json", app_dir / "_internal" / "version.json"):
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        if isinstance(data, dict):
+            value = str(data.get("version") or "").strip().lstrip("vV")
+            if value:
+                return value
+    return ""
+
+
 def installed_info(root: Path | None = None) -> dict:
     try:
         data = json.loads(mod_agent_state_path(root).read_text(encoding="utf-8"))
     except Exception:
-        return {}
-    return data if isinstance(data, dict) else {}
+        data = {}
+    info = data if isinstance(data, dict) else {}
+    packed = _packed_version(mod_agent_app_dir(root))
+    if packed:
+        info["version"] = packed
+    return info
 
 
 def installed_version(root: Path | None = None) -> str:

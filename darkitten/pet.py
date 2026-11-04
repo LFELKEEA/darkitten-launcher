@@ -63,12 +63,35 @@ def is_installed(root: Path | None = None) -> bool:
     return pet_exe_path(root).is_file()
 
 
+def _packed_version(app_dir: Path) -> str:
+    """读取桌宠包内自带的 version.json。
+
+    启动器安装时写的 state.json 只在通过启动器安装/更新时才会刷新；
+    用户从程序内更新、或者直接解压覆盖时它会是旧的。包内的版本文件跟着
+    实际文件走，优先级高于 state.json。
+    """
+    for path in (app_dir / "version.json", app_dir / "_internal" / "version.json"):
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        if isinstance(data, dict):
+            value = str(data.get("version") or "").strip().lstrip("vV")
+            if value:
+                return value
+    return ""
+
+
 def installed_info(root: Path | None = None) -> dict:
     try:
         data = json.loads(pet_state_path(root).read_text(encoding="utf-8"))
     except Exception:
-        return {}
-    return data if isinstance(data, dict) else {}
+        data = {}
+    info = data if isinstance(data, dict) else {}
+    packed = _packed_version(pet_app_dir(root))
+    if packed:
+        info["version"] = packed
+    return info
 
 
 def installed_version(root: Path | None = None) -> str:
