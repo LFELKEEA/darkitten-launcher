@@ -1,13 +1,13 @@
 {
   "name": "Darkitten Mod Agent",
-  "version": "0.3.17",
+  "version": "0.3.18",
   "released": "2026-11-05",
-  "download_url": "https://github.com/LFELKEEA/darkitten-mod-agent/releases/download/mod-agent-v0.3.17/DarkittenModAgent-0.3.17.zip",
+  "download_url": "https://github.com/LFELKEEA/darkitten-mod-agent/releases/download/mod-agent-v0.3.18/DarkittenModAgent-0.3.18.zip",
   "page_url": "https://lfelkeea.github.io/darkitten-launcher/",
-  "sha256": "b0522cba4f250e10c0d858e03096eac71661df3a8d77d375b433fac3cd92375f",
-  "size": 48476592,
+  "sha256": "bcb173ff654289c6f1d7b105459ab3efa33f322fd0b0020f4fd118d001ff30c9",
+  "size": 48477680,
   "notes": [
-    "修复模组依赖被 Beta 版本误判的问题：声明其他模组依赖时，versionRange 下界改为以 libs 里 jar 的真实版本为准（例如 [7.7.36-beta.3,)），不再写成 [7.7.36,)，避免游戏启动时报“requires mca 7.7.36 or above”。",
-    "本版同时包含 0.3.16 的全部修复：自定义 Base URL 不再被改回官方地址、连接失败给出可操作提示、自动写入的文件在待写入面板留记录、工具调用格式不完整不再中断任务、上下文轮数默认 32。"
+    "修复助手只说“我先读/我先看/接下来检查”却不发工具调用、对话停在计划阶段的问题：现在会自动要求模型立刻执行工具，连续两次仍然只描述计划才结束，并提示可以再发送“继续”。",
+    "本版同时包含 0.3.17 的模组依赖版本修复，以及 0.3.16 的自定义 Base URL 保留、连接失败提示、待写入面板记录、工具调用容错和上下文 32 轮。"
   ]
 }
