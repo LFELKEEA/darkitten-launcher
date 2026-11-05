@@ -4,8 +4,8 @@
   "released": "2026-11-05",
   "download_url": "https://github.com/LFELKEEA/darkitten-mod-agent/releases/download/mod-agent-v1.0.1/DarkittenModAgent-1.0.1.zip",
   "page_url": "https://lfelkeea.github.io/darkitten-launcher/",
-  "sha256": "67b266d4d88aa031d4fd3cf91a122176506132854bb8085fe3ea049f24b6609a",
-  "size": 48499491,
+  "sha256": "949e1f0a76314d43d55a2bfdb468d2cb52960d4b24c7aca2a4b542344f8af15a",
+  "size": 48499710,
   "notes": [
     "修复模型输出 `<|DSML|calls>` / `<|DSML|invoke>` 这类原生工具调用标记时，对话里显示原始标记、任务看起来停住的问题：现在能识别 DSML / DSLM 包装（包括带空格、没有 `<tool>` 外壳、不同闭合写法），正常执行 read_file、edit_file 等工具，并把标记从可见回复中完全移除。",
     "连续两次仍无法解析工具调用时，改为给出可读提示，不再把原始标记当最终答复；普通的 `<tool>{...}</tool>`、```tool 代码块和缺闭合标签的旧写法继续兼容。",
