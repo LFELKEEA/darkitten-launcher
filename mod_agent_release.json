@@ -4,8 +4,8 @@
   "released": "2026-11-06",
   "download_url": "https://github.com/LFELKEEA/darkitten-mod-agent/releases/download/mod-agent-v1.2.0/DarkittenModAgent-1.2.0.zip",
   "page_url": "https://lfelkeea.github.io/darkitten-launcher/",
-  "sha256": "04754dd50d9839d1f479286588a8becc8b7050237210edb4608f8823afb44e2e",
-  "size": 48566797,
+  "sha256": "3c7474f769b2f9bfab5061e72814db13d297b546aea7ee99dcb5b5b5e1e3ad6d",
+  "size": 48566653,
   "notes": [
     "重做整条做模流程：先规划、再确认、后施工。用户用一句话描述需求后，助手会一次性拆出完整规格（玩法、注册内容、获取方式、数值、美术、验收标准、风险），右侧「规格」页显示 10 项需求清单和说明书，必须点「确认规格并开始施工」才会写代码，避免一上来就生成一堆不合要求的文件。",
     "新增施工状态机与任务清单：确认规格后自动拆成骨架、注册、玩法、纹理、配方、语言、编译、验收等任务，助手每完成一项就调用 complete_task，右侧进度实时前进；编译失败会按真实日志归类为 Java 版本、依赖下载、Mixin、找不到符号、类型不匹配、缺少程序包、依赖变体、Gradle 任务或内存不足，并给出对应处理方式。",
