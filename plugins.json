@@ -1,7 +1,7 @@
 {
   "updated": "2026-11-07",
   "api_version": 1,
-  "pet_version": "1.4.1",
+  "pet_version": "1.4.0",
   "plugins": [
     {
       "id": "lfelkeea.qq_bridge",
@@ -308,9 +308,9 @@
     {
       "id": "lfelkeea.deepseek_chan",
       "name": "深度求索娘（大肥鱼皮肤）",
-      "version": "1.0.2",
+      "version": "1.0.1",
       "author": "LFELKEEA",
-      "description": "把桌宠换成网络同人形象「深度求索娘」（蓝色大肥鱼）：Live2D 模型、38 套动作、22 个表情，右键「动作」菜单会换成这套皮肤自己的动作和表情，还有摸头/戳一戳/聊天反应、配套口癖和台词。插件不附带模型文件，请到 B 站神宫凉子（UID 13737731）下载 DeepSeek免费公皮.zip，插件只在本机读取。原画及拆分：神宫凉子，Live2D 建模：霓虹猫_NeonNeko。",
+      "description": "把桌宠换成网络同人形象「深度求索娘」（蓝色大肥鱼）：Live2D 模型、38 套动作、22 个表情、摸头/戳一戳/聊天反应、配套口癖和台词。插件不附带模型文件，请到 B 站神宫凉子（UID 13737731）下载 DeepSeek免费公皮.zip，插件只在本机读取。原画及拆分：神宫凉子，Live2D 建模：霓虹猫_NeonNeko。",
       "api_version": 1,
       "permissions": [
         "pet.say",
@@ -343,9 +343,9 @@
         },
         {
           "name": "LFELKEEA 桌宠",
-          "version": ">= 1.4.1",
+          "version": ">= 1.4.0",
           "url": "https://lfelkeea.github.io/darkitten-launcher/",
-          "note": "1.4.0 起支持 Live2D 模型接口，1.4.1 起支持替换右键动作菜单。旧版仍可换模型，但右键菜单还是小猫的动作。"
+          "note": "1.4.0 起支持 Live2D 模型接口。旧版会提示「Live2D 运行库没准备好」。"
         }
       ],
       "highlights": [
@@ -356,10 +356,6 @@
         {
           "label": "动作",
           "value": "38 个动作、22 个表情，挥手 / 思考 / 鼓脸 / 害羞 / 爱心眼 / 圈圈眼 / 长裙 / 变小 等"
-        },
-        {
-          "label": "菜单",
-          "value": "模型启用后，右键「动作」换成这套皮肤的分组动作与表情，卸载后自动恢复"
         },
         {
           "label": "反应",
@@ -399,9 +395,9 @@
       },
       "bundled": false,
       "featured": true,
-      "file": "plugins/lfelkeea.deepseek_chan-1.0.2.zip",
-      "size": 26588,
-      "sha256": "ed61c0afc3e1392ccdea12729f3750e9c12be078f007fdb74d07a8b424d6db35"
+      "file": "plugins/lfelkeea.deepseek_chan-1.0.1.zip",
+      "size": 24504,
+      "sha256": "3d5d81920235c4ab75f332c2645a2299975cd4da70b598dfa91e899cbf77befa"
     },
     {
       "id": "lfelkeea.qq_inspiration",
