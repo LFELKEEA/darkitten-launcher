@@ -1,6 +1,6 @@
 {
   "version": "1.11.10",
-  "released": "2026-11-04",
+  "released": "2026-11-07",
   "notes": [
     "修复启动器识别现有设备桌宠和工坊版本不准的问题：以前只读安装时写入的 state.json，桌宠在程序内更新到 1.3.5 后启动器仍显示 1.3.0，工坊更新后也可能一直显示旧版本。",
     "现在优先读取程序包自带的 version.json（根目录或 _internal 目录），版本号跟着实际文件走；只有程序包没有版本文件时才回退到 state.json。",
@@ -11,26 +11,26 @@
   "page_url": "https://lfelkeea.github.io/darkitten-launcher/",
   "source_url": "downloads/DarkittenLauncher-1.11.10-source.zip",
   "source_txt_url": "downloads/DarkittenLauncher-1.11.10-source.txt",
-  "sha256": "c0b96b371bb587562472349a4851748de15b50c308b81f77fb262c38d4ad1f37",
+  "sha256": "10f51e0fcc983a23cdd863afc12897b0e1d848fbacaa08530d64ff19084f0fc1",
   "size": 980453,
   "source_sha256": "945df12310c1eaf1d4d4c19370aa6ec0d59102c89d50ba9910ceafd04ba2148b",
   "source_size": 985523,
-  "source_txt_sha256": "8636518024d6c242dc9678ccb7b1706fe2d4602a19e92d1695426b798b173e30",
+  "source_txt_sha256": "58543d5df82d80544c9c516a2131c8744dab2e2dda009f3df334f027db02546d",
   "source_txt_size": 2335807,
   "pet": {
     "name": "LFELKEEA 桌宠",
-    "version": "1.4.1",
+    "version": "1.4.2",
     "released": "2026-11-07",
-    "size": 138746257,
-    "sha256": "84cc86c7b4122652da0449033fe463c79a376406f76d426be2cb4773f145bf01",
-    "download_url": "https://github.com/LFELKEEA/darkitten-launcher/releases/download/pet-v1.4.1/LFELKEEA.zip",
+    "size": 138720920,
+    "sha256": "e2be5dae1d7f39030b46f11475a4903695c0496736390613f24b49cedac642cf",
+    "download_url": "https://github.com/LFELKEEA/darkitten-launcher/releases/download/pet-v1.4.2/LFELKEEA.zip",
     "notes": [
-      "新增插件动作菜单接口 api.model.set_action_menu() / clear_action_menu()：换 Live2D 模型的插件可以接管右键「动作」子菜单。",
-      "模型启用后，右键「动作」不再是小猫的跳一下、转个圈，而是皮肤自己的分组动作和表情；点哪条播哪条。",
-      "模型卸载、插件停止或换回默认形象后，菜单自动恢复成原来的小猫动作；不同插件按 owner 隔离。",
-      "深度求索娘插件更新到 1.0.2：常用 / 情绪 / 表演 / 换装与小道具四组动作，外加 22 个表情和「恢复默认表情」。",
-      "模型仍不随桌宠或插件分发。需要 Live2D 模型时，请到 B 站神宫凉子（UID：13737731）下载 DeepSeek免费公皮.zip。",
-      "1.4.0 的皮肤插件仍可运行；1.4.1 只是多出菜单接管能力，已有设置和插件数据保留。"
+      "修复每次换模型都会退出的问题：Live2D 运行库只在进程内初始化一次，换模型时复用同一个渲染线程和 GL 上下文，连续切换多个模型不再崩溃、也不会出现新模型空白。",
+      "换模型失败时保留原模型继续运行，并在界面提示失败原因，不再把整个桌宠带崩。",
+      "修复动作和待机抖动：头、头发、尾巴和裙摆的物理改为固定 1/60 秒步长推进，帧率波动时弹簧不会再越振越大。",
+      "待机摆动幅度调小，动作播放更连贯；画面裁剪边缘留白加大，减少模型被裁掉一截的观感。",
+      "右键「动作」菜单跟随皮肤显示分组动作和表情，点选后立即播放；模型卸载或插件停止后自动恢复内置动作。",
+      "深度求索娘插件 1.0.3 及更早版本无需改动；模型仍不随桌宠或插件分发，请到 B 站神宫凉子（UID：13737731）下载 DeepSeek免费公皮.zip。"
     ]
   }
 }
