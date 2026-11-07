@@ -1,7 +1,7 @@
 {
   "updated": "2026-11-07",
   "api_version": 1,
-  "pet_version": "1.4.4",
+  "pet_version": "1.4.5",
   "plugins": [
     {
       "id": "lfelkeea.qq_bridge",
