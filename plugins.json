@@ -308,9 +308,9 @@
     {
       "id": "lfelkeea.deepseek_chan",
       "name": "深度求索娘（大肥鱼皮肤）",
-      "version": "1.0.2",
+      "version": "1.0.3",
       "author": "LFELKEEA",
-      "description": "把桌宠换成网络同人形象「深度求索娘」（蓝色大肥鱼）：Live2D 模型、38 套动作、22 个表情，右键「动作」菜单会换成这套皮肤自己的动作和表情，还有摸头/戳一戳/聊天反应、配套口癖和台词。插件不附带模型文件，请到 B 站神宫凉子（UID 13737731）下载 DeepSeek免费公皮.zip，插件只在本机读取。原画及拆分：神宫凉子，Live2D 建模：霓虹猫_NeonNeko。",
+      "description": "把桌宠换成网络同人形象「深度求索娘」（蓝色大肥鱼）：Live2D 模型、38 套动作、22 个表情，右键「动作」菜单会换成这套皮肤自己的动作和表情，还有摸头/戳一戳/聊天反应、配套口癖和台词。也兼容任意 Live2D 模型：支持 .model3.json、模型文件夹和 zip / rar / 7z，会自动读取模型的参数、动作和表情。插件不附带模型文件；大肥鱼请到 B 站神宫凉子（UID 13737731）下载 DeepSeek免费公皮.zip。原画及拆分：神宫凉子，Live2D 建模：霓虹猫_NeonNeko。",
       "api_version": 1,
       "permissions": [
         "pet.say",
@@ -336,10 +336,10 @@
       ],
       "requires": [
         {
-          "name": "大肥鱼模型",
+          "name": "Live2D 模型",
           "version": "",
           "url": "https://space.bilibili.com/13737731",
-          "note": "插件不带模型。到 B 站神宫凉子（UID 13737731）下载 DeepSeek免费公皮.zip，放到 D 盘根目录、下载或桌面目录即可自动识别。"
+          "note": "插件不带模型。默认优先找 DeepSeek免费公皮.zip（B 站神宫凉子，UID 13737731）；也可以把任意 Live2D 模型文件夹或 zip / rar / 7z 放到 D:\\模型，或在插件设置里手动选择。"
         },
         {
           "name": "LFELKEEA 桌宠",
@@ -354,8 +354,12 @@
           "value": "Live2D 大肥鱼，透明背景实时渲染"
         },
         {
+          "label": "兼容",
+          "value": "也支持任意 Live2D 模型：.model3.json / 文件夹 / zip / rar / 7z，自动读取模型的参数、动作和表情"
+        },
+        {
           "label": "动作",
-          "value": "38 个动作、22 个表情，挥手 / 思考 / 鼓脸 / 害羞 / 爱心眼 / 圈圈眼 / 长裙 / 变小 等"
+          "value": "38 个动作、22 个表情，挥手 / 思考 / 鼓脸 / 害羞 / 爱心眼 / 圈圈眼 / 长裙 / 变小 等；关键帧加密采样，动作不再一卡一卡"
         },
         {
           "label": "菜单",
@@ -379,11 +383,11 @@
         }
       ],
       "settings": {
-        "settings_version": 1,
+        "settings_version": 2,
         "model_path": "",
         "zip_path": "",
         "height": 760,
-        "fps": 30,
+        "fps": 60,
         "scale": 1.0,
         "gaze_follow": true,
         "idle_actions": true,
@@ -399,9 +403,9 @@
       },
       "bundled": false,
       "featured": true,
-      "file": "plugins/lfelkeea.deepseek_chan-1.0.2.zip",
-      "size": 26588,
-      "sha256": "ed61c0afc3e1392ccdea12729f3750e9c12be078f007fdb74d07a8b424d6db35"
+      "file": "plugins/lfelkeea.deepseek_chan-1.0.3.zip",
+      "size": 35273,
+      "sha256": "1cb69fe7af5279c301675a94ff444de3b1231efe5cc17adf1519bb0d2047b828"
     },
     {
       "id": "lfelkeea.qq_inspiration",
