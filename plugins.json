@@ -308,7 +308,7 @@
     {
       "id": "lfelkeea.deepseek_chan",
       "name": "深度求索娘（大肥鱼皮肤）",
-      "version": "1.0.6",
+      "version": "1.0.7",
       "author": "LFELKEEA",
       "description": "把桌宠换成网络同人形象「深度求索娘」（蓝色大肥鱼）：Live2D 模型、38 套动作、22 个表情，右键「动作」菜单会换成这套皮肤自己的动作和表情，还有摸头/戳一戳/聊天反应、配套口癖和台词。会自动按作者提供的水印开关隐藏模型自带水印；也兼容任意 Live2D 模型：支持 .model3.json、模型文件夹和 zip / rar / 7z，会自动读取模型的参数、动作和表情。插件不附带模型文件；大肥鱼请到 B 站神宫凉子（UID 13737731）下载 DeepSeek免费公皮.zip。原画及拆分：神宫凉子，Live2D 建模：霓虹猫_NeonNeko。",
       "api_version": 1,
@@ -403,9 +403,9 @@
       },
       "bundled": false,
       "featured": true,
-      "file": "plugins/lfelkeea.deepseek_chan-1.0.6.zip",
-      "size": 38204,
-      "sha256": "dc5c6dca4f7325745ae70ba3a8f3e2e98da020d4025fde437374172511ebecfe"
+      "file": "plugins/lfelkeea.deepseek_chan-1.0.7.zip",
+      "size": 38403,
+      "sha256": "50a7187d2e45e599bd2f236e05b7b70a6f872bdbf69dc476b14650f1791c1918"
     },
     {
       "id": "lfelkeea.qq_inspiration",
