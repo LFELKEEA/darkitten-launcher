@@ -1,7 +1,7 @@
 {
-  "updated": "2026-11-03",
+  "updated": "2026-11-07",
   "api_version": 1,
-  "pet_version": "1.3.5",
+  "pet_version": "1.4.0",
   "plugins": [
     {
       "id": "lfelkeea.qq_bridge",
@@ -304,6 +304,100 @@
       "file": "plugins/lfelkeea.alive_core-2.1.3.zip",
       "size": 70940,
       "sha256": "c3e19f837539b7cc51e9aa4011ae44751f3db3bfedab3f4870432154f72be16c"
+    },
+    {
+      "id": "lfelkeea.deepseek_chan",
+      "name": "深度求索娘（大肥鱼皮肤）",
+      "version": "1.0.1",
+      "author": "LFELKEEA",
+      "description": "把桌宠换成网络同人形象「深度求索娘」（蓝色大肥鱼）：Live2D 模型、38 套动作、22 个表情、摸头/戳一戳/聊天反应、配套口癖和台词。插件不附带模型文件，请到 B 站神宫凉子（UID 13737731）下载 DeepSeek免费公皮.zip，插件只在本机读取。原画及拆分：神宫凉子，Live2D 建模：霓虹猫_NeonNeko。",
+      "api_version": 1,
+      "permissions": [
+        "pet.say",
+        "pet.action",
+        "pet.model",
+        "pet.persona",
+        "timer",
+        "events",
+        "settings",
+        "storage",
+        "chat.context"
+      ],
+      "permission_labels": [
+        "说话",
+        "动作",
+        "Live2D 模型",
+        "人格与台词",
+        "定时器",
+        "事件",
+        "设置",
+        "本地存储",
+        "聊天上下文"
+      ],
+      "requires": [
+        {
+          "name": "大肥鱼模型",
+          "version": "",
+          "url": "https://space.bilibili.com/13737731",
+          "note": "插件不带模型。到 B 站神宫凉子（UID 13737731）下载 DeepSeek免费公皮.zip，放到 D 盘根目录、下载或桌面目录即可自动识别。"
+        },
+        {
+          "name": "LFELKEEA 桌宠",
+          "version": ">= 1.4.0",
+          "url": "https://lfelkeea.github.io/darkitten-launcher/",
+          "note": "1.4.0 起支持 Live2D 模型接口。旧版会提示「Live2D 运行库没准备好」。"
+        }
+      ],
+      "highlights": [
+        {
+          "label": "模型",
+          "value": "Live2D 大肥鱼，透明背景实时渲染"
+        },
+        {
+          "label": "动作",
+          "value": "38 个动作、22 个表情，挥手 / 思考 / 鼓脸 / 害羞 / 爱心眼 / 圈圈眼 / 长裙 / 变小 等"
+        },
+        {
+          "label": "反应",
+          "value": "摸头脸红、戳一戳＞＜、聊天按内容变表情"
+        },
+        {
+          "label": "说话",
+          "value": "慢半拍、嘴硬、技术问题突然认真"
+        },
+        {
+          "label": "台词",
+          "value": "替换桌宠内置闲聊 / 摸头 / 动作台词"
+        },
+        {
+          "label": "隐私",
+          "value": "模型只在本机加载，不上传"
+        }
+      ],
+      "settings": {
+        "settings_version": 1,
+        "model_path": "",
+        "zip_path": "",
+        "height": 760,
+        "fps": 30,
+        "scale": 1.0,
+        "gaze_follow": true,
+        "idle_actions": true,
+        "idle_min_seconds": 10,
+        "idle_max_seconds": 24,
+        "chatter": true,
+        "chatter_min_minutes": 4,
+        "chatter_max_minutes": 9,
+        "reactions": true,
+        "persona": true,
+        "rich_actions": true,
+        "show_credit_on_first_run": true
+      },
+      "bundled": false,
+      "featured": true,
+      "file": "plugins/lfelkeea.deepseek_chan-1.0.1.zip",
+      "size": 24504,
+      "sha256": "3d5d81920235c4ab75f332c2645a2299975cd4da70b598dfa91e899cbf77befa"
     },
     {
       "id": "lfelkeea.qq_inspiration",

@@ -31,6 +31,8 @@ COMMUNITY = SITE / "community_plugins.json"
 PERMISSION_LABELS = {
     "pet.say": "说话",
     "pet.action": "动作",
+    "pet.model": "Live2D 模型",
+    "pet.persona": "人格与台词",
     "ai.chat": "AI 对话",
     "chat.context": "聊天上下文",
     "screen.capture": "截屏",
@@ -44,6 +46,7 @@ EXCLUDED_PARTS = {"__pycache__", ".state"}
 EXCLUDED_SUFFIXES = {".pyc", ".pyo", ".log"}
 
 FEATURED = {
+    "lfelkeea.deepseek_chan",
     "lfelkeea.alive_core",
     "lfelkeea.focus_guard",
     "lfelkeea.qq_bridge",
