@@ -21,5 +21,5 @@ for rel, path in files:
         raise SystemExit(f"{rel} 过大：{size}")
     print("upload", rel, size)
 
-br.upload_tree(gh, full, "gh-pages", files, "deploy: Mod Agent 0.3.12", base_tree=True)
+br.upload_tree(gh, full, "gh-pages", files, "deploy: Mod Agent 1.3.1", base_tree=True)
 print("done", full)

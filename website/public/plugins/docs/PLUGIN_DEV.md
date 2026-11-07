@@ -167,6 +167,94 @@ api.action("hop")   # hop / spin / stretch / shake / lean / nod
 - 权限：`pet.action`
 - 未知动作会抛错。
 
+### 5.3.1 替换桌宠模型（Live2D）
+
+```python
+# 1. 加载模型；路径指向 .model3.json
+api.model.load(r"D:\models\DeepSeek\大肥鱼.model3.json", height=720, fps=30)
+
+# 2. 自定义动作片段：每帧按参数名插值
+api.model.define_clips({
+    "wave": {
+        "duration": 1.6,
+        "loop": False,
+        "keys": [
+            {"t": 0.0, "params": {"Movement1": 0.0}},
+            {"t": 0.5, "params": {"Movement1": 1.0}},
+            {"t": 1.1, "params": {"Movement1": 0.0}},
+        ],
+    },
+})
+
+# 3. 表情：和片段一样是参数集合，fade 控制淡入
+api.model.define_expressions({
+    "blush": {"keys": [{"t": 0, "params": {"key7": 1.0}}]},
+})
+
+api.model.play("wave", fade=0.15)
+api.model.expression("blush", fade=0.25, hold=3.0)
+api.model.gaze(0.4, -0.2)          # -1..1 的归一化注视方向
+api.model.talk(True)               # 说话时口型
+api.model.sleep(True)
+api.model.params({"ParamAngleZ": 6.0})
+api.model.unload()
+```
+
+- 权限：`pet.model`
+- `load()` 是异步的，返回时渲染线程刚启动；画面通过桌宠主窗口显示，插件不需要自己处理帧。
+- `define_clips()` / `define_expressions()` 的参数格式一致：`{"duration": 秒, "loop": 布尔, "keys": [{"t": 秒, "params": {参数名: 值}}]}`。
+- `play()` 可叠加多个片段；`weight` 控制混合比例，`fade` 控制淡入秒数。
+- 模型文件只在本机读取，不会上传；插件不要把模型文件打进分发包。
+- 运行库随桌宠一起分发（`vendor/`），没有安装 live2d-py 也能用；`api.model.available` 可用来判断。
+
+#### 替换右键「动作」菜单
+
+模型启用后，可以用插件自己的动作和表情替换桌宠自带的「动作」子菜单：
+
+```python
+api.model.set_action_menu([
+    {"title": "常用", "items": [
+        {"label": "挥手", "callback": lambda: api.model.play("wave")},
+        {"label": "点头", "callback": lambda: api.model.play("nod")},
+    ]},
+    {"title": "表情", "items": [
+        {"label": "脸红", "callback": lambda: api.model.expression("blush", hold=3.0)},
+        {"label": "恢复默认表情", "callback": api.model.clear_expression},
+    ]},
+])
+
+# 停止插件时恢复小猫菜单
+api.model.clear_action_menu()
+```
+
+- 权限：`pet.model` + `pet.action`
+- 每个分组渲染成二级菜单；`title` 为空则直接铺在「动作」下面。
+- 回调在桌宠主线程执行，异常会被吞掉，不会破坏菜单。
+- 模型卸载或插件停止后菜单自动恢复内置动作；不同插件按 `owner` 隔离，后来的接管者生效。
+- `set_action_menu()` 需要桌宠 1.4.1 或更新版本；旧版本调用会抛错，可以用 `getattr(api.model, "set_action_menu", None)` 做兼容。
+
+### 5.3.2 替换内置台词
+
+```python
+LINES = {
+    "idle": ["嗯……今天也一起加油吧。"],
+    "pat": ["别摸角，会痒。"],
+    "poke": ["戳我干嘛，数据都被你戳歪了。"],
+    "sleep": ["我先待机一会儿……"],
+    "wake": ["唔，醒了。"],
+    "drag": ["哎哎，轻点轻点。"],
+    "chat_open": ["想聊什么？"],
+    "action:hop": ["跳一下。"],
+}
+
+api.set_lines(lambda kind, choices: random.choice(LINES.get(kind, ())))
+```
+
+- 权限：`pet.persona`
+- `kind` 取值：`idle`、`pat`、`poke`、`sleep`、`wake`、`drag`、`chat_open`、`action:hop`/`action:nod` 等。
+- 回调返回空字符串时回退到桌宠原台词。插件卸载时自动恢复。
+- 多个插件同时设置时，后设置的生效；先设置的插件卸载不会影响后来的。
+
 ### 5.4 调用 AI
 
 ```python
@@ -337,7 +425,9 @@ api.log("定时器已启动")
 | 权限 | 允许的接口 |
 | --- | --- |
 | `pet.say` | `api.say()` |
-| `pet.action` | `api.action()` |
+| `pet.action` | `api.action()` / `api.model.set_action_menu()` / `api.model.clear_action_menu()` |
+| `pet.model` | `api.model.*`（加载模型、动作、表情、注视、口型） |
+| `pet.persona` | `api.set_lines()` / `api.clear_lines()` |
 | `ai.chat` | `api.chat()` |
 | `screen.capture` | `api.capture_screen()` |
 | `timer` | `api.every()` / `api.after()` |

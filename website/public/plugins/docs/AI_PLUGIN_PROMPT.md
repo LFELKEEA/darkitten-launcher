@@ -56,7 +56,7 @@
 - `id` 只能用小写字母、数字、点、下划线、短横线，2–64 位，且不要和内置示例重复。
 - `api_version` 必须是 `1`。
 - `permissions` 只写真正需要的权限，可选值：
-  `pet.say`、`pet.action`、`ai.chat`、`screen.capture`、`timer`、`events`、`settings`、`storage`。
+  `pet.say`、`pet.action`、`pet.model`、`pet.persona`、`ai.chat`、`screen.capture`、`timer`、`events`、`settings`、`storage`。
 - `settings` 只放普通配置，不要放 API Key、密码、token。
 
 ### main.py 规范
