@@ -1,7 +1,7 @@
 {
   "updated": "2026-11-07",
   "api_version": 1,
-  "pet_version": "1.4.1",
+  "pet_version": "1.4.4",
   "plugins": [
     {
       "id": "lfelkeea.qq_bridge",
@@ -308,9 +308,9 @@
     {
       "id": "lfelkeea.deepseek_chan",
       "name": "深度求索娘（大肥鱼皮肤）",
-      "version": "1.0.3",
+      "version": "1.0.6",
       "author": "LFELKEEA",
-      "description": "把桌宠换成网络同人形象「深度求索娘」（蓝色大肥鱼）：Live2D 模型、38 套动作、22 个表情，右键「动作」菜单会换成这套皮肤自己的动作和表情，还有摸头/戳一戳/聊天反应、配套口癖和台词。也兼容任意 Live2D 模型：支持 .model3.json、模型文件夹和 zip / rar / 7z，会自动读取模型的参数、动作和表情。插件不附带模型文件；大肥鱼请到 B 站神宫凉子（UID 13737731）下载 DeepSeek免费公皮.zip。原画及拆分：神宫凉子，Live2D 建模：霓虹猫_NeonNeko。",
+      "description": "把桌宠换成网络同人形象「深度求索娘」（蓝色大肥鱼）：Live2D 模型、38 套动作、22 个表情，右键「动作」菜单会换成这套皮肤自己的动作和表情，还有摸头/戳一戳/聊天反应、配套口癖和台词。会自动按作者提供的水印开关隐藏模型自带水印；也兼容任意 Live2D 模型：支持 .model3.json、模型文件夹和 zip / rar / 7z，会自动读取模型的参数、动作和表情。插件不附带模型文件；大肥鱼请到 B 站神宫凉子（UID 13737731）下载 DeepSeek免费公皮.zip。原画及拆分：神宫凉子，Live2D 建模：霓虹猫_NeonNeko。",
       "api_version": 1,
       "permissions": [
         "pet.say",
@@ -343,9 +343,9 @@
         },
         {
           "name": "LFELKEEA 桌宠",
-          "version": ">= 1.4.1",
+          "version": ">= 1.4.3",
           "url": "https://lfelkeea.github.io/darkitten-launcher/",
-          "note": "1.4.0 起支持 Live2D 模型接口，1.4.1 起支持替换右键动作菜单。旧版仍可换模型，但右键菜单还是小猫的动作。"
+          "note": "1.4.0 起支持 Live2D 模型接口，1.4.1 起支持替换右键动作菜单；1.4.3 修复了子菜单动作点了没反应的问题。"
         }
       ],
       "highlights": [
@@ -398,13 +398,14 @@
         "reactions": true,
         "persona": true,
         "rich_actions": true,
-        "show_credit_on_first_run": true
+        "show_credit_on_first_run": true,
+        "hide_watermark": true
       },
       "bundled": false,
       "featured": true,
-      "file": "plugins/lfelkeea.deepseek_chan-1.0.3.zip",
-      "size": 35265,
-      "sha256": "5367d2657625b0c1f1bae9fb4661fdbcbf69d0190fe9c21f17dad2f862ef0a58"
+      "file": "plugins/lfelkeea.deepseek_chan-1.0.6.zip",
+      "size": 38204,
+      "sha256": "dc5c6dca4f7325745ae70ba3a8f3e2e98da020d4025fde437374172511ebecfe"
     },
     {
       "id": "lfelkeea.qq_inspiration",
