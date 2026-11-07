@@ -383,7 +383,6 @@
         }
       ],
       "settings": {
-        "settings_version": 2,
         "model_path": "",
         "zip_path": "",
         "height": 760,
@@ -404,8 +403,8 @@
       "bundled": false,
       "featured": true,
       "file": "plugins/lfelkeea.deepseek_chan-1.0.3.zip",
-      "size": 35273,
-      "sha256": "1cb69fe7af5279c301675a94ff444de3b1231efe5cc17adf1519bb0d2047b828"
+      "size": 35265,
+      "sha256": "5367d2657625b0c1f1bae9fb4661fdbcbf69d0190fe9c21f17dad2f862ef0a58"
     },
     {
       "id": "lfelkeea.qq_inspiration",
