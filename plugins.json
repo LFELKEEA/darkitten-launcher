@@ -308,7 +308,7 @@
     {
       "id": "lfelkeea.deepseek_chan",
       "name": "深度求索娘（大肥鱼皮肤）",
-      "version": "1.0.8",
+      "version": "1.0.9",
       "author": "LFELKEEA",
       "description": "把桌宠换成网络同人形象「深度求索娘」（蓝色大肥鱼）：Live2D 模型、38 套动作、22 个表情，右键「动作」菜单会换成这套皮肤自己的动作和表情，还有摸头/戳一戳/聊天反应、配套口癖和台词。会自动按作者提供的水印开关隐藏模型自带水印；也兼容任意 Live2D 模型：支持 .model3.json、模型文件夹和 zip / rar / 7z，会自动读取模型的参数、动作和表情。插件不附带模型文件；大肥鱼请到 B 站神宫凉子（UID 13737731）下载 DeepSeek免费公皮.zip。原画及拆分：神宫凉子，Live2D 建模：霓虹猫_NeonNeko。",
       "api_version": 1,
@@ -345,7 +345,7 @@
           "name": "LFELKEEA 桌宠",
           "version": ">= 1.4.3",
           "url": "https://lfelkeea.github.io/darkitten-launcher/",
-          "note": "1.4.0 起支持 Live2D 模型接口，1.4.1 起支持替换右键动作菜单；1.4.3 修复了子菜单动作点了没反应的问题。"
+          "note": "1.4.0 起支持 Live2D 模型接口，1.4.1 起支持替换右键动作菜单；1.4.5 修复了插件重载/重新扫描后桌宠模型消失的问题。"
         }
       ],
       "highlights": [
@@ -359,7 +359,7 @@
         },
         {
           "label": "动作",
-          "value": "38 个动作、22 个表情，挥手 / 思考 / 鼓脸 / 害羞 / 爱心眼 / 圈圈眼 / 长裙 / 变小 等；主动选择换装、手型和小道具会停在末帧姿势，待机自动播放只播一遍；关键帧加密采样，动作不再一卡一卡"
+          "value": "40 个动作、22 个表情，挥手 / 思考 / 鼓脸 / 害羞 / 爱心眼 / 圈圈眼 / 长裙 / 变小 等；换长裙和变小都有对应还原动作，菜单底部可整体还原默认动作/表情；主动选择换装、手型和小道具会停在末帧姿势，待机自动播放只播一遍；关键帧加密采样，动作不再一卡一卡"
         },
         {
           "label": "菜单",
@@ -403,9 +403,9 @@
       },
       "bundled": false,
       "featured": true,
-      "file": "plugins/lfelkeea.deepseek_chan-1.0.8.zip",
-      "size": 39551,
-      "sha256": "a5416a42e723a3815d76c25fd49828b905f8f1661dfa08b89202b64120e7da32"
+      "file": "plugins/lfelkeea.deepseek_chan-1.0.9.zip",
+      "size": 40467,
+      "sha256": "01619487e0cc49ece32987b97f9e0cdeef1cf8208bed734d85fe78e70e1367da"
     },
     {
       "id": "lfelkeea.qq_inspiration",
