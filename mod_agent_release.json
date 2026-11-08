@@ -1,18 +1,20 @@
 {
   "name": "Darkitten Mod Agent",
-  "version": "1.5.0",
+  "version": "2.0.0",
   "released": "2026-11-08",
-  "download_url": "https://github.com/LFELKEEA/darkitten-mod-agent/releases/download/mod-agent-v1.5.0/DarkittenModAgent-1.5.0.zip",
+  "download_url": "https://github.com/LFELKEEA/darkitten-mod-agent/releases/download/mod-agent-v2.0.0/DarkittenModAgent-2.0.0.zip",
   "page_url": "https://lfelkeea.github.io/darkitten-launcher/",
-  "sha256": "2908bf9194dab5dd65fca444d516477eaa47edbccf7f3d63375a9929e072cbdb",
-  "size": 49083222,
+  "sha256": "fe947a5303051f2f9290eceedc8dbd67451e4d0681c5333383e1896d28923420",
+  "size": 56905659,
   "notes": [
-    "新增「快速生成」：一句话构思 → mod-spec.json / GDD.md → 注册代码、纹理、模型、语言、配方、战利品、世界生成与社交系统，支持任意主题、任意受支持版本。",
-    "规格驱动引擎已内置到工坊：Forge / NeoForge / Fabric 共用同一套规格，生成后可直接审计、编译、启动服务端验证和打包。",
-    "保留 Fabric / Forge / NeoForge / Architectury 多加载器能力：按工程加载器写代码、生成骨架、执行对应的编译与 GameTest 任务。",
-    "1.20.1 的 Forge / Fabric / NeoForge 新建即生成可编译骨架；Architectury 和其他版本由助手按官方模板生成并编译验证。",
-    "学习 yan-mc/minecraft-mod-dev 的自动化验证：Forge 1.20.1 启动真实开发服务端 / 客户端，AI 用回环探针读取状态、背包、方块、界面和截图。",
-    "补充场景卡片断言与 GameTest：其他加载器以编译结果、运行日志和 GameTest 为准，不伪造游戏内结果。",
-    "Gradle 缓存、发行版、NeoForm 数据和临时文件都改放到程序自己的 data 目录，不再默认写 C 盘用户目录；工程和配置也保存在 data 下。"
+    "2.0 内核接入：需求先落 ModSpec，再生成 DAG 任务图；骨架、功能、静态检查、编译、运行时验证、验收、打包按依赖顺序执行，失败会阻断下游。",
+    "验收门禁不再接受“编译通过就算完成”：必须同时具备编译、测试、运行时断言和静态检查证据；缺证据的任务只能标记 blocked。",
+    "mcdev_prepare 默认超时改为 900 秒，并且只有客户端真正进入世界（joined）才返回 ok=true；wait_join=false 不再谎报就绪。",
+    "新增 176 条静态检查规则（P0/P1/P2/P3/TOOL），覆盖符号索引、映射转译、Mixin、客户端、线程、网络、注册表、数据包、资产、Gradle、生态与版本。",
+    "edit_file 支持按 Class.method 替换方法体、按类插入成员；read_file 支持内容哈希与分段读取，未变化时直接跳过，CRLF 文件也能正确判断。",
+    "构建前自动快照，失败可回滚到最近成功快照；新增循环保护、影响分析、迁移前存档备份和离线缓存。",
+    "新增资产库、配置界面生成器、兼容矩阵 / GitHub Actions 工作流生成器、块模型等距预览；预览与纹理生成的 Pillow 依赖已随包提供。",
+    "保留 Forge / NeoForge / Fabric / Architectury 多加载器能力；Forge 1.20.1 仍可用真实开发端探针、场景卡片断言和 GameTest，其他加载器以编译、日志和 GameTest 为准。",
+    "Gradle 缓存、发行版、NeoForm 数据和临时文件继续放在程序自己的 data 目录，不默认写 C 盘用户目录。"
   ]
 }
