@@ -4,8 +4,8 @@
   "released": "2026-11-08",
   "download_url": "https://github.com/LFELKEEA/darkitten-mod-agent/releases/download/mod-agent-v1.5.0/DarkittenModAgent-1.5.0.zip",
   "page_url": "https://lfelkeea.github.io/darkitten-launcher/",
-  "sha256": "209fb23c70c89e42bb8e11ca745aa458c1d2a245c5fe8c84611fc8f1709350e6",
-  "size": 49082794,
+  "sha256": "2908bf9194dab5dd65fca444d516477eaa47edbccf7f3d63375a9929e072cbdb",
+  "size": 49083222,
   "notes": [
     "新增「快速生成」：一句话构思 → mod-spec.json / GDD.md → 注册代码、纹理、模型、语言、配方、战利品、世界生成与社交系统，支持任意主题、任意受支持版本。",
     "规格驱动引擎已内置到工坊：Forge / NeoForge / Fabric 共用同一套规格，生成后可直接审计、编译、启动服务端验证和打包。",
@@ -13,6 +13,6 @@
     "1.20.1 的 Forge / Fabric / NeoForge 新建即生成可编译骨架；Architectury 和其他版本由助手按官方模板生成并编译验证。",
     "学习 yan-mc/minecraft-mod-dev 的自动化验证：Forge 1.20.1 启动真实开发服务端 / 客户端，AI 用回环探针读取状态、背包、方块、界面和截图。",
     "补充场景卡片断言与 GameTest：其他加载器以编译结果、运行日志和 GameTest 为准，不伪造游戏内结果。",
-    "Gradle 缓存、发行版和 NeoForm 数据改放到程序自己的 data/gradle 目录，不再默认写 C 盘用户目录；工程和配置仍保存在 data 下。"
+    "Gradle 缓存、发行版、NeoForm 数据和临时文件都改放到程序自己的 data 目录，不再默认写 C 盘用户目录；工程和配置也保存在 data 下。"
   ]
 }
