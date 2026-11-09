@@ -4,8 +4,8 @@
   "released": "2026-11-09",
   "download_url": "downloads/DarkittenModAgent-2.0.2.zip",
   "page_url": "https://lfelkeea.github.io/darkitten-launcher/",
-  "sha256": "a926f7b40ad3f44b95c4a63ab282c23d7ff5dd560f5d35f5c94fdc83e5819257",
-  "size": 57006589,
+  "sha256": "c99054abfaf2391e837319f1878648d042767bb326de358bf7e6d332c5288630",
+  "size": 57007626,
   "notes": [
     "修复工程路径含空格时 Gradle 命令被截断：构建、启动开发端、GameTest、反编译统一用 cmd /d /s /c 传递完整命令行，D:\\Darkitten Launcher\\... 这类目录不再报“'D:\\Darkitten' 不是内部或外部命令”。",
     "修复 NeoGradle / ModDevGradle 工程不走镜像：插件在运行时才添加 maven.neoforged.net，构建脚本里扫不到地址；现在每次构建都探测官方仓库，连不上就自动启用本地镜像代理。",
