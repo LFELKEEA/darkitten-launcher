@@ -1,0 +1,11 @@
+blank_issues_enabled: true
+contact_links:
+  - name: 投稿桌宠插件（推荐）
+    url: https://lfelkeea.github.io/darkitten-launcher/submit-plugin.html
+    about: 网站会先在浏览器里检查 ZIP 和 plugin.json，再生成带 plugin-submission 标签的 Issue 正文。
+  - name: 查看审核队列
+    url: https://lfelkeea.github.io/darkitten-launcher/plugin-review.html
+    about: 查看投稿的自动校验结果和发布状态，不会执行任何插件代码。
+  - name: 插件开发文档
+    url: https://lfelkeea.github.io/darkitten-launcher/plugins/docs/PLUGIN_DEV.md
+    about: 插件 API v1、manifest 字段、权限和目录结构。
