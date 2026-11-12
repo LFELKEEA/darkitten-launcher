@@ -1,12 +1,14 @@
 {
   "name": "Darkitten Mod Agent",
-  "version": "3.0.1",
+  "version": "3.0.2",
   "released": "2026-11-12",
-  "download_url": "https://github.com/LFELKEEA/darkitten-mod-agent/releases/download/mod-agent-v3.0.1/DarkittenModAgent-3.0.1.zip",
+  "download_url": "https://github.com/LFELKEEA/darkitten-mod-agent/releases/download/mod-agent-v3.0.2/DarkittenModAgent-3.0.2.zip",
   "page_url": "https://lfelkeea.github.io/darkitten-launcher/",
-  "sha256": "81663500f0dc8450f75dfa2315fac20a8fea3878680e47dee8163895f0d8236b",
-  "size": 61132065,
+  "sha256": "35b0c6af1fc1ec755f2b03e25b7373b440cabce2106d07f8366b141e613341b2",
+  "size": 61145324,
   "notes": [
+    "新增 Fabric 1.21.1 内置骨架（对称 NeoForge 1.21.1）：Fabric 1.21.1 工程不再因为没有内置模板而被迫手写构建脚本，loom 1.9 + Java 21 + yarn 1.21.1 生成即用。",
+    "修复“做模组反复卡死在下载 Gradle”：构建前自动检查并修复 gradle-wrapper 三件套——gradle-wrapper.jar 被写成占位文本（ClassNotFoundException: GradleWrapperMain）或 distributionUrl 带反斜杠时，直接重写为正确的 wrapper（保留原 Gradle 版本），模型手写的坏 wrapper 不再导致无限重试。",
     "修复“做模组依赖下载全崩”：启动/编译开发端时不再无条件注入 Windows-ROOT 证书信任（JDK 17 读 Windows 证书存储会报 KeyStoreException error 5，SSL 初始化即崩）。现在默认不注入，界面设置里“Gradle 使用 Windows 证书”开关真正生效。",
     "修复“无法停止”：停止构建或停止开发端时，除了杀 gradlew 进程树，现在还会执行 gradlew --stop 停掉后台常驻的 Gradle daemon，不再残留多个 java.exe 继续烧 CPU / 下载。",
     "Agent 规模升级：默认步数 32→128（上限 4000）、上下文轮数 32→128（上限 600）、模型输出 8192→16384 tokens、历史预算 12 万→60 万字符、消息预算 48 万→200 万字符，老配置自动升级且保留用户自定义值，大型模组不再因“达到工具调用轮数上限”卡壳。",
