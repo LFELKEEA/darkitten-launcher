@@ -42,6 +42,7 @@ EXCLUDED_PARTS = {
     "servers",
     "rooms",
     "runtime",
+    "pyruntime",
     "skins",
     "test_game",
     "updates",
@@ -618,7 +619,13 @@ def build(source: Path, version: str, deploy: bool, repo: str) -> int:
 
     update_entries: list[tuple[Path, str]] = []
     update_root = f"DKL-{version}"
-    for name in ("app.py", "requirements.txt", "launch.bat", "启动.bat"):
+    for name in (
+        "app.py",
+        "requirements.txt",
+        "launch.bat",
+        "启动.bat",
+        "bootstrap_runtime.ps1",
+    ):
         path = source / name
         if path.is_file():
             update_entries.append((path, f"{update_root}/{name}"))

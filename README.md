@@ -1,6 +1,6 @@
 # Darkitten Launcher
 
-Minecraft 启动器 + 下载站源码。当前版本 `1.11.10`。
+Minecraft 启动器 + 下载站源码。当前版本 `1.11.11`。
 
 - 下载站：https://lfelkeea.github.io/darkitten-launcher/
 - 更新清单：[`update.json`](website/public/update.json)
@@ -21,6 +21,10 @@ qa/                     # 自动化测试与截图脚本（不随发布包分发
 ```
 
 ## 本地运行
+
+双击 `launch.bat` / `启动.bat`。如果本机没有 Python + PySide6，脚本会通过 `bootstrap_runtime.ps1` 自动下载 Python 3.12.10 嵌入式运行时和 PySide6-Essentials 6.12.0 到程序目录的 `pyruntime/`，首次约 150 MB，之后直接启动。
+
+手动运行：
 
 ```bash
 pip install -r requirements.txt

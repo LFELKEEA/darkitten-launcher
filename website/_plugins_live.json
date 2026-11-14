@@ -1,0 +1,638 @@
+{
+  "updated": "2026-11-07",
+  "api_version": 1,
+  "pet_version": "1.4.4",
+  "plugins": [
+    {
+      "id": "lfelkeea.qq_bridge",
+      "name": "QQ 桥接（SnowLuma）",
+      "version": "1.8.0",
+      "author": "LFELKEEA",
+      "description": "通过 SnowLuma 把 QQ 私聊和群聊接进桌宠：可视化设置面板、人格卡、长期记忆、黑话库、可加备注的白名单、盯人即时回复、习惯化回复、收藏表情、QQ 空间与评论自动回复、SnowLuma 自动启停、聊天图片识别，以及 Windows 本地语音 / GPT-SoVITS 自定义音色的 TTS 语音回复。1.6.0 起 GPT-SoVITS 也能自动探测安装目录、后台无窗口启动，并在设置面板里切换参考音色。1.7.0 起可以接入「活人感内核」：回复会带上她当前的状态、最近的自我认识和按话题召回的记忆，聊天也会写回内核，成为下一次重逢的素材；1.8.0 起提示词进一步接入身份核心、工作记忆、能力边界和隐私规则，群聊默认不召回私聊内容，消息按 message_id 幂等写回，避免重复记账；没安装内核时完全按原来的逻辑工作。",
+      "api_version": 1,
+      "permissions": [
+        "pet.say",
+        "ai.chat",
+        "timer",
+        "settings"
+      ],
+      "permission_labels": [
+        "说话",
+        "AI 对话",
+        "定时器",
+        "设置"
+      ],
+      "requires": [
+        {
+          "name": "SnowLuma",
+          "version": ">=2.2.1",
+          "url": "https://github.com/SnowLuma/SnowLuma/releases",
+          "note": "本地运行并扫码登录 QQ；插件通过 OneBot 11 HTTP 连接。"
+        },
+        {
+          "name": "桌宠 LFELKEEA",
+          "version": ">=1.1.1",
+          "url": "https://github.com/LFELKEEA/darkitten-launcher/releases",
+          "note": "1.1.1 起支持插件自带设置面板；旧版本没有“设置”按钮。"
+        }
+      ],
+      "highlights": [
+        {
+          "label": "配置方式",
+          "value": "可视化面板"
+        },
+        {
+          "label": "连接方式",
+          "value": "OneBot 11 HTTP"
+        },
+        {
+          "label": "人格与记忆",
+          "value": "本地保存"
+        },
+        {
+          "label": "活人感内核",
+          "value": "身份 + 状态 + 记忆 + 边界（可选）"
+        },
+        {
+          "label": "外发范围",
+          "value": "白名单"
+        },
+        {
+          "label": "进程管理",
+          "value": "随插件自动启停"
+        },
+        {
+          "label": "图片消息",
+          "value": "视觉 + OCR 兜底"
+        },
+        {
+          "label": "语音消息",
+          "value": "TTS / 音色可切换"
+        },
+        {
+          "label": "盯人",
+          "value": "私聊或白名单群即时回复"
+        },
+        {
+          "label": "QQ 空间",
+          "value": "新评论自动回复"
+        },
+        {
+          "label": "收藏表情",
+          "value": "按概率自动发送"
+        }
+      ],
+      "settings": {
+        "snowluma_http": "http://127.0.0.1:3000",
+        "http_port": 8766,
+        "owner_qq": "",
+        "allow_private": [],
+        "allow_groups": [],
+        "allow_notes": {},
+        "watch_users": [],
+        "qzone_enabled": false,
+        "qzone_auto_reply": false,
+        "qzone_reply_interval": 10,
+        "qzone_reply_max": 3,
+        "group_trigger": "at",
+        "memory_enabled": true,
+        "slang_enabled": true,
+        "habit_enabled": true,
+        "auto_face": true,
+        "local_echo": false,
+        "announce": false,
+        "access_token": "",
+        "http_host": "127.0.0.1",
+        "event_path": "/onebot",
+        "event_secret": "",
+        "bot_name": "小猫",
+        "command_prefix": "/",
+        "reply_chance": 0.15,
+        "max_replies_per_minute": 6,
+        "max_reply_chars": 300,
+        "face_ids": [
+          "14",
+          "13",
+          "178",
+          "179"
+        ],
+        "sticker_paths": [],
+        "face_probability": 0.03,
+        "sticker_probability": 0.03,
+        "memory_interval_minutes": 30,
+        "memory_min_batch": 8,
+        "memory_batch_size": 40,
+        "memory_max_items": 80,
+        "slang_max_terms": 200,
+        "qzone_permission": "friends",
+        "qzone_target_uins": [],
+        "auto_start_snowluma": true,
+        "snowluma_dir": "",
+        "vision_enabled": true,
+        "tts_engine": "windows",
+        "tts_windows_voice": "",
+        "tts_rate": 0,
+        "tts_volume": 100,
+        "tts_gpt_sovits_url": "http://127.0.0.1:9880",
+        "tts_sovits_dir": "",
+        "tts_auto_start": true,
+        "tts_ref_audio": "",
+        "tts_prompt_text": "",
+        "tts_prompt_lang": "zh",
+        "tts_text_lang": "zh",
+        "tts_speed": 1.0,
+        "tts_reply_enabled": false,
+        "tts_reply_probability": 0.08,
+        "tts_max_chars": 120,
+        "custom_face_enabled": false,
+        "custom_face_probability": 0.05,
+        "custom_face_ids": [],
+        "alive_enabled": true,
+        "alive_recall": 5,
+        "alive_report": true
+      },
+      "bundled": false,
+      "featured": true,
+      "file": "plugins/lfelkeea.qq_bridge-1.8.0.zip",
+      "size": 104988,
+      "sha256": "3afaed7440e17e4f72589aa6f6548b5bcc2740922c668dc491a06a5db86cb864"
+    },
+    {
+      "id": "lfelkeea.focus_guard",
+      "name": "专注时间",
+      "version": "1.0.0",
+      "author": "LFELKEEA",
+      "description": "专注 50 分钟、休息 5 分钟的循环提醒；结束时让桌宠提醒你站起来活动。",
+      "api_version": 1,
+      "permissions": [
+        "pet.say",
+        "pet.action",
+        "timer",
+        "settings",
+        "storage"
+      ],
+      "permission_labels": [
+        "说话",
+        "动作",
+        "定时器",
+        "设置",
+        "本地存储"
+      ],
+      "requires": [],
+      "highlights": [],
+      "settings": {
+        "focus_minutes": 50,
+        "break_minutes": 5
+      },
+      "bundled": false,
+      "featured": true,
+      "file": "plugins/lfelkeea.focus_guard-1.0.0.zip",
+      "size": 2644,
+      "sha256": "ea7e3339bea04d09360c0c6990ba8c9a26f963e6d2c27137749d0c7caf9ed2f9"
+    },
+    {
+      "id": "lfelkeea.alive_core",
+      "name": "活人感内核（姐妹人格与记忆）",
+      "version": "2.1.3",
+      "author": "LFELKEEA",
+      "description": "按《姐妹人格与记忆系统》实现的活人感内核：身份、长期记忆 v2、工作记忆、功能状态、节律与有界探索。2.1 起高把握记忆自动沉淀，`## 可成长` 会自己更新和淡出；说话规则按“看不出是 AI 写的”重写，并在回复时清理明显的 AI 套话；可成长段默认保留 60 条、每条最长 160 字（总 6000 字），超出才淡出；身份历史默认只留 10 个版本。",
+      "api_version": 1,
+      "permissions": [
+        "pet.say",
+        "pet.action",
+        "ai.chat",
+        "timer",
+        "events",
+        "settings",
+        "chat.context"
+      ],
+      "permission_labels": [
+        "说话",
+        "动作",
+        "AI 对话",
+        "定时器",
+        "事件",
+        "设置",
+        "聊天上下文"
+      ],
+      "requires": [],
+      "highlights": [
+        {
+          "label": "身份层",
+          "value": "core 不可自改 + 可成长段自更新"
+        },
+        {
+          "label": "说话",
+          "value": "去 AI 腔 + 长短不一 + 回复清理套话"
+        },
+        {
+          "label": "长期记忆",
+          "value": "证据 / 来源等级 / 派生链"
+        },
+        {
+          "label": "工作记忆",
+          "value": "刚才聊到哪、还没弄明白什么"
+        },
+        {
+          "label": "遗忘",
+          "value": "曲线衰减 + 复述加固"
+        },
+        {
+          "label": "更正与删除",
+          "value": "旧版保留、墓碑、可审计"
+        },
+        {
+          "label": "候选审核",
+          "value": "高把握自动记下，低把握才问"
+        },
+        {
+          "label": "历史",
+          "value": "有上限，可单个删除或清空"
+        },
+        {
+          "label": "桌宠接入",
+          "value": "聊天 / 语音 / 屏幕统一注入"
+        },
+        {
+          "label": "QQ 接入",
+          "value": "私聊与群聊共用身份和记忆"
+        },
+        {
+          "label": "边界",
+          "value": "情绪和记忆不产生权限"
+        }
+      ],
+      "settings": {
+        "settings_version": 4,
+        "enabled": true,
+        "name": "喵呜",
+        "quiet_start": "23:30",
+        "quiet_end": "07:30",
+        "quiet_screen": false,
+        "screen_note": true,
+        "pet_reactions": true,
+        "proactive_enabled": true,
+        "proactive_per_day": 3,
+        "proactive_min_minutes": 60,
+        "consolidate_enabled": true,
+        "consolidate_ai": true,
+        "consolidate_minutes": 30,
+        "consolidate_batch": 30,
+        "share_with_qq": true,
+        "recall_limit": 6,
+        "recall_chars": 420,
+        "context_injection": true,
+        "working_memory": true,
+        "candidate_review": false,
+        "auto_adopt": true,
+        "adopt_confidence": 0.6,
+        "auto_growth": true,
+        "growth_minutes": 180,
+        "growth_confidence": 0.6,
+        "history_keep": 10,
+        "backup_keep": 10,
+        "group_private_recall": false,
+        "max_context_chars": 3200,
+        "explore_per_day": 3,
+        "explore_minutes": 5,
+        "explore_sources": 3,
+        "natural_voice": true,
+        "growth_keep": 60
+      },
+      "bundled": false,
+      "featured": true,
+      "file": "plugins/lfelkeea.alive_core-2.1.3.zip",
+      "size": 70940,
+      "sha256": "c3e19f837539b7cc51e9aa4011ae44751f3db3bfedab3f4870432154f72be16c"
+    },
+    {
+      "id": "lfelkeea.deepseek_chan",
+      "name": "深度求索娘（大肥鱼皮肤）",
+      "version": "1.0.9",
+      "author": "LFELKEEA",
+      "description": "把桌宠换成网络同人形象「深度求索娘」（蓝色大肥鱼）：Live2D 模型、38 套动作、22 个表情，右键「动作」菜单会换成这套皮肤自己的动作和表情，还有摸头/戳一戳/聊天反应、配套口癖和台词。会自动按作者提供的水印开关隐藏模型自带水印；也兼容任意 Live2D 模型：支持 .model3.json、模型文件夹和 zip / rar / 7z，会自动读取模型的参数、动作和表情。插件不附带模型文件；大肥鱼请到 B 站神宫凉子（UID 13737731）下载 DeepSeek免费公皮.zip。原画及拆分：神宫凉子，Live2D 建模：霓虹猫_NeonNeko。",
+      "api_version": 1,
+      "permissions": [
+        "pet.say",
+        "pet.action",
+        "pet.model",
+        "pet.persona",
+        "timer",
+        "events",
+        "settings",
+        "storage",
+        "chat.context"
+      ],
+      "permission_labels": [
+        "说话",
+        "动作",
+        "Live2D 模型",
+        "人格与台词",
+        "定时器",
+        "事件",
+        "设置",
+        "本地存储",
+        "聊天上下文"
+      ],
+      "requires": [
+        {
+          "name": "Live2D 模型",
+          "version": "",
+          "url": "https://space.bilibili.com/13737731",
+          "note": "插件不带模型。默认优先找 DeepSeek免费公皮.zip（B 站神宫凉子，UID 13737731）；也可以把任意 Live2D 模型文件夹或 zip / rar / 7z 放到 D:\\模型，或在插件设置里手动选择。"
+        },
+        {
+          "name": "LFELKEEA 桌宠",
+          "version": ">= 1.4.3",
+          "url": "https://lfelkeea.github.io/darkitten-launcher/",
+          "note": "1.4.0 起支持 Live2D 模型接口，1.4.1 起支持替换右键动作菜单；1.4.5 修复了插件重载/重新扫描后桌宠模型消失的问题。"
+        }
+      ],
+      "highlights": [
+        {
+          "label": "模型",
+          "value": "Live2D 大肥鱼，透明背景实时渲染"
+        },
+        {
+          "label": "兼容",
+          "value": "也支持任意 Live2D 模型：.model3.json / 文件夹 / zip / rar / 7z，自动读取模型的参数、动作和表情"
+        },
+        {
+          "label": "动作",
+          "value": "40 个动作、22 个表情，挥手 / 思考 / 鼓脸 / 害羞 / 爱心眼 / 圈圈眼 / 长裙 / 变小 等；换长裙和变小都有对应还原动作，菜单底部可整体还原默认动作/表情；主动选择换装、手型和小道具会停在末帧姿势，待机自动播放只播一遍；关键帧加密采样，动作不再一卡一卡"
+        },
+        {
+          "label": "菜单",
+          "value": "模型启用后，右键「动作」换成这套皮肤的分组动作与表情，卸载后自动恢复"
+        },
+        {
+          "label": "反应",
+          "value": "摸头脸红、戳一戳＞＜、聊天按内容变表情"
+        },
+        {
+          "label": "说话",
+          "value": "慢半拍、嘴硬、技术问题突然认真"
+        },
+        {
+          "label": "台词",
+          "value": "替换桌宠内置闲聊 / 摸头 / 动作台词"
+        },
+        {
+          "label": "隐私",
+          "value": "模型只在本机加载，不上传"
+        }
+      ],
+      "settings": {
+        "model_path": "",
+        "zip_path": "",
+        "height": 760,
+        "fps": 60,
+        "scale": 1.0,
+        "gaze_follow": true,
+        "idle_actions": true,
+        "idle_min_seconds": 10,
+        "idle_max_seconds": 24,
+        "chatter": true,
+        "chatter_min_minutes": 4,
+        "chatter_max_minutes": 9,
+        "reactions": true,
+        "persona": true,
+        "rich_actions": true,
+        "show_credit_on_first_run": true,
+        "hide_watermark": true
+      },
+      "bundled": false,
+      "featured": true,
+      "file": "plugins/lfelkeea.deepseek_chan-1.0.9.zip",
+      "size": 40467,
+      "sha256": "01619487e0cc49ece32987b97f9e0cdeef1cf8208bed734d85fe78e70e1367da"
+    },
+    {
+      "id": "lfelkeea.qq_inspiration",
+      "name": "灵感获取（QQ桥接 / 桌宠对话）",
+      "version": "1.1.2",
+      "author": "LFELKEEA",
+      "description": "从 QQ 桥接记忆、桌宠对话和聊天里的黑话梗中提炼可做插件的灵感，也可以直接让 AI 按主题生成新点子；支持一键删除、Ctrl/Shift 多选批量删除，灵感存在本地，可一键复制到自开发工坊。",
+      "api_version": 1,
+      "permissions": [
+        "pet.say",
+        "ai.chat",
+        "events",
+        "settings",
+        "storage"
+      ],
+      "permission_labels": [
+        "说话",
+        "AI 对话",
+        "事件",
+        "设置",
+        "本地存储"
+      ],
+      "requires": [],
+      "highlights": [
+        {
+          "label": "来源",
+          "value": "QQ 桥接 / 桌宠对话 / 黑话 / AI 生成"
+        },
+        {
+          "label": "提炼",
+          "value": "记忆与对话转成插件点子"
+        },
+        {
+          "label": "黑话",
+          "value": "从群聊梗和圈内用语找点子"
+        },
+        {
+          "label": "生成",
+          "value": "给个主题就出新灵感"
+        },
+        {
+          "label": "导入",
+          "value": "粘贴聊天记录也能用"
+        },
+        {
+          "label": "隐私",
+          "value": "只读记忆，跳过配置与密钥"
+        },
+        {
+          "label": "整理",
+          "value": "一键删除、多选批量删除"
+        },
+        {
+          "label": "工坊",
+          "value": "一键复制到自开发工坊"
+        }
+      ],
+      "settings": {
+        "capture_pet_chat": true,
+        "max_memories_per_batch": 12,
+        "max_pet_items_per_batch": 6,
+        "max_items_per_run": 120
+      },
+      "bundled": false,
+      "featured": true,
+      "file": "plugins/lfelkeea.qq_inspiration-1.1.2.zip",
+      "size": 19736,
+      "sha256": "74e16e971a40a00401f78cefe8ba15f19a75777a0cdd03e72b877f51b9ccf5e3"
+    },
+    {
+      "id": "lfelkeea.self_dev",
+      "name": "自开发工坊（Agent 工具链）",
+      "version": "1.6.5",
+      "author": "LFELKEEA",
+      "description": "让桌宠拥有一套会积累的编程工具：在专属开发区里读文件、改代码、跑命令、查语法，还能用技能沉淀做法、用本地知识库检索旧结论、用连接器接入 HTTP API 和 MCP 服务器。技能和连接器改成开关式管理，不用删除就能停用，默认全部关闭；插件自带 45 个技能和 43 个连接器，开发专区按编程核心、文档与创作、API 专用、HTTP 连接器、MCP 连接器分成五组，支持一键开启推荐套装或全部开启。连接器里的旧式双花括号环境变量占位符会在加载时自动迁移成 ${ENV_NAME}，避免请求头把变量名当成令牌原样发出去。GitHub 访问拆成两条通道：github-public 浏览别人的公开仓库、issue、PR 和文件，只读且不需要令牌；github 操作自己的仓库，支持私有仓库和写操作，才需要 GITHUB_PAT。MCP Git 使用 uvx 启动固定版本的 mcp-server-git，默认操作当前工作区，需要 uv/uvx；依赖检查会重新读取注册表 PATH，启动后新装的 uv 不用重启桌宠也能识别，并会跳过缺少 uv 的旧 uvx 包装器。这些条目除了 GitHub、飞书、Notion、SearXNG、只读 SQL 网关、Context7、Playwright、Blender 和常用 MCP，也把日常在用的 Word/PDF/Excel/PPT 处理、长文写作、知识库、draw.io、技术图表、图像生成、联网调研、本地文件搜索和自然化写作收了进来，还补了 OpenAI 兼容 API、Tavily、arXiv、Crossref、OpenAlex、维基百科。启用后可以先做依赖体检：检查缺少哪些环境变量、启动命令或下载资源；环境变量可在「环境与依赖」里本机保存，只显示状态不回传明文；MCP 的 npm/PyPI 包、Playwright 浏览器和技能声明的资源可以在确认后预下载。代理需要用到关闭的条目时，会说明理由并弹窗申请打开。缺技能时会自己上 GitHub 搜索、浏览仓库目录并安装回来，缺连接器时会找 MCP 服务器、读 README、推断 npx/uvx 启动命令后保存，不熟悉的库或报错也会主动搜索网页、GitHub 和 PyPI。成果可以直接做成新的桌宠插件安装到插件目录；不再限制步数和输出长度，可以一直做到任务完成。改动会自动记录基线，一键就能还原到最初状态；做好的插件还能导出成 ZIP 分享或投稿。工作台会实时展示每一步调用，危险操作默认要主人点头；所有路径都相对于开发区，换一台电脑、换一个安装目录也能直接用。知识库和网页搜索不依赖 SQLite 或 XML 解析器，打包版桌宠也能直接运行。",
+      "api_version": 1,
+      "permissions": [
+        "pet.say",
+        "pet.action",
+        "settings",
+        "storage"
+      ],
+      "permission_labels": [
+        "说话",
+        "动作",
+        "设置",
+        "本地存储"
+      ],
+      "requires": [],
+      "highlights": [
+        {
+          "label": "开发专区",
+          "value": "五组一键开启"
+        },
+        {
+          "label": "内置目录",
+          "value": "45 技能 / 43 连接器"
+        },
+        {
+          "label": "开关",
+          "value": "勾选即用，默认关闭"
+        },
+        {
+          "label": "依赖",
+          "value": "环境变量 + 资源预下载"
+        },
+        {
+          "label": "申请启用",
+          "value": "缺能力时先问主人"
+        },
+        {
+          "label": "技能",
+          "value": "编程 / 文档 / 写作 / 3D"
+        },
+        {
+          "label": "在线扩展",
+          "value": "自己找技能 / MCP"
+        },
+        {
+          "label": "知识库",
+          "value": "本地检索 + 引用"
+        },
+        {
+          "label": "连接器",
+          "value": "HTTP API / MCP"
+        },
+        {
+          "label": "联网",
+          "value": "搜网页 / GitHub / PyPI"
+        },
+        {
+          "label": "流程",
+          "value": "不限步数，做到完成"
+        },
+        {
+          "label": "产物",
+          "value": "直接生成可启用插件"
+        },
+        {
+          "label": "安全",
+          "value": "目录沙箱 + 密钥打码"
+        },
+        {
+          "label": "审批",
+          "value": "命令、连接器、删除需确认"
+        },
+        {
+          "label": "还原",
+          "value": "一键退回初始状态"
+        },
+        {
+          "label": "可移植",
+          "value": "不带本机路径和密钥"
+        }
+      ],
+      "settings": {
+        "approval_mode": "confirm_danger",
+        "shell_mode": "auto",
+        "temperature": 0.3,
+        "allow_network": true,
+        "allow_private_network": false,
+        "allow_connectors": true,
+        "allow_self_modify": false,
+        "auto_enable_plugin": true,
+        "auto_learn": true,
+        "notify_on_finish": true,
+        "model_override": "",
+        "workspace_dir": ""
+      },
+      "bundled": false,
+      "featured": true,
+      "file": "plugins/lfelkeea.self_dev-1.6.5.zip",
+      "size": 165916,
+      "sha256": "43e976ac27b0a8966afa7b6dfce46d821ac122a9e4443f27c9802179394f9be3"
+    },
+    {
+      "id": "example.hello",
+      "name": "示例：定时问候",
+      "version": "1.0.0",
+      "author": "LFELKEEA",
+      "description": "每隔一段时间说一句话，演示 say / every / settings / events 的用法。",
+      "api_version": 1,
+      "permissions": [
+        "pet.say",
+        "timer",
+        "events",
+        "settings"
+      ],
+      "permission_labels": [
+        "说话",
+        "定时器",
+        "事件",
+        "设置"
+      ],
+      "requires": [],
+      "highlights": [],
+      "settings": {
+        "interval_minutes": 10,
+        "message": ""
+      },
+      "bundled": true,
+      "featured": false,
+      "file": "plugins/example.hello-1.0.0.zip",
+      "size": 1483,
+      "sha256": "b906d6270302ccb0920cb00a53502ce0028b8569fc433f3ed647848f3680a3b6"
+    },
+    {
+      "id": "example.screen_note",
+      "name": "示例：屏幕观察补充",
+      "version": "1.0.0",
+      "author": "LFELKEEA",
+      "description": "在屏幕观察时补充一条上下文，让 LFELKEEA 更容易说对话题。",
+      "api_version": 1,
+      "permissions": [
+        "events"
+      ],
+      "permission_labels": [
+        "事件"
+      ],
+      "requires": [],
+      "highlights": [],
+      "settings": {},
+      "bundled": true,
+      "featured": false,
+      "file": "plugins/example.screen_note-1.0.0.zip",
+      "size": 1485,
+      "sha256": "f00edb0c640ba6d04fb3811f3d7bd9530167d9f42070b25eda0775078674f298"
+    }
+  ]
+}
