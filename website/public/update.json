@@ -19,16 +19,15 @@
   "source_txt_size": 2341724,
   "pet": {
     "name": "LFELKEEA 桌宠",
-    "version": "1.4.5",
-    "released": "2026-11-07",
-    "size": 138779342,
-    "sha256": "22302a836360db313350f1f6132f70c308245476a0019b6dd0b65cbbd749c078",
-    "download_url": "https://github.com/LFELKEEA/darkitten-launcher/releases/download/pet-v1.4.5/LFELKEEA-1.4.5.zip",
+    "version": "1.4.6",
+    "released": "2026-11-16",
+    "size": 64569599,
+    "sha256": "89758a7c1bcbffd809a8a90b8dcb591d2984fb7d939e111b2cc7f6f8d97833d6",
+    "download_url": "https://github.com/LFELKEEA/darkitten-launcher/releases/download/pet-v1.4.6/LFELKEEA-1.4.6.zip",
     "notes": [
-      "修复插件重载 / 重新扫描后桌宠消失：插件卸载时不再销毁 Live2D 渲染线程和 OpenGL 上下文，下一次加载复用同一套上下文重新建模型；同时修正首帧全透明时裁剪区被锁成整块方形画布的问题。",
-      "新增动作还原：配套插件增加「换回短裙」「变回原样」，以及菜单底部的「还原默认动作 / 还原默认表情」；换装、体型、手型和道具都能单独恢复。",
-      "兼容 1.4.4 的全部改进：贝塞尔动作关键帧解析、动作渲染边界、右键动作菜单、水印隐藏和物理稳定性保持兼容。",
-      "深度求索娘插件 1.0.9 使用本次修复；Live2D 模型仍不随桌宠或插件分发。大肥鱼模型请到 B 站神宫凉子（UID：13737731）下载 DeepSeek免费公皮.zip。"
+      "插件可以往桌宠右键菜单加入口：新增 pet.menu 权限和 api.add_menu_item / api.remove_menu_item，插件卸载或重载时自动移除，回调异常会被隔离并写入插件日志。",
+      "做题助手 1.1.0：右键桌宠就能选「识别屏幕上的题目」，点一下直接截屏答题；原有的聊天触发词、插件设置和戳一戳触发保持不变。",
+      "兼容 1.4.5 的全部修复，插件 API 版本仍为 1；旧插件不声明 pet.menu 时右键菜单不会多出插件项。"
     ]
   }
 }
