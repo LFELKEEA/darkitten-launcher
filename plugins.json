@@ -193,7 +193,7 @@
     {
       "id": "lfelkeea.quiz_helper",
       "name": "做题助手",
-      "version": "1.2.1",
+      "version": "1.2.2",
       "author": "LFELKEEA",
       "description": "截取当前屏幕，识别题目并让 AI 给出答案与解析；支持 Windows OCR 和图片理解，右键菜单可直接触发，答完可自动填入答题框。",
       "api_version": 1,
@@ -246,9 +246,9 @@
       },
       "bundled": false,
       "featured": true,
-      "file": "plugins/lfelkeea.quiz_helper-1.2.1.zip",
+      "file": "plugins/lfelkeea.quiz_helper-1.2.2.zip",
       "size": 13911,
-      "sha256": "d8911c431ab71f200bfa3eb41010056b656bb297a75f913b10773b3b992608a4"
+      "sha256": "c44ce0c0acef1bc9dd79c2fa02a7afe1624a09bc293b8972410ce9a336e873ca"
     },
     {
       "id": "lfelkeea.alive_core",
