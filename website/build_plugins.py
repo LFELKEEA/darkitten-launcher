@@ -33,6 +33,7 @@ PERMISSION_LABELS = {
     "pet.action": "动作",
     "pet.model": "Live2D 模型",
     "pet.persona": "人格与台词",
+    "pet.menu": "右键菜单",
     "ai.chat": "AI 对话",
     "chat.context": "聊天上下文",
     "screen.capture": "截屏",
