@@ -11,6 +11,7 @@
   const filters = $$("[data-filter]");
 
   const ICONS = [
+    ["quiz", "i-eye"],
     ["focus", "i-timer"],
     ["hello", "i-chat"],
     ["screen", "i-eye"],
@@ -21,7 +22,20 @@
     focus_minutes: "专注",
     break_minutes: "休息",
     interval_minutes: "间隔",
-    message: "自定义语句"
+    message: "自定义语句",
+    trigger_words: "触发词",
+    recognition: "识别方式",
+    detail: "解析长度",
+    show_window: "解析窗口"
+  };
+
+  const VALUE_LABELS = {
+    auto: "自动",
+    text: "文字",
+    image: "图片",
+    brief: "简洁",
+    standard: "标准",
+    detailed: "详细"
   };
 
   let plugins = [];
@@ -74,6 +88,7 @@
       let value = raw;
       if (Array.isArray(raw)) value = raw.length + " 项";
       if (typeof raw === "boolean") value = raw ? "开" : "关";
+      if (typeof value === "string" && VALUE_LABELS[value]) value = VALUE_LABELS[value];
       const unit = key.slice(-8) === "_minutes" ? " 分钟" : "";
       chips.push(
         '<span class="pl-setting">' + escapeHtml(label) +

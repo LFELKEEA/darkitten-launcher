@@ -46,6 +46,7 @@ EXCLUDED_PARTS = {"__pycache__", ".state"}
 EXCLUDED_SUFFIXES = {".pyc", ".pyo", ".log"}
 
 FEATURED = {
+    "lfelkeea.quiz_helper",
     "lfelkeea.deepseek_chan",
     "lfelkeea.alive_core",
     "lfelkeea.focus_guard",

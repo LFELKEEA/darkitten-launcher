@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="theme-color" content="#100a10">
   <title>插件库 · Darkitten Launcher 桌宠插件</title>
-  <meta name="description" content="LFELKEEA 桌宠插件库：下载活人感内核、QQ 桥接、专注时间、自开发工坊等插件，查看权限、外部依赖、安装步骤和插件开发文档，让桌面小猫多一项技能。">
+  <meta name="description" content="LFELKEEA 桌宠插件库：下载活人感内核、QQ 桥接、专注时间、做题助手、自开发工坊等插件，查看权限、外部依赖、安装步骤和插件开发文档，让桌面小猫多一项技能。">
   <link rel="icon" href="assets/dkl.ico">
   <link rel="stylesheet" href="style.css">
   <link rel="stylesheet" href="plugins.css">
@@ -128,7 +128,7 @@
         <p class="pl-loading">正在读取插件清单…</p>
       </div>
       <noscript>
-        <p class="pl-noscript">站点用脚本读取 <a href="plugins.json">plugins.json</a> 来渲染插件卡片。启用 JavaScript 后可以在这里直接下载；也可以手动下载：<a href="plugins/lfelkeea.alive_core-2.1.3.zip">活人感内核（姐妹人格与记忆）</a>、<a href="plugins/lfelkeea.qq_bridge-1.8.0.zip">QQ 桥接（SnowLuma）</a>、<a href="plugins/lfelkeea.focus_guard-1.0.0.zip">专注时间</a>、<a href="plugins/lfelkeea.self_dev-1.6.5.zip">自开发工坊（Agent 工具链）</a>、<a href="plugins/example.hello-1.0.0.zip">示例：定时问候</a>、<a href="plugins/example.screen_note-1.0.0.zip">示例：屏幕观察补充</a>。</p>
+        <p class="pl-noscript">站点用脚本读取 <a href="plugins.json">plugins.json</a> 来渲染插件卡片。启用 JavaScript 后可以在这里直接下载；也可以手动下载：<a href="plugins/lfelkeea.alive_core-2.1.3.zip">活人感内核（姐妹人格与记忆）</a>、<a href="plugins/lfelkeea.qq_bridge-1.8.0.zip">QQ 桥接（SnowLuma）</a>、<a href="plugins/lfelkeea.focus_guard-1.0.0.zip">专注时间</a>、<a href="plugins/lfelkeea.quiz_helper-1.0.0.zip">做题助手（识别屏幕题目）</a>、<a href="plugins/lfelkeea.self_dev-1.6.5.zip">自开发工坊（Agent 工具链）</a>、<a href="plugins/example.hello-1.0.0.zip">示例：定时问候</a>、<a href="plugins/example.screen_note-1.0.0.zip">示例：屏幕观察补充</a>。</p>
       </noscript>
       <p class="pl-empty" data-plugin-empty hidden>这个分类下暂时没有插件。</p>
     </section>
@@ -157,6 +157,10 @@
           <h3>扫描并启用</h3>
           <p>回到插件管理点「重新扫描」，找到新插件，勾选「启用」。插件会立即运行；带设置面板的插件还会出现「设置」按钮，连接、白名单等配置都在里面填。不想要时取消勾选即可停止。</p>
         </article>
+      </div>
+      <div class="pl-tip reveal">
+        <svg class="icon"><use href="#i-eye"></use></svg>
+        <p><strong>做题助手会把题目窗口截下来识别。</strong>启用后把题目切到最前面，在聊天框或语音里说「做题」「答题」「这题怎么做」即可；答完会念出答案并弹出解析窗口。默认先用 Windows 自带 OCR 读文字，读不到再发截图；当前模型不支持图片时，到插件设置里把识别方式改成「文字」。截图只在内存里压缩，不写磁盘，题目和答案也不会进日志，本地只记录答题数量。</p>
       </div>
       <div class="pl-tip reveal">
         <svg class="icon"><use href="#i-check"></use></svg>
