@@ -193,13 +193,14 @@
     {
       "id": "lfelkeea.quiz_helper",
       "name": "做题助手",
-      "version": "1.0.0",
+      "version": "1.1.0",
       "author": "LFELKEEA",
-      "description": "截取当前屏幕，识别题目并让 AI 给出答案与解析；支持 Windows OCR 文字识别和图片理解。",
+      "description": "截取当前屏幕，识别题目并让 AI 给出答案与解析；支持 Windows OCR 文字识别和图片理解，右键菜单可直接触发。",
       "api_version": 1,
       "permissions": [
         "pet.say",
         "pet.action",
+        "pet.menu",
         "ai.chat",
         "chat.context",
         "screen.capture",
@@ -210,6 +211,7 @@
       "permission_labels": [
         "说话",
         "动作",
+        "右键菜单",
         "AI 对话",
         "聊天上下文",
         "截屏",
@@ -221,7 +223,7 @@
       "highlights": [
         {
           "label": "触发",
-          "value": "聊天里说「做题」"
+          "value": "右键菜单 / 聊天「做题」"
         },
         {
           "label": "识别",
@@ -240,9 +242,9 @@
       },
       "bundled": false,
       "featured": true,
-      "file": "plugins/lfelkeea.quiz_helper-1.0.0.zip",
-      "size": 10342,
-      "sha256": "ca758ed88e56162321352d946a6f64ebd5406ed8599d55bfa3aeb59dec2d2890"
+      "file": "plugins/lfelkeea.quiz_helper-1.1.0.zip",
+      "size": 10481,
+      "sha256": "b15b803f5b3d78782a0847000e1320e163ef591ff70df90020b8fb875e1ac16a"
     },
     {
       "id": "lfelkeea.alive_core",
