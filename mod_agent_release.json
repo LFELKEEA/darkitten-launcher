@@ -1,14 +1,14 @@
 {
   "name": "Darkitten Mod Agent",
-  "version": "3.3.1",
+  "version": "3.3.2",
   "released": "2026-11-18",
   "kind": "online",
   "policy": "online-first",
-  "download_url": "https://lfelkeea.github.io/darkitten-launcher/DarkittenModAgent-3.3.1.zip",
+  "download_url": "https://lfelkeea.github.io/darkitten-launcher/DarkittenModAgent-3.3.2.zip",
   "page_url": "https://lfelkeea.github.io/darkitten-launcher/",
   "bootstrap_url": "https://lfelkeea.github.io/darkitten-launcher/mod_agent_bootstrap.json",
-  "sha256": "a7c0121046f8768648e2c7029db4d2b80d1030c39c63bc20977721806b2de907",
-  "size": 57324980,
+  "sha256": "530972d55d6e7ba6a8c8688599b0bd88f100b9d1567c9d4915fc112a79796571",
+  "size": 57324856,
   "bundled": [],
   "online_resources": [
     {
