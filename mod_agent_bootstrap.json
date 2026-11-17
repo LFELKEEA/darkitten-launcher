@@ -1,0 +1,99 @@
+{
+  "name": "Darkitten Mod Agent 在线版",
+  "version": "3.3.0",
+  "policy": "online-first",
+  "site": "https://lfelkeea.github.io/darkitten-launcher/",
+  "update_manifest": "https://lfelkeea.github.io/darkitten-launcher/mod_agent_release.json",
+  "mirrors": {
+    "mojang": [
+      "https://piston-meta.mojang.com",
+      "https://bmclapi2.bangbang93.com"
+    ],
+    "fabric": [
+      "https://meta.fabricmc.net",
+      "https://bmclapi2.bangbang93.com/fabric-meta"
+    ],
+    "quilt": [
+      "https://meta.quiltmc.org",
+      "https://bmclapi2.bangbang93.com/quilt-meta"
+    ],
+    "forge": [
+      "https://maven.minecraftforge.net",
+      "https://bmclapi2.bangbang93.com/maven"
+    ],
+    "neoforge": [
+      "https://maven.neoforged.net/releases",
+      "https://bmclapi2.bangbang93.com/maven"
+    ],
+    "gradle": [
+      "https://services.gradle.org",
+      "https://repo.huaweicloud.com/gradle",
+      "https://mirrors.cloud.tencent.com/gradle"
+    ],
+    "jdk": [
+      "https://api.adoptium.net",
+      "https://mirrors.ustc.edu.cn/adoptium",
+      "https://mirrors.huaweicloud.com/openjdk"
+    ],
+    "mods": [
+      "https://api.modrinth.com/v2",
+      "https://cdn.modrinth.com"
+    ]
+  },
+  "resources": [
+    {
+      "kind": "jdk",
+      "major": 21,
+      "required_for": "Gradle 构建",
+      "sources": [
+        "https://api.adoptium.net",
+        "https://mirrors.ustc.edu.cn/adoptium",
+        "https://mirrors.huaweicloud.com/openjdk"
+      ]
+    },
+    {
+      "kind": "gradle",
+      "required_for": "工程 wrapper 声明的 Gradle 版本",
+      "sources": [
+        "https://services.gradle.org",
+        "https://repo.huaweicloud.com/gradle",
+        "https://mirrors.cloud.tencent.com/gradle"
+      ]
+    },
+    {
+      "kind": "catalog",
+      "required_for": "版本选择、MDK / 源码索引",
+      "sources": [
+        "https://piston-meta.mojang.com",
+        "https://meta.fabricmc.net",
+        "https://bmclapi2.bangbang93.com/fabric-meta",
+        "https://maven.minecraftforge.net",
+        "https://bmclapi2.bangbang93.com/maven"
+      ]
+    },
+    {
+      "kind": "sources",
+      "required_for": "API 查询与参考代码",
+      "sources": [
+        "https://maven.minecraftforge.net",
+        "https://bmclapi2.bangbang93.com/maven",
+        "https://maven.neoforged.net/releases",
+        "https://bmclapi2.bangbang93.com/maven"
+      ]
+    },
+    {
+      "kind": "mods",
+      "required_for": "自动参考反编译",
+      "sources": [
+        "https://api.modrinth.com/v2",
+        "https://cdn.modrinth.com"
+      ]
+    }
+  ],
+  "notes": [
+    "程序本体不包含 JDK、Gradle、依赖缓存或第三方模组源码。",
+    "首次构建会自动从官方源或镜像下载所需环境。",
+    "所有下载都落在程序 data 目录，可随时删除后重新拉取。"
+  ],
+  "download_page": "https://lfelkeea.github.io/darkitten-launcher/"
+}

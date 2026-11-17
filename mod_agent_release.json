@@ -1,26 +1,75 @@
 {
   "name": "Darkitten Mod Agent",
-  "version": "3.2.0",
+  "version": "3.3.0",
   "released": "2026-11-17",
-  "download_url": "downloads/DarkittenModAgent-3.2.0.zip",
+  "kind": "online",
+  "policy": "online-first",
+  "download_url": "downloads/DarkittenModAgent-3.3.0.zip",
   "page_url": "https://lfelkeea.github.io/darkitten-launcher/",
-  "sha256": "40e553742f924495610a405b960510d72b1023aeb2b1c05cdc8e443eb7c382dd",
-  "size": 57252219,
+  "bootstrap_url": "https://lfelkeea.github.io/darkitten-launcher/mod_agent_bootstrap.json",
+  "sha256": "d5e702eefcbdea9b22edcaac5ae4432076b7f549e1df0c016322c882db7c9f80",
+  "size": 57314524,
+  "bundled": [],
+  "online_resources": [
+    {
+      "kind": "jdk",
+      "major": 21,
+      "required_for": "Gradle 构建",
+      "sources": [
+        "https://api.adoptium.net",
+        "https://mirrors.ustc.edu.cn/adoptium",
+        "https://mirrors.huaweicloud.com/openjdk"
+      ]
+    },
+    {
+      "kind": "gradle",
+      "required_for": "工程 wrapper 声明的 Gradle 版本",
+      "sources": [
+        "https://services.gradle.org",
+        "https://repo.huaweicloud.com/gradle",
+        "https://mirrors.cloud.tencent.com/gradle"
+      ]
+    },
+    {
+      "kind": "catalog",
+      "required_for": "版本选择、MDK / 源码索引",
+      "sources": [
+        "https://piston-meta.mojang.com",
+        "https://meta.fabricmc.net",
+        "https://bmclapi2.bangbang93.com/fabric-meta",
+        "https://maven.minecraftforge.net",
+        "https://bmclapi2.bangbang93.com/maven"
+      ]
+    },
+    {
+      "kind": "sources",
+      "required_for": "API 查询与参考代码",
+      "sources": [
+        "https://maven.minecraftforge.net",
+        "https://bmclapi2.bangbang93.com/maven",
+        "https://maven.neoforged.net/releases",
+        "https://bmclapi2.bangbang93.com/maven"
+      ]
+    },
+    {
+      "kind": "mods",
+      "required_for": "自动参考反编译",
+      "sources": [
+        "https://api.modrinth.com/v2",
+        "https://cdn.modrinth.com"
+      ]
+    }
+  ],
   "notes": [
-    "启动器联动桥：工坊通过本地 HTTP + 随机令牌访问启动器，直接读取启动器已安装的版本、下载地址与实例列表，并能从测试中心一键启动开发端。",
-    "版本中心：内置 Mojang 923 个版本、Fabric 535 游戏版本 / 255 加载器、Quilt 448 / 310、Forge 5106、NeoForge 1859，后台每 6 小时自动增量同步，支持 ETag / TTL 缓存与 BMCLAPI 等国内镜像回退。",
-    "开发资料中心：一键下载四种加载器的 MDK 与文档；Forge / NeoForge 没有 javadoc.jar 时自动回退到 sources.jar 并附官方文档站链接，Quilt 自动跳过 beta 选择最新发布版。",
-    "版本清单包含 Mojang changelog、加载器更新日志、Yarn / Quilt Mappings、Gradle 与 JDK LTS 信息，断网时保留上一次成功同步的数据。",
-    "测试中心：直接在工坊内启动 / 停止 runClient、runServer 与 GameTest，查看运行实例、PID 与状态，并打开下载目录或实例目录。",
-    "模组学习：在工坊内搜索 Modrinth 模组、按游戏版本与加载器筛选、下载 jar，并使用 Vineflower 反编译生成可阅读的源码与学习索引。",
-    "新增与启动器之间的 /versions、/downloads、/vanilla、/mods/search、/mods/versions、/mods/download、/mods/decompile、/learn、/open、/launch 接口；/health 公开，其余接口必须携带随机令牌，且只监听 127.0.0.1。",
-    "修复中心页后台任务回调在子线程直接刷新控件的问题，下载、同步、反编译完成后再回到主线程更新界面。",
-    "新增模组工坊 2GB+ 全量离线发行版：内置 JDK 21、Gradle 发行版与依赖、NeoForm / Loom 缓存、本地镜像和版本目录，解压后首次编译无需再下载数 GB 环境。",
-    "全量离线版按 core / jdk / gradle / assets 分组打包为 5 个分卷（压缩后约 3.5GB，解压后约 4.0GB），每个分卷均低于 GitHub 单资源 2GB 上限。",
-    "新增 11 个模型工具与工坊中心页，工具总数达到 77 个；中心页包含版本中心、开发资料、测试中心、模组学习四个页签。",
-    "NeoForge MDK 改从 NeoForgeMDKs 官方仓库按游戏版本获取，避免 Maven 上没有 mdk.zip 导致的 404。",
-    "Quilt 模板按 1.18.2 / 1.19.x / 1.20.x / 1.21 分支自动匹配，不再固定请求不存在的 main.zip。",
-    "启动器更新到 1.11.12：新增联动桥、下载链路复用、开发端启动信号与学习目录索引。",
-    "版本清单与下载全部带镜像回退，官方源超时或 5xx 时自动切换，不会因为单个源不可用而卡住。"
+    "在线优先：程序本体不再内置 JDK、Gradle、依赖缓存或第三方模组源码。JDK 21、Gradle 发行版、版本目录、MDK / 源码与镜像地址全部从网站和官方源 / 国内镜像按需拉取，下载落在程序自己的 data 目录，可随时删除重拉。",
+    "新增在线资源层（dma/resources.py）：resource_ensure 支持 status / all / jdk / gradle / catalog / mdk / sources / docs，官方源优先、失败自动切华为 / 腾讯 / 中科大 / BMCLAPI 镜像；启动时优先读取网站发布的 bootstrap.json，清单里附带每个资源的来源。",
+    "新增在线开发资料（dma/devdocs.py）：按加载器直接拉取 sources.jar（Forge / NeoForge 走 catalog，Fabric / Quilt 走官方 Maven），在本地解包检索类与方法；本地没有源码时回退 GitHub 代码搜索，不再依赖预置文档。",
+    "新增智能参考管线（dma/reference.py）：从需求里识别实体 / 方块 / GUI / 世界生成 / Mixin / 网络 / 配方 / 皮肤 / 社交等 19 类机制，自动搜索 Modrinth，下载合适版本并反编译、建立类与方法索引，再把相关代码片段作为只读参考注入本轮任务。",
+    "自动参考默认开启：新建任务时先在线准备参考，再让模型动手；对话页新增「自动参考」开关，配置项 auto_reference 可随时关闭。反编译源码只读，不会被写入或复制进用户工程，并始终附带许可证提示。",
+    "新增大型模组规划器（dma/planner.py）：按 small / medium / large / epic 生成阶段与包结构（bootstrap、spec、reference、registry、feature-*、client、assets、verify、release），large 目标为 40 个类 / 10 个包 / 8 个阶段 / 16 项测试；需求覆盖 3 类以上机制时自动注入计划。",
+    "新增 4 个 Agent 工具：mod_reference（auto / search / prepare / snippets / status）、dev_docs（lookup / sources / official / status）、resource_ensure、large_mod_plan；工具总数 81，对话里可直接让助手先查资料、拉参考、再按阶段写大型模组。",
+    "系统提示新增强制规则：需要 JDK / Gradle / MDK / 源码时先调 resource_ensure，查 API 先调 dev_docs，做大型功能先调 large_mod_plan + mod_reference auto；禁止声称资料内置，禁止凭记忆编造 API。",
+    "开发中心新增「智能参考」页和「在线环境」面板：可查看 JDK / Gradle / 源码构件状态，一键在线准备资源，输入功能描述后自动搜索、反编译并展示参考片段，也可直接打开参考源码目录。",
+    "发布方式调整：build.py 生成轻量在线版并输出 mod_agent_release.json 与 mod_agent_bootstrap.json；build_full.py 改为必须显式 --offline 才构建内置缓存的离线版，避免默认发行版重新膨胀到数 GB。"
   ]
 }
