@@ -367,6 +367,14 @@ class ModsPage(QWidget):
         self.update_all_btn.clicked.connect(self._update_all)
         action_layout.addWidget(self.update_all_btn)
 
+        learn_btn = QPushButton("模组学习")
+        learn_btn.setObjectName("Secondary")
+        learn_btn.setIcon(icons.icon("cube", colors()["text2"], 15))
+        learn_btn.setCursor(Qt.PointingHandCursor)
+        learn_btn.setToolTip("搜索模组并反编译成源码，阅读别人的实现思路")
+        learn_btn.clicked.connect(self.main.open_mod_learn)
+        action_layout.addWidget(learn_btn)
+
         download_btn = QPushButton("下载内容")
         download_btn.setObjectName("Primary")
         download_btn.setIcon(icons.icon("download", "#FFFFFF", 15))

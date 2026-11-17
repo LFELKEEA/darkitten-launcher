@@ -14,6 +14,7 @@ from PySide6.QtCore import QTimer, Qt
 from PySide6.QtGui import QFont
 from PySide6.QtWidgets import QApplication
 
+from darkitten.bridge import BridgeServer
 from darkitten.config import APP_NAME, LOG_DIR, Config, ensure_dirs
 from darkitten.single_instance import SingleInstanceGuard
 from darkitten.ui import icons, theme
@@ -93,6 +94,20 @@ def main() -> int:
 
     _debug("building main window")
     window = MainWindow(config)
+
+    # 工坊联动桥：只在正常运行时启动，截图/离屏模式不写 bridge.json。
+    bridge: BridgeServer | None = None
+    if "--no-bridge" not in sys.argv and "QT_QPA_PLATFORM" not in os.environ:
+        try:
+            bridge = BridgeServer(config)
+            bridge.signals.activate.connect(window.show_from_tray)
+            bridge.signals.launch.connect(window.launch_version)
+            bridge.start()
+            _debug(f"bridge listening on {bridge.base_url}")
+            app.aboutToQuit.connect(bridge.stop)
+        except Exception as exc:  # noqa: BLE001 - 联动失败不能影响启动器本体
+            _debug(f"bridge start failed: {exc}")
+            bridge = None
 
     if single_instance is not None:
         single_instance.activated.connect(window.show_from_tray)

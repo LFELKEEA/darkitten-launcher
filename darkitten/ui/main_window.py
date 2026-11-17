@@ -1826,6 +1826,11 @@ class MainWindow(QWidget):
         ModBrowserDialog(self).exec()
         self._refresh_download_chip()
 
+    def open_mod_learn(self) -> None:
+        from .learn_dialog import LearnDialog
+
+        LearnDialog(self).exec()
+
     def _refresh_download_chip(self) -> None:
         if hasattr(self, "download_chip"):
             self.download_chip.sync(self.download_center)
@@ -2475,6 +2480,15 @@ class MainWindow(QWidget):
             self.home_page.select_version(version_id)
         self.selected_version = version_id
         self._update_status_version()
+
+    def launch_version(self, version_id: str) -> None:
+        """工坊通过联动桥请求启动某个版本。"""
+        if not version_id:
+            return
+        self.select_version(version_id)
+        self.show_from_tray()
+        self.switch_page("home")
+        QTimer.singleShot(250, self.launch_selected)
 
     # ------------------------------------------------------------------
     # 删除版本
