@@ -1,14 +1,14 @@
 {
   "name": "Darkitten Mod Agent",
-  "version": "3.3.3",
+  "version": "3.4.0",
   "released": "2026-11-18",
   "kind": "online",
   "policy": "online-first",
-  "download_url": "https://lfelkeea.github.io/darkitten-launcher/DarkittenModAgent-3.3.3.zip",
+  "download_url": "https://lfelkeea.github.io/darkitten-launcher/DarkittenModAgent-3.4.0.zip",
   "page_url": "https://lfelkeea.github.io/darkitten-launcher/",
   "bootstrap_url": "https://lfelkeea.github.io/darkitten-launcher/mod_agent_bootstrap.json",
-  "sha256": "0de2d19f3b1bb1a6cf5952bfac83c9737b83187d6634123d5ff9d23b043b4bbf",
-  "size": 57323932,
+  "sha256": "3e11e68d54132f671c16b101c95b024d32fbc519bd1d95df9c573d8003f3a4ed",
+  "size": 57373709,
   "bundled": [],
   "online_resources": [
     {
@@ -61,15 +61,13 @@
     }
   ],
   "notes": [
-    "在线优先：程序本体不再内置 JDK、Gradle、依赖缓存或第三方模组源码。JDK 21、Gradle 发行版、版本目录、MDK / 源码与镜像地址全部从网站和官方源 / 国内镜像按需拉取，下载落在程序自己的 data 目录，可随时删除重拉。",
-    "新增在线资源层（dma/resources.py）：resource_ensure 支持 status / all / jdk / gradle / catalog / mdk / sources / docs，官方源优先、失败自动切华为 / 腾讯 / 中科大 / BMCLAPI 镜像；启动时优先读取网站发布的 bootstrap.json，清单里附带每个资源的来源。",
-    "新增在线开发资料（dma/devdocs.py）：按加载器直接拉取 sources.jar（Forge / NeoForge 走 catalog，Fabric / Quilt 走官方 Maven），在本地解包检索类与方法；本地没有源码时回退 GitHub 代码搜索，不再依赖预置文档。",
-    "新增智能参考管线（dma/reference.py）：从需求里识别实体 / 方块 / GUI / 世界生成 / Mixin / 网络 / 配方 / 皮肤 / 社交等 19 类机制，自动搜索 Modrinth，下载合适版本并反编译、建立类与方法索引，再把相关代码片段作为只读参考注入本轮任务。",
-    "自动参考默认开启：新建任务时先在线准备参考，再让模型动手；对话页新增「自动参考」开关，配置项 auto_reference 可随时关闭。反编译源码只读，不会被写入或复制进用户工程，并始终附带许可证提示。",
-    "新增大型模组规划器（dma/planner.py）：按 small / medium / large / epic 生成阶段与包结构（bootstrap、spec、reference、registry、feature-*、client、assets、verify、release），large 目标为 40 个类 / 10 个包 / 8 个阶段 / 16 项测试；需求覆盖 3 类以上机制时自动注入计划。",
-    "新增 4 个 Agent 工具：mod_reference（auto / search / prepare / snippets / status）、dev_docs（lookup / sources / official / status）、resource_ensure、large_mod_plan；工具总数 81，对话里可直接让助手先查资料、拉参考、再按阶段写大型模组。",
-    "系统提示新增强制规则：需要 JDK / Gradle / MDK / 源码时先调 resource_ensure，查 API 先调 dev_docs，做大型功能先调 large_mod_plan + mod_reference auto；禁止声称资料内置，禁止凭记忆编造 API。",
-    "开发中心新增「智能参考」页和「在线环境」面板：可查看 JDK / Gradle / 源码构件状态，一键在线准备资源，输入功能描述后自动搜索、反编译并展示参考片段，也可直接打开参考源码目录。",
-    "发布方式调整：build.py 生成轻量在线版并输出 mod_agent_release.json 与 mod_agent_bootstrap.json；build_full.py 改为必须显式 --offline 才构建内置缓存的离线版，避免默认发行版重新膨胀到数 GB。"
+    "新增版本事实层（dma/modfacts.py）：把 Java 版本、元数据文件名、数据目录单复数、物品定义、映射与 ID API、构建插件固化成可查询数据；新增 version_facts 与 project_fact_check 两个工具，并把冲突接入 lint_project。",
+    "跨版本专项修正：1.21+ 数据目录改单数、1.21.4+ 物品定义 assets/<ns>/items、NeoForge 1.20.5+ 用 neoforge.mods.toml、26.x 未混淆与非 remap、1.21.9+/26.x 使用 Identifier.fromNamespaceAndPath，均可在写代码前自动核对。",
+    "新增大型模组架构参考（dma/archref.py + arch_ref 工具）：提炼 Create、GregTech Modern、Mekanism、Botania 的注册分层、材料体系、RecipeMap、多方块、能力 API、配置与游戏内文档模式，支持按玩法检索。",
+    "新增多版本/多加载器方案（dma/multiversion.py + multiversion_plan 工具）：在 Stonecutter、Architectury、MultiLoader、Modstitch、Stonecraft 之间自动选型，输出目录骨架、官方插件坐标、迁移步骤与验证顺序。",
+    "强化调试闭环：崩溃分类新增 Java class 版本、映射改名、Access Widener/Transformer、元数据文件名、数据生成与配方错误；编译提示可识别 17/21/25 的 class 文件版本并在日志里直接给出对应 Java。",
+    "新增 6 个内置技能：version-facts、multiversion、access-widener-transformer、gametest、architecture-patterns、publishing-ci；系统提示新增强制顺序：先 version_facts/project_fact_check，再 dev_docs/mod_reference/arch_ref，最后动手。",
+    "大型模组计划新增 facts 阶段，reference 阶段加入 arch_ref，spec 阶段加入 multiversion_plan；工具总数 85。",
+    "继续保持在线优先：JDK、Gradle、版本目录、MDK、sources 与参考模组全部按需从官方源或国内镜像拉取，发行包不内置这些内容。"
   ]
 }
