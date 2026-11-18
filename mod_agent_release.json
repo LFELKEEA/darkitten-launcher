@@ -1,14 +1,14 @@
 {
   "name": "Darkitten Mod Agent",
-  "version": "3.4.1",
+  "version": "3.4.2",
   "released": "2026-11-18",
   "kind": "online",
   "policy": "online-first",
-  "download_url": "https://lfelkeea.github.io/darkitten-launcher/DarkittenModAgent-3.4.1.zip",
+  "download_url": "https://lfelkeea.github.io/darkitten-launcher/DarkittenModAgent-3.4.2.zip",
   "page_url": "https://lfelkeea.github.io/darkitten-launcher/",
   "bootstrap_url": "https://lfelkeea.github.io/darkitten-launcher/mod_agent_bootstrap.json",
-  "sha256": "9e4b5dac73e2e30c96e7f82e55e6e015e2440bda049cba88aae376357edb75dc",
-  "size": 57377330,
+  "sha256": "2b7906772227bcb060dc18842bfd8a36abb8895372b9602d68889a8a1a2b4141",
+  "size": 57407453,
   "bundled": [],
   "online_resources": [
     {
@@ -61,6 +61,10 @@
     }
   ],
   "notes": [
+    "新增确定性任务图工具：workflow_plan / status / next / complete / fail / skip / reopen。任务状态由 .dma/workflow.json 推进，workflow_complete 先跑验收门禁，缺证据会返回阻断项。",
+    "新增公共契约冻结与漂移审计（dma/kernel/contract.py + contract_freeze / contract_check）：重构前冻结 public/protected 类、方法、字段与资源，重构后报告删除、签名变更和资源缺失。",
+    "新增离线 API 签名索引（dma/apiindex.py + api_lookup）：从 sources.jar 建索引并缓存，直接查类、方法参数、返回类型与字段类型，不再每次扫描整包。",
+    "需求变化用 workflow_plan 合并进 .dma/spec.json 并重建 DAG，保留已完成状态；查 API 优先 api_lookup，需要实现细节再 dev_docs lookup；工具总数 95。",
     "版本列表修复：开发中心的 Minecraft / 加载器全部改为点选下拉，滚轮不再误改；版本清单优先在线获取并合并本地目录，不再截断。",
     "快速生成按所选加载器在线拉取完整可用版本（Fabric / Forge / NeoForge 各自的真实清单），切换加载器自动重载；离线时退回完整内置版本表。",
     "新增版本事实层（dma/modfacts.py）：把 Java 版本、元数据文件名、数据目录单复数、物品定义、映射与 ID API、构建插件固化成可查询数据；新增 version_facts 与 project_fact_check 两个工具，并把冲突接入 lint_project。",
