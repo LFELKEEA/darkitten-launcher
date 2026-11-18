@@ -1,14 +1,14 @@
 {
   "name": "Darkitten Mod Agent",
-  "version": "3.4.0",
+  "version": "3.4.1",
   "released": "2026-11-18",
   "kind": "online",
   "policy": "online-first",
-  "download_url": "https://lfelkeea.github.io/darkitten-launcher/DarkittenModAgent-3.4.0.zip",
+  "download_url": "https://lfelkeea.github.io/darkitten-launcher/DarkittenModAgent-3.4.1.zip",
   "page_url": "https://lfelkeea.github.io/darkitten-launcher/",
   "bootstrap_url": "https://lfelkeea.github.io/darkitten-launcher/mod_agent_bootstrap.json",
-  "sha256": "3e11e68d54132f671c16b101c95b024d32fbc519bd1d95df9c573d8003f3a4ed",
-  "size": 57373709,
+  "sha256": "9e4b5dac73e2e30c96e7f82e55e6e015e2440bda049cba88aae376357edb75dc",
+  "size": 57377330,
   "bundled": [],
   "online_resources": [
     {
@@ -61,6 +61,8 @@
     }
   ],
   "notes": [
+    "版本列表修复：开发中心的 Minecraft / 加载器全部改为点选下拉，滚轮不再误改；版本清单优先在线获取并合并本地目录，不再截断。",
+    "快速生成按所选加载器在线拉取完整可用版本（Fabric / Forge / NeoForge 各自的真实清单），切换加载器自动重载；离线时退回完整内置版本表。",
     "新增版本事实层（dma/modfacts.py）：把 Java 版本、元数据文件名、数据目录单复数、物品定义、映射与 ID API、构建插件固化成可查询数据；新增 version_facts 与 project_fact_check 两个工具，并把冲突接入 lint_project。",
     "跨版本专项修正：1.21+ 数据目录改单数、1.21.4+ 物品定义 assets/<ns>/items、NeoForge 1.20.5+ 用 neoforge.mods.toml、26.x 未混淆与非 remap、1.21.9+/26.x 使用 Identifier.fromNamespaceAndPath，均可在写代码前自动核对。",
     "新增大型模组架构参考（dma/archref.py + arch_ref 工具）：提炼 Create、GregTech Modern、Mekanism、Botania 的注册分层、材料体系、RecipeMap、多方块、能力 API、配置与游戏内文档模式，支持按玩法检索。",
