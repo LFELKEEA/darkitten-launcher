@@ -1,26 +1,75 @@
 {
   "name": "Darkitten Mod Agent",
-  "version": "3.2.0",
-  "released": "2026-11-17",
-  "download_url": "downloads/DarkittenModAgent-3.2.0.zip",
+  "version": "3.5.0",
+  "released": "2026-11-20",
+  "kind": "online",
+  "policy": "online-first",
+  "download_url": "downloads/DarkittenModAgent-3.5.0.zip",
   "page_url": "https://lfelkeea.github.io/darkitten-launcher/",
-  "sha256": "40e553742f924495610a405b960510d72b1023aeb2b1c05cdc8e443eb7c382dd",
-  "size": 57252219,
+  "bootstrap_url": "https://lfelkeea.github.io/darkitten-launcher/mod_agent_bootstrap.json",
+  "sha256": "0752c3d0e94b176dbd1519ab6ee7318e939daf4ca53aca69d89b33561fba3dd6",
+  "size": 62397531,
+  "bundled": [],
+  "online_resources": [
+    {
+      "kind": "jdk",
+      "major": 21,
+      "required_for": "Gradle 构建",
+      "sources": [
+        "https://api.adoptium.net",
+        "https://mirrors.ustc.edu.cn/adoptium",
+        "https://mirrors.huaweicloud.com/openjdk"
+      ]
+    },
+    {
+      "kind": "gradle",
+      "required_for": "工程 wrapper 声明的 Gradle 版本",
+      "sources": [
+        "https://services.gradle.org",
+        "https://repo.huaweicloud.com/gradle",
+        "https://mirrors.cloud.tencent.com/gradle"
+      ]
+    },
+    {
+      "kind": "catalog",
+      "required_for": "版本选择、MDK / 源码索引",
+      "sources": [
+        "https://piston-meta.mojang.com",
+        "https://meta.fabricmc.net",
+        "https://bmclapi2.bangbang93.com/fabric-meta",
+        "https://maven.minecraftforge.net",
+        "https://bmclapi2.bangbang93.com/maven"
+      ]
+    },
+    {
+      "kind": "sources",
+      "required_for": "API 查询与参考代码",
+      "sources": [
+        "https://maven.minecraftforge.net",
+        "https://bmclapi2.bangbang93.com/maven",
+        "https://maven.neoforged.net/releases",
+        "https://bmclapi2.bangbang93.com/maven"
+      ]
+    },
+    {
+      "kind": "mods",
+      "required_for": "自动参考反编译",
+      "sources": [
+        "https://api.modrinth.com/v2",
+        "https://cdn.modrinth.com"
+      ]
+    }
+  ],
   "notes": [
-    "启动器联动桥：工坊通过本地 HTTP + 随机令牌访问启动器，直接读取启动器已安装的版本、下载地址与实例列表，并能从测试中心一键启动开发端。",
-    "版本中心：内置 Mojang 923 个版本、Fabric 535 游戏版本 / 255 加载器、Quilt 448 / 310、Forge 5106、NeoForge 1859，后台每 6 小时自动增量同步，支持 ETag / TTL 缓存与 BMCLAPI 等国内镜像回退。",
-    "开发资料中心：一键下载四种加载器的 MDK 与文档；Forge / NeoForge 没有 javadoc.jar 时自动回退到 sources.jar 并附官方文档站链接，Quilt 自动跳过 beta 选择最新发布版。",
-    "版本清单包含 Mojang changelog、加载器更新日志、Yarn / Quilt Mappings、Gradle 与 JDK LTS 信息，断网时保留上一次成功同步的数据。",
-    "测试中心：直接在工坊内启动 / 停止 runClient、runServer 与 GameTest，查看运行实例、PID 与状态，并打开下载目录或实例目录。",
-    "模组学习：在工坊内搜索 Modrinth 模组、按游戏版本与加载器筛选、下载 jar，并使用 Vineflower 反编译生成可阅读的源码与学习索引。",
-    "新增与启动器之间的 /versions、/downloads、/vanilla、/mods/search、/mods/versions、/mods/download、/mods/decompile、/learn、/open、/launch 接口；/health 公开，其余接口必须携带随机令牌，且只监听 127.0.0.1。",
-    "修复中心页后台任务回调在子线程直接刷新控件的问题，下载、同步、反编译完成后再回到主线程更新界面。",
-    "新增模组工坊 2GB+ 全量离线发行版：内置 JDK 21、Gradle 发行版与依赖、NeoForm / Loom 缓存、本地镜像和版本目录，解压后首次编译无需再下载数 GB 环境。",
-    "全量离线版按 core / jdk / gradle / assets 分组打包为 5 个分卷（压缩后约 3.5GB，解压后约 4.0GB），每个分卷均低于 GitHub 单资源 2GB 上限。",
-    "新增 11 个模型工具与工坊中心页，工具总数达到 77 个；中心页包含版本中心、开发资料、测试中心、模组学习四个页签。",
-    "NeoForge MDK 改从 NeoForgeMDKs 官方仓库按游戏版本获取，避免 Maven 上没有 mdk.zip 导致的 404。",
-    "Quilt 模板按 1.18.2 / 1.19.x / 1.20.x / 1.21 分支自动匹配，不再固定请求不存在的 main.zip。",
-    "启动器更新到 1.11.12：新增联动桥、下载链路复用、开发端启动信号与学习目录索引。",
-    "版本清单与下载全部带镜像回退，官方源超时或 5xx 时自动切换，不会因为单个源不可用而卡住。"
+    "后台客户端改用 Windows 独立桌面：CreateDesktopW 建桌面，自写 CreateProcessW 传 lpDesktop，游戏从创建第一个窗口起就不在用户桌面出现。",
+    "后台启动追加 --no-daemon，避免复用用户桌面的 Gradle daemon；停止时 CloseDesktop 释放桌面句柄。整轮 16933 次窗口采样可见窗口为 0，此前 23-56ms 的闪现已消除。",
+    "默认创造模式：server.properties 强制创造，假玩家与客户端探针默认创造；后台冒烟 6/6 通过（出生、行走 2.0 格、放置、挖掘、僵尸伤害 20.0 → 19.81）。",
+    "新增 game_bot_playtest / game_playtest / game_window 三个工具，可在完全不开客户端的情况下验证人物操作，也可查询或隐藏客户端窗口；工具总数 115。",
+    "新增模组模型库：统一扫描实体、方块、物品、群系、维度，展示 3D 模型、贴图与描述；用户的描述、自定义字段、替换模型和贴图保存在 .dma/mod_library.json，不覆盖扫描结果。",
+    "新增手动模型编辑器：支持 Blockbench .bbmodel、GeckoLib/Bedrock .geo.json 与 Java 模型 JSON，可改立方体位置、尺寸、UV 并写回原文件。",
+    "新增手动绘图页：像素画布 + UV 图集 + 3D 预览，铅笔、橡皮、油漆桶、取色、直线、画笔大小、撤销/重做与色板；可点模型面反查 UV 上色。",
+    "实体绘图带原版 64x64 人形 UV 分区提示，方块提供等距三面预览；绘图与模型编辑都不依赖第三方绘图库。",
+    "回归测试覆盖模型库扫描与持久化、模型编辑器、绘图工具、后台隐藏桌面启动与假玩家冒烟；全量 594 项测试通过。",
+    "继续保持在线优先：JDK、Gradle、版本目录、MDK、sources 与参考模组全部按需从官方源或国内镜像拉取，发行包不内置这些内容。"
   ]
 }
