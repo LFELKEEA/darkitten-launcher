@@ -30,6 +30,8 @@ CODE_PATHS = (
     "requirements.txt",
     "launch.bat",
     "启动.bat",
+    "bootstrap_runtime.ps1",
+    "tools/enchcracker",
 )
 ProgressCallback = Callable[[int, str], None]
 

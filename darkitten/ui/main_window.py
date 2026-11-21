@@ -87,6 +87,7 @@ from .download_center import (
 )
 from .feedback_dialog import FeedbackDialog
 from .update_dialog import UpdateDialog
+from .pages.assistant import AssistantPage
 from .pages.download import DownloadPage
 from .pages.home import HomePage
 from .pages.loaders import LoaderPage
@@ -116,7 +117,8 @@ PAGE_INDEX = {
     "skin": 4,
     "room": 5,
     "server": 6,
-    "settings": 7,
+    "assistant": 7,
+    "settings": 8,
 }
 
 
@@ -361,6 +363,7 @@ class MainWindow(QWidget):
         self.skin_page = SkinPage(self)
         self.room_page = RoomPage(self)
         self.server_page = ServerPage(self)
+        self.assistant_page = AssistantPage(self)
         self.settings_page = SettingsPage(self)
         self.stack.addWidget(self.home_page)
         self.stack.addWidget(self.download_page)
@@ -369,6 +372,7 @@ class MainWindow(QWidget):
         self.stack.addWidget(self.skin_page)
         self.stack.addWidget(self.room_page)
         self.stack.addWidget(self.server_page)
+        self.stack.addWidget(self.assistant_page)
         self.stack.addWidget(self.settings_page)
         root.addWidget(self.stack, 1)
 
@@ -447,6 +451,7 @@ class MainWindow(QWidget):
             ("skin", "皮肤", "shirt", "#F06292"),
             ("room", "联机", "users", "#3FB3AA"),
             ("server", "服务端", "server", "#3FB3AA"),
+            ("assistant", "助手", "sparkles", "#7C6BE8"),
             ("settings", "设置", "settings", "#C98A4B"),
         ]
         for key, text, icon_name, accent in nav_specs:
@@ -608,6 +613,8 @@ class MainWindow(QWidget):
             self.room_page.refresh_theme()
         if hasattr(self, "server_page"):
             self.server_page.refresh_theme()
+        if hasattr(self, "assistant_page"):
+            self.assistant_page.refresh_theme()
         if hasattr(self, "account_chip"):
             self.account_chip.avatar.refresh()
         if hasattr(self, "download_chip"):
@@ -1800,6 +1807,16 @@ class MainWindow(QWidget):
         VersionSettingsDialog(self, version_id).exec()
         self.refresh_versions()
 
+    def open_world_manager(self, version_id: str = "") -> None:
+        version_id = version_id or self.selected_version
+        if not version_id:
+            self.toast("先选一个游戏版本，再查看存档与服务器", "info")
+            return
+        from .world_manager_dialog import WorldManagerDialog
+
+        WorldManagerDialog(self, version_id).exec()
+        self.refresh_versions()
+
     def open_optimize_dialog(self, version_id: str = "") -> None:
         version_id = version_id or self.selected_version
         if not version_id:
@@ -2062,6 +2079,12 @@ class MainWindow(QWidget):
                 "keywords": "server 服务端 开服",
             },
             {
+                "id": "page-assistant",
+                "title": "游戏助手",
+                "subtitle": "种子、指令、附魔预测与 MC百科",
+                "keywords": "assistant game seed command enchant 助手 种子 指令 附魔 百科",
+            },
+            {
                 "id": "page-settings",
                 "title": "打开设置",
                 "subtitle": "Java、内存、下载源与账户",
@@ -2155,6 +2178,7 @@ class MainWindow(QWidget):
             "page-skin": "skin",
             "page-room": "room",
             "page-server": "server",
+            "page-assistant": "assistant",
             "page-settings": "settings",
         }
         if command_id in pages:

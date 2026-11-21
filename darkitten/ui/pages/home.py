@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 from PySide6.QtCore import QSize, Qt, Signal
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
@@ -13,6 +15,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from ... import worlds
 from ...accounts import offline_uuid
 from ...versions import (
     LOADER_COLORS,
@@ -291,8 +294,8 @@ class HomePage(QWidget):
         layout.addLayout(header)
 
         self.tip_label = QLabel(
-            "双击启动 · 齿轮选择原版/加载器 · 交换箭头迁移存档/Mod · "
-            "纸箱按钮打包 · 垃圾桶删除版本 · 文件可以直接拖进窗口"
+            "双击启动 · 地球按钮预览/修改存档与服务器 · 齿轮选择原版/加载器 · "
+            "交换箭头迁移存档/Mod · 纸箱按钮打包 · 垃圾桶删除版本 · 文件可以直接拖进窗口"
         )
         self.tip_label.setObjectName("Tiny")
         self.tip_label.setWordWrap(True)
@@ -484,8 +487,8 @@ class HomePage(QWidget):
         self.import_btn.setVisible(True)
         self.loader_install_btn.setVisible(False)
         self.tip_label.setText(
-            "双击启动 · 齿轮选择原版/加载器 · 交换箭头迁移存档/Mod · "
-            "纸箱按钮打包 · 垃圾桶删除版本 · 文件可以直接拖进窗口"
+            "双击启动 · 地球按钮预览/修改存档与服务器 · 齿轮选择原版/加载器 · "
+            "交换箭头迁移存档/Mod · 纸箱按钮打包 · 垃圾桶删除版本 · 文件可以直接拖进窗口"
         )
         if not versions:
             self._show_empty(
@@ -504,10 +507,18 @@ class HomePage(QWidget):
             bound_loader = ""
             if profile:
                 bound_loader = profile.loader or profile.id
+            try:
+                save_count, server_count = worlds.overview(
+                    Path(self.main.config.version_game_path(summary.id))
+                )
+            except OSError:
+                save_count, server_count = 0, 0
             row = VersionRow(
                 summary,
                 selected=(summary.id == target),
                 bound_loader=bound_loader,
+                save_count=save_count,
+                server_count=server_count,
             )
             row.clicked.connect(self.select_version)
             row.double_clicked.connect(self._launch_version)
@@ -517,6 +528,7 @@ class HomePage(QWidget):
                 lambda version_id: self.main.open_migration_dialog(version_id)
             )
             row.settings_requested.connect(self.main.open_version_settings)
+            row.worlds_requested.connect(self.main.open_world_manager)
             self._version_rows[summary.id] = row
             self.version_layout.insertWidget(self.version_layout.count() - 1, row)
         if target:

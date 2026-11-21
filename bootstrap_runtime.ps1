@@ -8,26 +8,46 @@ $root = Split-Path -Parent $MyInvocation.MyCommand.Path
 $runtime = Join-Path $root "pyruntime"
 $python = Join-Path $runtime "python.exe"
 $pythonw = Join-Path $runtime "pythonw.exe"
-$sitePackages = Join-Path $runtime "Lib\site-packages"
-$pyside = Join-Path $sitePackages "PySide6"
+$pyside = Join-Path $runtime "Lib\site-packages\PySide6"
+$version = "6.12.0"
 
 function Step($message) { Write-Host "[Darkitten] $message" }
 
-if ((Test-Path $python) -and (Test-Path $pythonw) -and (Test-Path $pyside)) {
+function Test-Runtime {
+    if (-not (Test-Path $python)) { return $false }
+    if (-not (Test-Path $pythonw)) { return $false }
+    if (-not (Test-Path $pyside)) { return $false }
+    & $python -c "import PySide6" 2>$null
+    return ($LASTEXITCODE -eq 0)
+}
+
+if (Test-Runtime) {
     Step "私有运行时已就绪。"
     exit 0
+}
+
+# 不直接删除已有目录：改名保留，避免误删用户数据。
+if (Test-Path $runtime) {
+    $backup = "$runtime.broken-" + (Get-Date -Format "yyyyMMdd-HHmmss")
+    Step "现有运行时不可用，移动到 $backup"
+    try { Move-Item -Path $runtime -Destination $backup -Force }
+    catch {
+        Step "无法移动旧运行时：$($_.Exception.Message)"
+        exit 1
+    }
 }
 
 $pyVersion = "3.12.10"
 $zipName = "python-$pyVersion-embed-amd64.zip"
 $sources = @(
-    "https://registry.npmmirror.com/-/binary/python/$pyVersion/$zipName",
     "https://mirrors.huaweicloud.com/python/$pyVersion/$zipName",
+    "https://registry.npmmirror.com/-/binary/python/$pyVersion/$zipName",
     "https://www.python.org/ftp/python/$pyVersion/$zipName"
 )
 $indexes = @(
     "https://mirrors.aliyun.com/pypi/simple/",
-    "https://repo.huaweicloud.com/repository/pypi/simple/"
+    "https://repo.huaweicloud.com/repository/pypi/simple/",
+    "https://pypi.org/simple/"
 )
 
 $zipPath = Join-Path $env:TEMP "darkitten-$zipName"
@@ -48,7 +68,6 @@ if (-not $downloaded) {
 }
 
 try {
-    if (Test-Path $runtime) { Remove-Item -Recurse -Force $runtime }
     New-Item -ItemType Directory -Path $runtime | Out-Null
     Expand-Archive -Path $zipPath -DestinationPath $runtime -Force
 } catch {
@@ -66,12 +85,37 @@ if (-not $pth) {
 }
 $lines = @(Get-Content $pth.FullName)
 $lines = $lines | ForEach-Object {
-    if ($_ -match "^\s*#\s*import\s+site\s*$") { "import site" } else { $_ }
+    if ($_ -match '^\s*#\s*import\s+site\s*$') { "import site" } else { $_ }
 }
 if (-not ($lines -contains "Lib\site-packages")) { $lines += "Lib\site-packages" }
 Set-Content -Path $pth.FullName -Value $lines -Encoding ASCII
 
-# 用 pip wheel 自举，不依赖 get-pip.py。
+# 首选 uv 安装：不需要 pip 自举，速度快。
+$uvExe = $null
+$uvCommand = Get-Command uv -ErrorAction SilentlyContinue
+if ($uvCommand) {
+    $uvExe = $uvCommand.Source
+} else {
+    $wingetRoot = Join-Path $env:LOCALAPPDATA "Microsoft\WinGet\Packages"
+    if (Test-Path $wingetRoot) {
+        $found = Get-ChildItem $wingetRoot -Recurse -Filter "uv.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
+        if ($found) { $uvExe = $found.FullName }
+    }
+}
+
+if ($uvExe) {
+    foreach ($index in $indexes) {
+        Step "安装 PySide6-Essentials==$version：$index"
+        & $uvExe pip install --python $python --index-url $index "PySide6-Essentials==$version"
+        if ($LASTEXITCODE -eq 0 -and (Test-Runtime)) {
+            Step "运行时准备完成。"
+            exit 0
+        }
+        Step "该镜像安装失败，换下一个。"
+    }
+}
+
+# 备用方案：用 pip wheel 自举，不依赖 get-pip.py。
 $pipWheel = Join-Path $env:TEMP "darkitten-pip.whl"
 $pipReady = $false
 foreach ($index in $indexes) {
@@ -98,8 +142,8 @@ if (-not $pipReady) {
 
 $installed = $false
 foreach ($index in $indexes) {
-    Step "安装 PySide6-Essentials==6.12.0：$index"
-    & $python "$pipWheel\pip" install --no-cache-dir --disable-pip-version-check --no-warn-script-location -i $index "PySide6-Essentials==6.12.0"
+    Step "安装 PySide6-Essentials==$version：$index"
+    & $python "$pipWheel\pip" install --no-cache-dir --disable-pip-version-check --no-warn-script-location -i $index "PySide6-Essentials==$version"
     if ($LASTEXITCODE -eq 0) { $installed = $true; break }
     Step "该镜像安装失败，换下一个镜像。"
 }
@@ -110,8 +154,7 @@ if (-not $installed) {
     exit 1
 }
 
-& $python -c "import PySide6" 2>$null
-if ($LASTEXITCODE -ne 0) {
+if (-not (Test-Runtime)) {
     Step "PySide6 校验失败。"
     exit 1
 }

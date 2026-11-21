@@ -1,0 +1,10 @@
+EnchCracker 1.6
+Copyright (c) Earthcomputer and contributors
+https://github.com/Earthcomputer/EnchantmentCracker
+
+Licensed under the Apache License, Version 2.0 (see LICENSE-APACHE-2.0.txt).
+The jar in this folder is bundled unmodified for the launcher's Enchantment
+Prediction page. All rights belong to the original authors; this project only
+redistributes it and adds an offline launch shortcut.
+
+Do not remove this notice or the license file when repackaging.

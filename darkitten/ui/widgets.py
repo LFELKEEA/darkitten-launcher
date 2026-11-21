@@ -404,6 +404,7 @@ class ChibiCompanion(QWidget):
         "skin": ("换件衣服给本喵看", "转一圈看看嘛", "64×64 的像素魔法", "这套很适合你"),
         "room": ("房间号给本喵", "朋友来了就开门", "樱花隧道启动！", "联机要一起玩"),
         "server": ("服务器由本喵看家", "插件别打架", "内存给够了吗", "开服，冲！"),
+        "assistant": ("种子给我，本喵去算", "指令别写错哦", "附魔预测要开 clientcommands", "MC百科也能查"),
         "settings": ("这里是猫猫的窝", "别把本喵调坏了", "设置要乖乖保存", "喜好都记下了"),
     }
 
@@ -449,6 +450,12 @@ class ChibiCompanion(QWidget):
             "插件日志要一起翻吗？",
             "服务端能安全停，放心发布",
             "猫猫看家，你去改代码",
+        ),
+        "assistant": (
+            "开发者大人，算法和 Java 对齐了吗？",
+            "种子和结构候选的公式别写反",
+            "命令方块链的朝向检查过了吗？",
+            "AI 接口的 Key 别提交进仓库",
         ),
         "settings": (
             "开发者大人，配置已经收好",
@@ -1115,6 +1122,7 @@ class VersionRow(QFrame):
     export_requested = Signal(str)
     migrate_requested = Signal(str)
     settings_requested = Signal(str)
+    worlds_requested = Signal(str)
 
     def __init__(
         self,
@@ -1122,6 +1130,8 @@ class VersionRow(QFrame):
         selected: bool = False,
         parent: QWidget | None = None,
         bound_loader: str = "",
+        save_count: int = 0,
+        server_count: int = 0,
     ) -> None:
         super().__init__(parent)
         self.summary = summary
@@ -1172,10 +1182,14 @@ class VersionRow(QFrame):
             meta_parts.append(summary.release_time[:10])
         if summary.java_major:
             meta_parts.append(f"Java {summary.java_major}+")
+        meta_parts.append(f"{save_count} 个存档 · {server_count} 个服务器")
         if summary.error:
             meta_parts.append(summary.error)
         meta = QLabel(" · ".join(meta_parts) or "本地版本")
         meta.setObjectName("Tiny")
+        meta.setToolTip(meta.text())
+        meta.setMinimumWidth(0)
+        meta.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Preferred)
         info.addWidget(meta)
 
         layout.addWidget(mark)
@@ -1186,6 +1200,18 @@ class VersionRow(QFrame):
             check.setPixmap(icons.pixmap("check", colors()["accent"], 18))
         check.setFixedWidth(20)
         layout.addWidget(check)
+
+        worlds_btn = icon_button(
+            "globe",
+            f"存档与服务器：{save_count} 个单人存档，{server_count} 个多人服务器",
+            colors()["muted"],
+            28,
+            15,
+        )
+        worlds_btn.clicked.connect(
+            lambda _=False: self.worlds_requested.emit(self.summary.id)
+        )
+        layout.addWidget(worlds_btn)
 
         settings_btn = icon_button(
             "settings", "版本设置：选择原版或已安装的加载器", colors()["muted"], 28, 15
@@ -1214,6 +1240,7 @@ class VersionRow(QFrame):
         layout.addWidget(delete_btn)
 
         transparent_children(self)
+        worlds_btn.setAttribute(Qt.WA_TransparentForMouseEvents, False)
         settings_btn.setAttribute(Qt.WA_TransparentForMouseEvents, False)
         export_btn.setAttribute(Qt.WA_TransparentForMouseEvents, False)
         migrate_btn.setAttribute(Qt.WA_TransparentForMouseEvents, False)

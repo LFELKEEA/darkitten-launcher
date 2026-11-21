@@ -53,6 +53,7 @@ EXCLUDED_PARTS = {
     "node_modules",
     "reports",
     ".deploy",
+    "downloads",
 }
 TEXT_SUFFIXES = {
     ".py", ".txt", ".json", ".md", ".bat", ".cmd", ".ps1", ".sh",
@@ -116,7 +117,7 @@ def source_files(source: Path) -> list[Path]:
     )
 
 
-PACKAGE_EXCLUDED_PARTS = {"qa", "tools"}
+PACKAGE_EXCLUDED_PARTS = {"qa"}
 
 
 def package_files(source: Path) -> list[Path]:
@@ -629,7 +630,7 @@ def build(source: Path, version: str, deploy: bool, repo: str) -> int:
         path = source / name
         if path.is_file():
             update_entries.append((path, f"{update_root}/{name}"))
-    for name in ("darkitten", "assets"):
+    for name in ("darkitten", "assets", "tools/enchcracker"):
         folder = source / name
         if not folder.is_dir():
             continue
