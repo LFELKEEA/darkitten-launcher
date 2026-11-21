@@ -1,13 +1,16 @@
 from __future__ import annotations
 
+import ctypes
+import sys
 import time
 from datetime import datetime
 from pathlib import Path
 
-from PySide6.QtCore import Qt, QTimer, QUrl, Signal
+from PySide6.QtCore import QEvent, Qt, QTimer, QUrl, Signal
 from PySide6.QtGui import (
     QDesktopServices,
     QImage,
+    QKeyEvent,
     QPainter,
     QPainterPath,
     QPixmap,
@@ -101,6 +104,52 @@ STATE_BADGE = {
     "running": "green",
     "stopping": "orange",
 }
+
+
+def _caps_lock_on() -> bool:
+    if sys.platform != "win32":
+        return False
+    try:
+        return bool(ctypes.windll.user32.GetKeyState(0x14) & 1)
+    except Exception:
+        return False
+
+
+def _shifted_key_event(event: QKeyEvent) -> QKeyEvent | None:
+    """按住 Shift 或开启 CapsLock 时，把投递成小写的单个字母改回大写。
+
+    Windows 上部分键盘布局或输入法会把 Shift+字母作为小写 text 交给
+    QLineEdit，导致服务端指令里的大写（玩家名、say 内容等）输不进去。
+    这里只在大小写与修饰键不一致时修正，中文输入法组合不受影响。
+    """
+    if event.type() != QEvent.KeyPress:
+        return None
+    text = event.text()
+    if (
+        len(text) != 1
+        or not text.isascii()
+        or not text.isalpha()
+        or not text.islower()
+    ):
+        return None
+    shift = bool(event.modifiers() & Qt.ShiftModifier)
+    if not (shift ^ _caps_lock_on()):
+        return None
+    return QKeyEvent(
+        event.type(),
+        event.key(),
+        event.modifiers(),
+        text.upper(),
+        event.isAutoRepeat(),
+        event.count(),
+    )
+
+
+class ConsoleCommandEdit(QLineEdit):
+    """服务端控制台指令输入框，保证 Shift/CapsLock 能输入大写。"""
+
+    def keyPressEvent(self, event: QKeyEvent) -> None:
+        super().keyPressEvent(_shifted_key_event(event) or event)
 
 
 class _ElidedLabel(QLabel):
@@ -671,7 +720,7 @@ class ServerPage(QWidget):
 
         command_row = QHBoxLayout()
         command_row.setSpacing(6)
-        self.command_edit = QLineEdit()
+        self.command_edit = ConsoleCommandEdit()
         self.command_edit.setPlaceholderText("输入控制台命令，例如 list、say 你好、stop…")
         self.command_edit.returnPressed.connect(self.send_command)
         command_row.addWidget(self.command_edit, 1)
