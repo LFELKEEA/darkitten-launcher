@@ -1,6 +1,6 @@
 ﻿Darkitten Launcher 1.14.1 完整源代码
-生成时间：2026-11-21 19:48:55
-文本文件：165
+生成时间：2026-11-21 19:58:11
+文本文件：168
 ================================================================================
 目录
 ================================================================================
@@ -108,11 +108,13 @@
   darkitten/ui/version_settings_dialog.py
   darkitten/ui/version_zip_dialog.py
   darkitten/ui/widgets.py
+  darkitten/ui/world_import_dialog.py
   darkitten/ui/world_manager_dialog.py
   darkitten/updater.py
   darkitten/version_zip.py
   darkitten/versions.py
   darkitten/workers.py
+  darkitten/world_import.py
   darkitten/worlds.py
   darkitten/zip_extract.py
   launch.bat
@@ -128,6 +130,7 @@
   tests/test_mc_versions.py
   tests/test_sakura_tunnel_pick.py
   tests/test_server_icon.py
+  tests/test_world_import.py
   tests/test_worlds.py
   tools/enchcracker/acknowledgedWarnings.properties
   tools/enchcracker/LICENSE-APACHE-2.0.txt
@@ -28665,6 +28668,7 @@ class ServerInfo:
     memory_mb: int = 4096
     port: int = 25565
     online_mode: bool = False
+    seed: str = ""
     eula: bool = False
     installed: bool = False
     install_error: str = ""
@@ -28846,6 +28850,9 @@ def update_server_properties(
             "online-mode": "true" if info.online_mode else "false",
         }
     )
+    seed = str(getattr(info, "seed", "") or "").strip()
+    if seed:
+        values["level-seed"] = seed
     for key, value in (updates or {}).items():
         values[str(key)] = str(value)
 
@@ -54496,6 +54503,7 @@ from PySide6.QtWidgets import (
 )
 
 from ...java import pick_java
+from ...server_config import read_server_properties
 from ...servers import (
     EULA_URL,
     SERVER_BADGE,
@@ -55322,6 +55330,17 @@ class ServerPage(QWidget):
         self.pack_btn.setIcon(icons.icon("package", colors()["accent"], 14))
         self.pack_btn.clicked.connect(self.export_server_pack)
         actions.addWidget(self.pack_btn)
+
+        self.import_world_btn = QPushButton("导入存档")
+        self.import_world_btn.setObjectName("Soft")
+        self.import_world_btn.setCursor(Qt.PointingHandCursor)
+        self.import_world_btn.setIcon(icons.icon("globe", colors()["accent"], 14))
+        self.import_world_btn.setToolTip(
+            "把其他游戏版本的完整存档导入为这个服务端的世界，"
+            "所有维度和玩家数据都会保留"
+        )
+        self.import_world_btn.clicked.connect(self.import_world_dialog)
+        actions.addWidget(self.import_world_btn)
 
         self.reinstall_btn = QPushButton("重新安装")
         self.reinstall_btn.setObjectName("Soft")
@@ -56330,6 +56349,37 @@ class ServerPage(QWidget):
         from ..server_pack_dialog import ServerPackExportDialog
 
         ServerPackExportDialog(self.main, info).exec()
+
+    def import_world_dialog(self) -> None:
+        info = self._current_info()
+        if info is None:
+            self.toast("先选一个服务端，再导入存档", "info")
+            return
+        if self._state_of(info) != "stopped":
+            self.toast("请先停止服务端再导入存档，避免世界正在写入", "error")
+            return
+        if self._install_worker is not None and self._install_folder == info.folder:
+            self.toast("服务端还在安装，等装完再导入存档", "info")
+            return
+        properties = read_server_properties(info.path / "server.properties")
+        level_name = (properties.get("level-name") or "world").strip() or "world"
+        from ..world_import_dialog import WorldImportDialog
+
+        dialog = WorldImportDialog(
+            self.main,
+            target_text=(
+                f"把完整存档导入服务端「{info.name}」，作为它的主世界。"
+                "导入后 server.properties 的 level-name 会同步更新。"
+            ),
+            default_name=level_name,
+            server_info=info,
+        )
+        dialog.exec()
+        if dialog.result is not None:
+            self.refresh_servers(info.folder)
+            backup = getattr(dialog.result, "backup", None)
+            suffix = f"，原世界已备份为 {backup.name}" if backup is not None else ""
+            self.toast(f"存档已导入服务端{suffix}", "success")
 
     def open_import_dialog(self, path: str | Path | None = None) -> None:
         from ..server_pack_dialog import ServerPackImportDialog
@@ -62558,9 +62608,12 @@ class ServerConfigDialog(StyledDialog):
 from __future__ import annotations
 
 from PySide6.QtCore import Qt, QTimer
+from pathlib import Path
+
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
+    QFileDialog,
     QFrame,
     QHBoxLayout,
     QLabel,
@@ -62585,8 +62638,14 @@ from ..servers import (
     required_java_major,
     save_server,
 )
-from ..workers import LoaderVersionsWorker, ManifestWorker, ServerInstallWorker
-from .dialogs import StyledDialog
+from ..workers import (
+    LoaderVersionsWorker,
+    ManifestWorker,
+    ServerInstallWorker,
+    WorldImportWorker,
+)
+from ..world_import import WorldImportError, WorldSource, inspect_world_source
+from .dialogs import NoticeDialog, StyledDialog
 from .version_picker import VersionPickerDialog
 from .widgets import SegmentedControl, Switch, colors
 
@@ -62613,6 +62672,9 @@ class ServerCreateDialog(StyledDialog):
         self._installing = False
         self._name_auto = True
         self._form_widgets: list[QWidget] = []
+        self._import_source: WorldSource | None = None
+        self._import_worker: WorldImportWorker | None = None
+        self._import_retry = False
 
         intro = QLabel(
             "在本地创建独立服务端。文件保存在启动器目录的 servers 文件夹中，"
@@ -62684,6 +62746,52 @@ class ServerCreateDialog(StyledDialog):
         self.port_spin = self._add_spin_row(form_layout, "端口", 1024, 65535, 25565, 1)
         self.port_spin.valueChanged.connect(lambda _: self._update_port_note())
 
+        self.seed_edit = self._add_line_row(
+            form_layout, "世界种子", "留空随机生成；可填数字或任意文字"
+        )
+        self.seed_edit.setMaxLength(64)
+        self.seed_hint = QLabel(
+            "只影响新生成的世界；数字种子和文字种子都可以，游戏会用相同算法生成地形。"
+        )
+        self.seed_hint.setObjectName("Tiny")
+        self.seed_hint.setWordWrap(True)
+        form_layout.addWidget(self.seed_hint)
+
+        world_row = QHBoxLayout()
+        world_row.setSpacing(10)
+        world_row.addWidget(self._row_label("初始存档"))
+        self.world_edit = QLineEdit()
+        self.world_edit.setReadOnly(True)
+        self.world_edit.setPlaceholderText("不使用：安装后生成新世界")
+        world_row.addWidget(self.world_edit, 1)
+        self.world_folder_btn = QPushButton("文件夹…")
+        self.world_folder_btn.setObjectName("Ghost")
+        self.world_folder_btn.setCursor(Qt.PointingHandCursor)
+        self.world_folder_btn.setToolTip("选择其他游戏版本的完整存档文件夹")
+        self.world_folder_btn.clicked.connect(lambda: self._pick_world_source(False))
+        world_row.addWidget(self.world_folder_btn)
+        self.world_zip_btn = QPushButton("压缩包…")
+        self.world_zip_btn.setObjectName("Ghost")
+        self.world_zip_btn.setCursor(Qt.PointingHandCursor)
+        self.world_zip_btn.setToolTip("选择包含 level.dat 的 .zip 存档压缩包")
+        self.world_zip_btn.clicked.connect(lambda: self._pick_world_source(True))
+        world_row.addWidget(self.world_zip_btn)
+        self.world_clear_btn = QPushButton("清除")
+        self.world_clear_btn.setObjectName("Ghost")
+        self.world_clear_btn.setCursor(Qt.PointingHandCursor)
+        self.world_clear_btn.setVisible(False)
+        self.world_clear_btn.clicked.connect(self._clear_world_source)
+        world_row.addWidget(self.world_clear_btn)
+        form_layout.addLayout(world_row)
+
+        self.world_hint = QLabel(
+            "可以导入其他游戏版本的存档，作为服务端主世界：所有维度、玩家数据和"
+            "物品栏都会原样保留，跨版本升级由 Minecraft 首次打开时完成。"
+        )
+        self.world_hint.setObjectName("Tiny")
+        self.world_hint.setWordWrap(True)
+        form_layout.addWidget(self.world_hint)
+
         self.java_combo = self._add_combo_row(form_layout, "Java")
         self.java_combo.setMinimumWidth(360)
 
@@ -62733,6 +62841,11 @@ class ServerCreateDialog(StyledDialog):
             self.loader_widget,
             self.memory_spin,
             self.port_spin,
+            self.seed_edit,
+            self.world_edit,
+            self.world_folder_btn,
+            self.world_zip_btn,
+            self.world_clear_btn,
             self.java_combo,
             self.online_switch,
             self.eula_check,
@@ -62873,6 +62986,61 @@ class ServerCreateDialog(StyledDialog):
             return
         self.mc_combo.setEditText(version)
         self._on_mc_changed()
+
+    def _pick_world_source(self, zip_file: bool) -> None:
+        start = Path.home()
+        if zip_file:
+            path, _ = QFileDialog.getOpenFileName(
+                self,
+                "选择存档压缩包",
+                str(start),
+                "存档压缩包 (*.zip);;所有文件 (*.*)",
+            )
+        else:
+            path = QFileDialog.getExistingDirectory(
+                self, "选择世界文件夹（里面要有 level.dat）", str(start)
+            )
+        if not path:
+            return
+        try:
+            source = inspect_world_source(path)
+        except WorldImportError as error:
+            NoticeDialog(
+                self, "无法读取存档", str(error), icon_name="warning"
+            ).exec()
+            return
+        self._import_source = source
+        self.world_edit.setText(str(source.path))
+        self.world_hint.setText(
+            f"将导入「{source.name}」 · {source.version_text} · "
+            f"种子 {source.seed_text} · 维度：{source.dimension_text} · "
+            f"{source.player_text} · {source.size_text}。"
+            "所有维度、玩家数据和物品栏都会原样保留，不会重新生成世界。"
+        )
+        self.world_hint.setStyleSheet(f"color: {colors()['green']};")
+        self.world_clear_btn.setVisible(True)
+        self.seed_edit.setEnabled(False)
+        self.seed_hint.setText(
+            "已选择导入存档，种子只用于生成新世界，因此填写种子不再生效。"
+        )
+        self.seed_hint.setStyleSheet(f"color: {colors()['muted']};")
+
+    def _clear_world_source(self) -> None:
+        self._import_source = None
+        self._import_retry = False
+        self.install_btn.setText("创建并安装")
+        self.world_edit.clear()
+        self.world_clear_btn.setVisible(False)
+        self.seed_edit.setEnabled(True)
+        self.world_hint.setText(
+            "可以导入其他游戏版本的存档，作为服务端主世界：所有维度、玩家数据和"
+            "物品栏都会原样保留，跨版本升级由 Minecraft 首次打开时完成。"
+        )
+        self.world_hint.setStyleSheet("")
+        self.seed_hint.setText(
+            "只影响新生成的世界；数字种子和文字种子都可以，游戏会用相同算法生成地形。"
+        )
+        self.seed_hint.setStyleSheet("")
 
     def _on_name_edited(self, _text: str) -> None:
         self._name_auto = False
@@ -63060,6 +63228,9 @@ class ServerCreateDialog(StyledDialog):
         if self._installing:
             self._cancel_install()
             return
+        if self._import_retry and self._pending_info is not None:
+            self._start_world_import(self._pending_info)
+            return
         if not self.install_btn.isEnabled():
             return
         kind = self._current_kind()
@@ -63073,6 +63244,7 @@ class ServerCreateDialog(StyledDialog):
             if kind in LOADER_KINDS
             else ""
         )
+        seed = "" if self._import_source is not None else self.seed_edit.text().strip()
         if kind in LOADER_KINDS and not loader_version:
             self.main.toast("请选择加载器版本", "error")
             return
@@ -63087,6 +63259,7 @@ class ServerCreateDialog(StyledDialog):
             info.memory_mb = self.memory_spin.value()
             info.port = self.port_spin.value()
             info.online_mode = self.online_switch.isChecked()
+            info.seed = seed
         else:
             name = self.name_edit.text().strip()
             folder = new_server_folder(name, kind, mc)
@@ -63100,6 +63273,7 @@ class ServerCreateDialog(StyledDialog):
                 memory_mb=self.memory_spin.value(),
                 port=self.port_spin.value(),
                 online_mode=self.online_switch.isChecked(),
+                seed=seed,
             )
             self._pending_info = info
         save_server(info)
@@ -63142,6 +63316,11 @@ class ServerCreateDialog(StyledDialog):
         )
 
     def _cancel_install(self) -> None:
+        if self._import_worker is not None:
+            self.progress_text.setText("正在取消导入…")
+            self.install_btn.setEnabled(False)
+            self._import_worker.cancel()
+            return
         if self._install_worker:
             self.progress_text.setText("正在取消…")
             self.install_btn.setEnabled(False)
@@ -63155,6 +63334,7 @@ class ServerCreateDialog(StyledDialog):
         for widget in self._form_widgets:
             widget.setEnabled(enabled)
         if enabled:
+            self.seed_edit.setEnabled(self._import_source is None)
             self.loader_widget.setEnabled(self._current_kind() in LOADER_KINDS)
             self._update_java_note()
             self._update_action()
@@ -63173,18 +63353,15 @@ class ServerCreateDialog(StyledDialog):
         self._install_worker = None
         if self._task is not None:
             self._task.metadata["ui_handled"] = True
+        if success and self._pending_info is not None and self._import_source is not None:
+            self._start_world_import(self._pending_info)
+            return
         self._set_form_enabled(True)
         self.close_btn.setEnabled(True)
         self.close_btn.setText("关闭")
         self.install_btn.setText("创建并安装")
         if success and self._pending_info is not None:
-            self.progress.setValue(100)
-            self.progress_text.setText("安装完成")
-            self.server = self._pending_info
-            if hasattr(self.main, "server_page"):
-                self.main.server_page.refresh_servers(self.server.folder)
-            self.main.toast(f"{self.server.name} 服务端已就绪", "success")
-            QTimer.singleShot(500, self.accept)
+            self._finish_success()
             return
         if "取消" in str(message):
             self.progress_text.setText("安装已取消")
@@ -63194,11 +63371,85 @@ class ServerCreateDialog(StyledDialog):
         self.install_btn.setText("重试安装")
         self.main.toast(f"服务端安装失败：{message}", "error")
 
+    def _finish_success(self) -> None:
+        if self._pending_info is None:
+            return
+        self.progress.setValue(100)
+        self.progress_text.setText("安装完成")
+        self.server = self._pending_info
+        if hasattr(self.main, "server_page"):
+            self.main.server_page.refresh_servers(self.server.folder)
+        self.main.toast(f"{self.server.name} 服务端已就绪", "success")
+        QTimer.singleShot(500, self.accept)
+
+    # ------------------------------------------------------------------
+    def _start_world_import(self, info: ServerInfo) -> None:
+        if self._import_source is None:
+            self._finish_success()
+            return
+        self._import_retry = False
+        self._installing = True
+        self._set_form_enabled(False)
+        self.progress.setValue(0)
+        self.progress_text.setText("服务端已安装，正在导入存档…")
+        self.log.appendPlainText(
+            f"开始导入存档：{self._import_source.path} → {info.path / 'world'}"
+        )
+        self.install_btn.setText("取消导入")
+        self.close_btn.setEnabled(True)
+        self.close_btn.setText("后台运行")
+        worker = WorldImportWorker(
+            self._import_source,
+            server_info=info,
+            folder_name="world",
+            parent=self,
+        )
+        self._import_worker = worker
+        worker.progress.connect(self._on_import_progress)
+        worker.finished.connect(self._on_import_finished)
+        worker.start()
+
+    def _on_import_progress(self, percent: int, message: str) -> None:
+        self.progress.setValue(max(0, min(100, percent)))
+        self.progress_text.setText(message)
+        if message:
+            bar = self.log.verticalScrollBar()
+            last = self.log.toPlainText().splitlines()[-1:] or [""]
+            if last[0] != message:
+                self.log.appendPlainText(message)
+                bar.setValue(bar.maximum())
+
+    def _on_import_finished(self, success: bool, message: str, _result) -> None:
+        self._import_worker = None
+        self._installing = False
+        self._set_form_enabled(True)
+        self.close_btn.setEnabled(True)
+        self.close_btn.setText("关闭")
+        if success and self._pending_info is not None:
+            self._import_source = None
+            self.progress.setValue(100)
+            self.progress_text.setText(message)
+            self._finish_success()
+            return
+        self.server = self._pending_info
+        if self._pending_info is not None and hasattr(self.main, "server_page"):
+            self.main.server_page.refresh_servers(self._pending_info.folder)
+        if "取消" in message:
+            self.progress_text.setText("存档导入已取消，服务端已安装但没有导入世界")
+            self.install_btn.setText("创建并安装")
+            self.main.toast("存档导入已取消，服务端已安装", "info")
+            return
+        self.progress_text.setText(f"服务端已安装，但存档导入失败：{message}")
+        self.install_btn.setText("重试导入存档")
+        self.install_btn.setEnabled(True)
+        self._import_retry = True
+        self.main.toast(f"存档导入失败：{message}", "error")
+
     def reject(self) -> None:
         if self._installing:
             self.main.toast(
-                "服务端安装已转到顶栏继续，可以继续操作启动器；"
-                "点击顶栏进度可以查看任务",
+                "服务端任务已在后台继续，可以继续操作启动器；"
+                "完成后会更新服务端列表",
                 "info",
             )
         super().reject()
@@ -68682,6 +68933,295 @@ class DependencyBar(QWidget):
 
 
 ################################################################################
+# FILE: darkitten/ui/world_import_dialog.py
+################################################################################
+"""导入其他游戏版本的完整存档（所有维度、玩家数据与物品栏）。"""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+from PySide6.QtCore import Qt
+from PySide6.QtWidgets import (
+    QFileDialog,
+    QFrame,
+    QHBoxLayout,
+    QLabel,
+    QLineEdit,
+    QProgressBar,
+    QPushButton,
+    QVBoxLayout,
+    QWidget,
+)
+
+from ..world_import import WorldImportError, WorldSource, inspect_world_source
+from ..workers import WorldImportWorker
+from .dialogs import NoticeDialog, StyledDialog
+from .widgets import colors
+
+
+class WorldImportDialog(StyledDialog):
+    """选择一个世界文件夹或 zip，复制到服务端或启动器存档目录。"""
+
+    def __init__(
+        self,
+        parent,
+        *,
+        target_text: str,
+        title: str = "导入完整存档",
+        default_name: str = "world",
+        name_label: str = "世界文件夹名称",
+        initial_path: str | Path | None = None,
+        server_info=None,
+        dest_parent: str | Path | None = None,
+    ) -> None:
+        super().__init__(parent, title, "globe", width=620)
+        self.server_info = server_info
+        self.dest_parent = Path(dest_parent) if dest_parent is not None else None
+        self.source: WorldSource | None = None
+        self.result = None
+        self._worker: WorldImportWorker | None = None
+        self._busy = False
+        self._initial_path = str(initial_path or "")
+
+        intro = QLabel(target_text)
+        intro.setObjectName("DialogText")
+        intro.setWordWrap(True)
+        self.body.addWidget(intro)
+
+        source_card = QFrame()
+        source_card.setObjectName("SoftCard")
+        source_card.setAttribute(Qt.WA_StyledBackground, True)
+        source_box = QVBoxLayout(source_card)
+        source_box.setContentsMargins(12, 10, 12, 10)
+        source_box.setSpacing(7)
+
+        source_head = QHBoxLayout()
+        source_head.setSpacing(6)
+        source_title = QLabel("存档来源")
+        source_title.setStyleSheet("font-weight: 700;")
+        source_head.addWidget(source_title)
+        source_hint = QLabel("支持世界文件夹或 .zip 压缩包")
+        source_hint.setObjectName("Tiny")
+        source_head.addWidget(source_hint, 1)
+        source_box.addLayout(source_head)
+
+        pick_row = QHBoxLayout()
+        pick_row.setSpacing(6)
+        self.source_edit = QLineEdit()
+        self.source_edit.setReadOnly(True)
+        self.source_edit.setPlaceholderText("尚未选择存档")
+        pick_row.addWidget(self.source_edit, 1)
+        self.folder_btn = QPushButton("选择文件夹")
+        self.folder_btn.setObjectName("Soft")
+        self.folder_btn.setCursor(Qt.PointingHandCursor)
+        self.folder_btn.clicked.connect(self._pick_folder)
+        pick_row.addWidget(self.folder_btn)
+        self.zip_btn = QPushButton("选择压缩包")
+        self.zip_btn.setObjectName("Soft")
+        self.zip_btn.setCursor(Qt.PointingHandCursor)
+        self.zip_btn.clicked.connect(self._pick_zip)
+        pick_row.addWidget(self.zip_btn)
+        source_box.addLayout(pick_row)
+
+        self.info_label = QLabel("")
+        self.info_label.setObjectName("Tiny")
+        self.info_label.setWordWrap(True)
+        self.info_label.setVisible(False)
+        source_box.addWidget(self.info_label)
+        self.body.addWidget(source_card)
+
+        name_row = QHBoxLayout()
+        name_row.setSpacing(8)
+        name_label_widget = QLabel(name_label)
+        name_label_widget.setFixedWidth(108)
+        name_label_widget.setStyleSheet("font-weight: 700; font-size: 12px;")
+        name_row.addWidget(name_label_widget)
+        self.name_edit = QLineEdit(default_name)
+        self.name_edit.setMaxLength(64)
+        self.name_edit.setPlaceholderText("导入后使用的文件夹名")
+        name_row.addWidget(self.name_edit, 1)
+        self.body.addLayout(name_row)
+
+        self.name_hint = QLabel("")
+        self.name_hint.setObjectName("Tiny")
+        self.name_hint.setWordWrap(True)
+        self.body.addWidget(self.name_hint)
+
+        self.note = QLabel(
+            "会把整个世界文件夹原样复制过去：主世界、下界、末地、自定义维度、"
+            "playerdata、stats、advancements 和 data 都会保留，不修改玩家数据、"
+            "物品栏或进度，跨版本升级交给 Minecraft 首次打开世界时完成。"
+        )
+        self.note.setObjectName("Tiny")
+        self.note.setWordWrap(True)
+        self.body.addWidget(self.note)
+
+        self.backup_note = QLabel(
+            "目标位置已有同名世界时，会先重命名为「名字.bak-时间」备份，不会删除。"
+        )
+        self.backup_note.setObjectName("Tiny")
+        self.backup_note.setWordWrap(True)
+        self.backup_note.setStyleSheet(f"color: {colors()['muted']};")
+        self.body.addWidget(self.backup_note)
+
+        self.progress_box = QWidget()
+        progress_layout = QVBoxLayout(self.progress_box)
+        progress_layout.setContentsMargins(0, 0, 0, 0)
+        progress_layout.setSpacing(4)
+        self.progress = QProgressBar()
+        self.progress.setRange(0, 100)
+        self.progress.setTextVisible(False)
+        self.progress.setFixedHeight(8)
+        self.progress_text = QLabel("")
+        self.progress_text.setObjectName("Tiny")
+        self.progress_text.setWordWrap(True)
+        progress_layout.addWidget(self.progress)
+        progress_layout.addWidget(self.progress_text)
+        self.progress_box.setVisible(False)
+        self.body.addWidget(self.progress_box)
+
+        self.close_btn = self.add_button("取消", "Secondary", self._on_close)
+        self.import_btn = self.add_button("开始导入", "Primary", self._start)
+        self.import_btn.setEnabled(False)
+        self.import_btn.setMinimumWidth(100)
+
+        if self._initial_path:
+            self.set_source(self._initial_path)
+
+    # ------------------------------------------------------------------
+    def set_source(self, path: str | Path) -> None:
+        try:
+            source = inspect_world_source(path)
+        except WorldImportError as error:
+            NoticeDialog(
+                self,
+                "无法读取存档",
+                str(error),
+                icon_name="warning",
+            ).exec()
+            return
+        self.source = source
+        self.source_edit.setText(str(source.path))
+        self.info_label.setText(
+            f"世界「{source.name}」 · {source.version_text} · 种子 {source.seed_text}\n"
+            f"维度：{source.dimension_text} · {source.player_text} · "
+            f"{source.files} 个文件 · {source.size_text}"
+        )
+        self.info_label.setVisible(True)
+        self.name_edit.setText(source.folder_name or "world")
+        self._update_name_hint()
+        self.import_btn.setEnabled(True)
+
+    def _pick_folder(self) -> None:
+        start = self._initial_path or str(Path.home())
+        path = QFileDialog.getExistingDirectory(
+            self, "选择世界文件夹（里面要有 level.dat）", start
+        )
+        if path:
+            self.set_source(path)
+
+    def _pick_zip(self) -> None:
+        start = Path(self._initial_path) if self._initial_path else Path.home()
+        if start.is_file():
+            start = start.parent
+        path, _ = QFileDialog.getOpenFileName(
+            self,
+            "选择存档压缩包",
+            str(start),
+            "存档压缩包 (*.zip);;所有文件 (*.*)",
+        )
+        if path:
+            self.set_source(path)
+
+    def _update_name_hint(self) -> None:
+        if self.server_info is not None:
+            self.name_hint.setText(
+                "这是服务端主世界的文件夹名，会同步写入 server.properties 的 "
+                "level-name。建议保持 world。"
+            )
+        else:
+            self.name_hint.setText(
+                "这是导入到 saves 目录后的文件夹名；游戏内显示的世界名称来自 "
+                "level.dat，不会因为这里改名而改变。"
+            )
+
+    # ------------------------------------------------------------------
+    def _start(self) -> None:
+        if self._busy:
+            self._cancel()
+            return
+        if self.source is None:
+            return
+        name = self.name_edit.text().strip()
+        if not name:
+            self.name_hint.setText("世界文件夹名称不能为空。")
+            self.name_hint.setStyleSheet(f"color: {colors()['red']};")
+            return
+        self._set_busy(True)
+        self.progress.setValue(0)
+        self.progress_text.setText("准备导入…")
+        worker = WorldImportWorker(
+            self.source,
+            dest_parent=self.dest_parent,
+            folder_name=name,
+            server_info=self.server_info,
+            parent=self,
+        )
+        self._worker = worker
+        worker.progress.connect(self._on_progress)
+        worker.finished.connect(self._on_finished)
+        worker.start()
+
+    def _cancel(self) -> None:
+        if self._worker is not None:
+            self.progress_text.setText("正在取消…")
+            self.import_btn.setEnabled(False)
+            self._worker.cancel()
+
+    def _on_progress(self, percent: int, message: str) -> None:
+        self.progress.setValue(max(0, min(100, int(percent))))
+        self.progress_text.setText(message)
+
+    def _on_finished(self, success: bool, message: str, result) -> None:
+        self._worker = None
+        self._set_busy(False)
+        if success:
+            self.progress.setValue(100)
+            self.progress_text.setText(message)
+            self.result = result
+            parent = self.parentWidget()
+            toast = getattr(parent, "toast", None)
+            if callable(toast):
+                toast(message, "success")
+            self.accept()
+            return
+        self.progress_text.setText(message)
+        if "取消" in message:
+            self.import_btn.setText("开始导入")
+            return
+        self.import_btn.setText("重试导入")
+        self.name_hint.setText(message)
+        self.name_hint.setStyleSheet(f"color: {colors()['red']};")
+
+    def _set_busy(self, busy: bool) -> None:
+        self._busy = busy
+        self.folder_btn.setEnabled(not busy)
+        self.zip_btn.setEnabled(not busy)
+        self.name_edit.setEnabled(not busy)
+        self.close_btn.setText("取消并关闭" if busy else "取消")
+        self.close_btn.setEnabled(True)
+        self.import_btn.setText("取消导入" if busy else "开始导入")
+        self.import_btn.setEnabled(True)
+        self.progress_box.setVisible(busy)
+
+    def _on_close(self) -> None:
+        if self._busy and self._worker is not None:
+            self._worker.cancel()
+        self.reject()
+
+
+################################################################################
 # FILE: darkitten/ui/world_manager_dialog.py
 ################################################################################
 from __future__ import annotations
@@ -68978,6 +69518,9 @@ class WorldManagerDialog(StyledDialog):
         self.scroll.setWidget(self.holder)
         self.body.addWidget(self.scroll, 1)
 
+        self.import_world_btn = self.add_button(
+            "导入存档", "Soft", self._import_world
+        )
         self.new_world_btn = self.add_button("新建存档", "Primary", self._create_world)
         self.add_server_btn = self.add_button("添加服务器", "Primary", self._add_server)
         self.add_button("关闭", "Secondary", self.reject)
@@ -68995,6 +69538,7 @@ class WorldManagerDialog(StyledDialog):
             self._toast(message, "success")
 
     def _update_footer(self) -> None:
+        self.import_world_btn.setVisible(self._tab == "saves")
         self.new_world_btn.setVisible(self._tab == "saves")
         self.add_server_btn.setVisible(self._tab == "servers")
 
@@ -69078,6 +69622,28 @@ class WorldManagerDialog(StyledDialog):
             self.list_layout.insertWidget(self.list_layout.count() - 1, row)
 
     # ------------------------------------------------------------------
+    def _import_world(self) -> None:
+        if getattr(self.main, "game_running", False):
+            self._toast("游戏正在运行，请先退出游戏再导入存档", "error")
+            return
+        from .world_import_dialog import WorldImportDialog
+
+        dialog = WorldImportDialog(
+            self,
+            target_text=(
+                f"把其他游戏版本的完整存档导入版本 {self.version_id} 的 saves 目录。"
+                "所有维度、玩家数据和物品栏都会原样保留，"
+                "跨版本升级由 Minecraft 首次打开世界时完成。"
+            ),
+            default_name="",
+            name_label="导入后的文件夹名",
+            dest_parent=self.game_dir / "saves",
+        )
+        dialog.exec()
+        if dialog.result is not None:
+            self._toast(f"已导入存档「{dialog.result.source.name}」", "success")
+            self._reload()
+
     def _create_world(self) -> None:
         dialog = WorldCreateDialog(self, self.version_id)
         if dialog.exec() != QDialog.Accepted:
@@ -71687,6 +72253,12 @@ from .sakura import (
 )
 from .skins import change_skin, fetch_account_skin, reset_skin
 from .littleskin import LittleSkinAccount, fetch_skin, login as littleskin_login
+from .world_import import (
+    WorldImportCancelled,
+    WorldSource,
+    import_into_server,
+    import_world,
+)
 
 
 class InstallWorker(QObject):
@@ -74488,7 +75060,681 @@ class EasyTierJoinWorker(QObject):
             if self.cancel_event.is_set():
                 session.stop()
             else:
-                self.ready.emit(session, "")
+                self.ready.emit(session, "")
+
+
+class WorldImportWorker(QObject):
+    """在后台把完整世界导入服务端或启动器存档目录。"""
+
+    progress = Signal(int, str)
+    finished = Signal(bool, str, object)
+
+    def __init__(
+        self,
+        source: WorldSource | Path,
+        *,
+        dest_parent: Path | None = None,
+        folder_name: str = "",
+        server_info: ServerInfo | None = None,
+        parent: QObject | None = None,
+    ) -> None:
+        super().__init__(parent)
+        self.source = source
+        self.dest_parent = Path(dest_parent) if dest_parent is not None else None
+        self.folder_name = folder_name
+        self.server_info = server_info
+        self.cancel_event = threading.Event()
+        self._thread: threading.Thread | None = None
+
+    def start(self) -> None:
+        self._thread = threading.Thread(target=self._run, daemon=True)
+        self._thread.start()
+
+    def cancel(self) -> None:
+        self.cancel_event.set()
+
+    def _progress(self, percent: int, message: str) -> None:
+        self.progress.emit(max(0, min(100, int(percent))), str(message))
+
+    def _run(self) -> None:
+        try:
+            if self.server_info is not None:
+                result = import_into_server(
+                    self.server_info,
+                    self.source,
+                    level_name=self.folder_name or "world",
+                    progress_cb=self._progress,
+                    cancel_event=self.cancel_event,
+                )
+            else:
+                if self.dest_parent is None:
+                    raise ValueError("没有指定导入目标")
+                result = import_world(
+                    self.source,
+                    self.dest_parent,
+                    folder_name=self.folder_name,
+                    progress_cb=self._progress,
+                    cancel_event=self.cancel_event,
+                )
+        except WorldImportCancelled:
+            self.finished.emit(False, "导入已取消", None)
+        except Exception as exc:
+            if self.cancel_event.is_set():
+                self.finished.emit(False, "导入已取消", None)
+            else:
+                self.finished.emit(False, str(exc) or "导入失败", None)
+        else:
+            self.finished.emit(True, f"已导入「{result.source.name}」", result)
+
+
+################################################################################
+# FILE: darkitten/world_import.py
+################################################################################
+"""把其他游戏版本的完整存档导入服务端或启动器存档目录。
+
+导入只做文件复制：level.dat、region、DIM-1、DIM1、dimensions、playerdata、
+stats、advancements、data、datapacks 等都原样搬过去，不重写任何 NBT。
+因此玩家数据、物品栏、末影箱、进度和各个维度都会保留；如果目标版本更新，
+Minecraft 会在首次打开世界时自己完成跨版本升级。
+
+目标位置已有同名世界时不会删除，而是重命名为 ``<名字>.bak-时间戳`` 保留。
+"""
+
+from __future__ import annotations
+
+import gzip
+import os
+import re
+import shutil
+import threading
+import time
+import zipfile
+from dataclasses import dataclass, field
+from datetime import datetime
+from pathlib import Path, PurePosixPath
+from typing import Callable, Iterator
+
+from . import nbt
+from .packs import human_size
+from .worlds import _to_int, world_name, world_seed
+
+ProgressCallback = Callable[[int, str], None]
+
+MAX_TOTAL_FILES = 300_000
+MAX_TOTAL_BYTES = 256 * 1024**3
+
+_ILLEGAL_NAME = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
+_WINDOWS_RESERVED = {
+    "CON",
+    "PRN",
+    "AUX",
+    "NUL",
+    *(f"COM{i}" for i in range(1, 10)),
+    *(f"LPT{i}" for i in range(1, 10)),
+}
+_SKIP_NAMES = {
+    "session.lock",
+    ".ds_store",
+    "thumbs.db",
+    "desktop.ini",
+}
+_SKIP_DIRS = {"__MACOSX"}
+
+_DIMENSION_LABELS = {
+    "minecraft:overworld": "主世界",
+    "minecraft:the_nether": "下界",
+    "minecraft:the_end": "末地",
+}
+
+
+class WorldImportError(ValueError):
+    pass
+
+
+class WorldImportCancelled(Exception):
+    pass
+
+
+@dataclass
+class WorldSource:
+    path: Path
+    is_zip: bool
+    root: str = ""
+    folder_name: str = ""
+    name: str = ""
+    version_name: str = ""
+    data_version: int = 0
+    seed: int | None = None
+    files: int = 0
+    total_bytes: int = 0
+    dimensions: list[str] = field(default_factory=list)
+    players: int = 0
+
+    @property
+    def size_text(self) -> str:
+        return human_size(self.total_bytes)
+
+    @property
+    def seed_text(self) -> str:
+        return str(self.seed) if self.seed is not None else "未知"
+
+    @property
+    def version_text(self) -> str:
+        if self.version_name:
+            return self.version_name
+        if self.data_version:
+            return f"数据版本 {self.data_version}"
+        return "未知版本"
+
+    @property
+    def dimension_text(self) -> str:
+        return "、".join(self.dimensions) if self.dimensions else "主世界"
+
+    @property
+    def player_text(self) -> str:
+        return f"{self.players} 个玩家存档" if self.players else "没有玩家数据"
+
+
+@dataclass
+class WorldImportResult:
+    folder: Path
+    backup: Path | None
+    source: WorldSource
+    files: int = 0
+    total_bytes: int = 0
+    level_name: str = ""
+
+    @property
+    def size_text(self) -> str:
+        return human_size(self.total_bytes)
+
+
+# ---------------------------------------------------------------------------
+# 通用工具
+
+
+def _check_cancel(cancel_event: threading.Event | None) -> None:
+    if cancel_event is not None and cancel_event.is_set():
+        raise WorldImportCancelled()
+
+
+def _now_stamp() -> str:
+    return datetime.now().strftime("%Y%m%d-%H%M%S")
+
+
+def _skip_name(name: str) -> bool:
+    return name.lower() in _SKIP_NAMES
+
+
+def safe_folder_name(text: str, fallback: str = "world") -> str:
+    value = _ILLEGAL_NAME.sub("-", str(text or "")).strip().rstrip(". ")
+    if not value or value.split(".")[0].upper() in _WINDOWS_RESERVED:
+        value = fallback
+    return value[:64] or fallback
+
+
+def _parse_level_bytes(raw: bytes) -> dict:
+    if raw[:2] == b"\x1f\x8b":
+        try:
+            raw = gzip.decompress(raw)
+        except OSError as error:
+            raise WorldImportError(f"无法解压 level.dat：{error}") from error
+    try:
+        return nbt.parse_nbt(raw)
+    except (nbt.NBTError, IndexError, ValueError) as error:
+        raise WorldImportError(f"level.dat 不是有效的存档数据：{error}") from error
+
+
+def _level_fields(root: dict, fallback: str) -> dict:
+    data = root.get("Data")
+    data = data if isinstance(data, dict) else root
+    version = data.get("Version")
+    version_name = ""
+    if isinstance(version, dict):
+        version_name = str(version.get("Name") or "")
+    return {
+        "name": world_name(data, fallback),
+        "seed": world_seed(data),
+        "version_name": version_name,
+        "data_version": _to_int(data.get("DataVersion"), 0),
+    }
+
+
+def _dimensions_of(relative_files: list[Path]) -> list[str]:
+    labels: list[str] = []
+    custom: list[str] = []
+    for relative in relative_files:
+        parts = relative.parts
+        if not parts:
+            continue
+        head = parts[0]
+        if head in ("region", "entities", "poi") and "主世界" not in labels:
+            labels.append("主世界")
+        elif head == "DIM-1" and "下界" not in labels:
+            labels.append("下界")
+        elif head == "DIM1" and "末地" not in labels:
+            labels.append("末地")
+        elif head == "dimensions" and len(parts) >= 4:
+            key = f"{parts[1]}:{parts[2]}"
+            label = _DIMENSION_LABELS.get(key)
+            if label:
+                if label not in labels:
+                    labels.append(label)
+            elif key not in custom:
+                custom.append(key)
+    return labels + custom
+
+
+def _players_of(relative_files: list[Path]) -> int:
+    return sum(
+        1
+        for relative in relative_files
+        if len(relative.parts) == 2
+        and relative.parts[0] == "playerdata"
+        and relative.suffix.lower() == ".dat"
+    )
+
+
+def _folder_root(path: Path) -> Path:
+    if (path / "level.dat").is_file():
+        return path
+    candidates: list[Path] = []
+    try:
+        for child in path.iterdir():
+            if (
+                child.is_dir()
+                and (child / "level.dat").is_file()
+                and ".bak-" not in child.name
+            ):
+                candidates.append(child)
+    except OSError as error:
+        raise WorldImportError(f"无法读取文件夹：{error}") from error
+    if not candidates:
+        raise WorldImportError("这个文件夹里没有 level.dat，不是有效的世界存档")
+    if len(candidates) > 1:
+        names = "、".join(sorted(item.name for item in candidates)[:4])
+        raise WorldImportError(
+            f"这个文件夹里有多个存档（{names}），请直接选择其中一个世界文件夹"
+        )
+    return candidates[0]
+
+
+def _zip_level_roots(zf: zipfile.ZipFile) -> list[str]:
+    roots: list[str] = []
+    for name in zf.namelist():
+        text = name.replace("\\", "/").lstrip("/")
+        lower = text.lower()
+        if lower == "level.dat":
+            roots.append("")
+        elif lower.endswith("/level.dat"):
+            roots.append(text[: -len("/level.dat")])
+    return sorted(set(roots), key=lambda item: (len(PurePosixPath(item).parts), item))
+
+
+def _zip_root(zf: zipfile.ZipFile) -> str:
+    roots = _zip_level_roots(zf)
+    if not roots:
+        raise WorldImportError("压缩包里没有 level.dat，不是有效的世界存档")
+    shortest = len(PurePosixPath(roots[0]).parts)
+    tied = [item for item in roots if len(PurePosixPath(item).parts) == shortest]
+    if len(tied) > 1:
+        names = "、".join(
+            (PurePosixPath(item).name or "根目录") for item in tied[:4]
+        )
+        raise WorldImportError(
+            f"压缩包里有多个存档（{names}），请解压后直接选择其中一个世界文件夹"
+        )
+    return roots[0]
+
+
+def _zip_relative(name: str, root: str) -> Path | None:
+    text = name.replace("\\", "/").lstrip("/")
+    if root:
+        prefix = root.rstrip("/") + "/"
+        if not text.startswith(prefix):
+            return None
+        text = text[len(prefix):]
+    if not text or text.endswith("/"):
+        return None
+    if re.match(r"^[A-Za-z]:", text):
+        return None
+    relative = PurePosixPath(text)
+    if relative.is_absolute():
+        return None
+    parts = [part for part in relative.parts if part not in ("", ".")]
+    if not parts or any(part in ("..",) or ":" in part for part in parts):
+        return None
+    if parts[0] in _SKIP_DIRS:
+        return None
+    if _skip_name(parts[-1]):
+        return None
+    return Path(*parts)
+
+
+def _folder_entries(root: Path) -> Iterator[tuple[Path, Path, int]]:
+    for current, dirs, names in os.walk(root, followlinks=False):
+        current_path = Path(current)
+        dirs[:] = sorted(
+            name
+            for name in dirs
+            if name not in _SKIP_DIRS
+            and not (current_path / name).is_symlink()
+        )
+        for name in sorted(names):
+            path = current_path / name
+            if path.is_symlink() or not path.is_file() or _skip_name(name):
+                continue
+            try:
+                relative = path.relative_to(root)
+                size = path.stat().st_size
+            except OSError:
+                continue
+            yield relative, path, max(0, int(size))
+
+
+def _zip_entries(
+    zf: zipfile.ZipFile, root: str
+) -> Iterator[tuple[Path, zipfile.ZipInfo]]:
+    for info in zf.infolist():
+        if info.is_dir():
+            continue
+        relative = _zip_relative(info.filename, root)
+        if relative is None:
+            continue
+        yield relative, info
+
+
+# ---------------------------------------------------------------------------
+# 检查来源
+
+
+def inspect_world_source(path: Path | str) -> WorldSource:
+    source_path = Path(path)
+    if not source_path.exists():
+        raise WorldImportError("选择的路径不存在")
+    if source_path.is_dir():
+        root = _folder_root(source_path)
+        try:
+            raw = (root / "level.dat").read_bytes()
+        except OSError as error:
+            raise WorldImportError(f"无法读取 level.dat：{error}") from error
+        fields = _level_fields(_parse_level_bytes(raw), root.name)
+        files = 0
+        total = 0
+        relatives: list[Path] = []
+        for relative, _file, size in _folder_entries(root):
+            files += 1
+            total += size
+            relatives.append(relative)
+        _guard_totals(files, total)
+        return WorldSource(
+            path=root,
+            is_zip=False,
+            folder_name=root.name,
+            name=fields["name"],
+            version_name=fields["version_name"],
+            data_version=fields["data_version"],
+            seed=fields["seed"],
+            files=files,
+            total_bytes=total,
+            dimensions=_dimensions_of(relatives),
+            players=_players_of(relatives),
+        )
+
+    if not zipfile.is_zipfile(source_path):
+        raise WorldImportError("请选择世界文件夹或 .zip 存档压缩包")
+    try:
+        with zipfile.ZipFile(source_path) as zf:
+            root = _zip_root(zf)
+            level_name = f"{root}/level.dat" if root else "level.dat"
+            try:
+                raw = zf.read(level_name)
+            except KeyError as error:
+                raise WorldImportError("压缩包里缺少 level.dat") from error
+            fields = _level_fields(_parse_level_bytes(raw), PurePosixPath(root).name or source_path.stem)
+            files = 0
+            total = 0
+            relatives = []
+            for relative, info in _zip_entries(zf, root):
+                files += 1
+                total += max(0, int(info.file_size))
+                relatives.append(relative)
+            _guard_totals(files, total)
+    except zipfile.BadZipFile as error:
+        raise WorldImportError(f"压缩包已损坏：{error}") from error
+    return WorldSource(
+        path=source_path,
+        is_zip=True,
+        root=root,
+        folder_name=safe_folder_name(
+            PurePosixPath(root).name if root else source_path.stem
+        ),
+        name=fields["name"],
+        version_name=fields["version_name"],
+        data_version=fields["data_version"],
+        seed=fields["seed"],
+        files=files,
+        total_bytes=total,
+        dimensions=_dimensions_of(relatives),
+        players=_players_of(relatives),
+    )
+
+
+def _guard_totals(files: int, total_bytes: int) -> None:
+    if files > MAX_TOTAL_FILES:
+        raise WorldImportError(f"存档文件数量过多（{files} 个），已停止导入")
+    if total_bytes > MAX_TOTAL_BYTES:
+        raise WorldImportError("存档体积超过 256 GB，已停止导入")
+
+
+# ---------------------------------------------------------------------------
+# 导入
+
+
+def _backup_existing(folder: Path) -> Path:
+    stamp = _now_stamp()
+    base = folder.name[:48]
+    candidate = folder.with_name(f"{base}.bak-{stamp}")
+    index = 2
+    while candidate.exists():
+        candidate = folder.with_name(f"{base}.bak-{stamp}-{index}")
+        index += 1
+    try:
+        folder.rename(candidate)
+    except OSError as error:
+        raise WorldImportError(
+            f"目标同名世界正在被占用，无法备份：{error}。"
+            "请先关闭正在使用这个存档的游戏或服务端。"
+        ) from error
+    return candidate
+
+
+def _copy_folder(
+    source: WorldSource,
+    dest: Path,
+    progress: ProgressCallback,
+    cancel_event: threading.Event | None,
+) -> tuple[int, int]:
+    done = 0
+    copied = 0
+    last_report = 0.0
+    total = max(1, source.total_bytes)
+    for relative, path, size in _folder_entries(source.path):
+        _check_cancel(cancel_event)
+        target = dest / relative
+        target.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            shutil.copy2(path, target)
+        except OSError as error:
+            raise WorldImportError(f"复制 {relative} 失败：{error}") from error
+        done += size
+        copied += 1
+        now = time.monotonic()
+        if now - last_report > 0.12:
+            last_report = now
+            percent = 5 + int(93 * min(done, total) / total)
+            progress(percent, f"正在复制 {relative}")
+    return copied, done
+
+
+def _copy_zip(
+    source: WorldSource,
+    dest: Path,
+    progress: ProgressCallback,
+    cancel_event: threading.Event | None,
+) -> tuple[int, int]:
+    copied = 0
+    written = 0
+    last_report = 0.0
+    total = max(1, source.total_bytes)
+    try:
+        with zipfile.ZipFile(source.path) as zf:
+            for relative, info in _zip_entries(zf, source.root):
+                _check_cancel(cancel_event)
+                target = dest / relative
+                target.parent.mkdir(parents=True, exist_ok=True)
+                try:
+                    with zf.open(info) as reader, open(target, "wb") as writer:
+                        while True:
+                            chunk = reader.read(1024 * 1024)
+                            if not chunk:
+                                break
+                            written += len(chunk)
+                            if written > MAX_TOTAL_BYTES:
+                                raise WorldImportError("压缩包解压后超过 256 GB，已停止导入")
+                            writer.write(chunk)
+                except (OSError, zipfile.BadZipFile) as error:
+                    raise WorldImportError(f"解压 {relative} 失败：{error}") from error
+                copied += 1
+                try:
+                    actual = target.stat().st_size
+                except OSError:
+                    actual = 0
+                now = time.monotonic()
+                if now - last_report > 0.12:
+                    last_report = now
+                    percent = 5 + int(93 * min(written, total) / total)
+                    progress(percent, f"正在解压 {relative}")
+    except zipfile.BadZipFile as error:
+        raise WorldImportError(f"压缩包已损坏：{error}") from error
+    return copied, written
+
+
+def import_world(
+    source: WorldSource | Path | str,
+    dest_parent: Path | str,
+    *,
+    folder_name: str = "",
+    replace: bool = True,
+    progress_cb: ProgressCallback | None = None,
+    cancel_event: threading.Event | None = None,
+) -> WorldImportResult:
+    """把完整世界复制到 ``dest_parent/<folder_name>``。
+
+    已存在的同名世界会先重命名为 ``.bak-时间戳``，不会被删除。
+    """
+    progress = progress_cb or (lambda _p, _m: None)
+    info = source if isinstance(source, WorldSource) else inspect_world_source(source)
+    parent = Path(dest_parent)
+    parent.mkdir(parents=True, exist_ok=True)
+    name = safe_folder_name(folder_name or info.folder_name or info.name)
+    dest = parent / name
+    backup: Path | None = None
+
+    if not info.is_zip:
+        source_root = info.path.resolve()
+        dest_root = dest.resolve()
+        if (
+            dest_root == source_root
+            or source_root in dest_root.parents
+            or dest_root in source_root.parents
+        ):
+            raise WorldImportError("不能把存档导入到它自己或它的子目录里")
+
+    progress(2, "检查目标位置…")
+    if dest.exists():
+        if not replace:
+            raise WorldImportError(f"目标位置已有同名世界：{dest}")
+        backup = _backup_existing(dest)
+        progress(4, f"原世界已备份为 {backup.name}")
+
+    try:
+        dest.mkdir(parents=True)
+        if info.is_zip:
+            files, total = _copy_zip(info, dest, progress, cancel_event)
+        else:
+            files, total = _copy_folder(info, dest, progress, cancel_event)
+        _check_cancel(cancel_event)
+        if not (dest / "level.dat").is_file():
+            raise WorldImportError("复制完成后没有找到 level.dat，导入未完成")
+    except BaseException as error:
+        shutil.rmtree(dest, ignore_errors=True)
+        # 取消或失败时把原世界改回原名，避免用户突然找不到原来的世界。
+        if backup is not None and backup.exists() and not dest.exists():
+            try:
+                backup.rename(dest)
+                backup = None
+            except OSError:
+                pass
+        if isinstance(error, WorldImportCancelled):
+            raise
+        message = str(error)
+        if backup is not None:
+            message = f"{message}。原世界已备份为 {backup.name}，可以手动改回原名。"
+        if isinstance(error, WorldImportError):
+            raise WorldImportError(message) from error
+        raise WorldImportError(f"导入失败：{message}") from error
+
+    progress(100, f"已导入「{info.name}」")
+    return WorldImportResult(
+        folder=dest,
+        backup=backup,
+        source=info,
+        files=files,
+        total_bytes=total,
+        level_name=name,
+    )
+
+
+def import_into_server(
+    info,
+    source: WorldSource | Path | str,
+    *,
+    level_name: str = "",
+    folder_name: str = "",
+    progress_cb: ProgressCallback | None = None,
+    cancel_event: threading.Event | None = None,
+) -> WorldImportResult:
+    from .servers import update_server_properties
+
+    level = safe_folder_name(level_name or folder_name or "world")
+    result = import_world(
+        source,
+        info.path,
+        folder_name=level,
+        progress_cb=progress_cb,
+        cancel_event=cancel_event,
+    )
+    update_server_properties(info, {"level-name": level})
+    return result
+
+
+def import_into_game(
+    game_dir: Path | str,
+    source: WorldSource | Path | str,
+    *,
+    world_name: str = "",
+    progress_cb: ProgressCallback | None = None,
+    cancel_event: threading.Event | None = None,
+) -> WorldImportResult:
+    saves = Path(game_dir) / "saves"
+    return import_world(
+        source,
+        saves,
+        folder_name=world_name,
+        progress_cb=progress_cb,
+        cancel_event=cancel_event,
+    )
 
 
 ################################################################################
@@ -77152,6 +78398,264 @@ class RequiredJavaMajorTests(unittest.TestCase):
         self.assertEqual(required_java_major("1.21.11"), 21)
         self.assertEqual(required_java_major("1.20.1"), 17)
         self.assertEqual(required_java_major("1.16.5"), 8)
+
+
+if __name__ == "__main__":
+    unittest.main()
+
+
+################################################################################
+# FILE: tests/test_world_import.py
+################################################################################
+"""服务端种子与跨版本存档导入的单元测试（不启动界面）。"""
+
+from __future__ import annotations
+
+import hashlib
+import sys
+import tempfile
+import threading
+import unittest
+import zipfile
+from pathlib import Path
+from unittest import mock
+
+ROOT = Path(__file__).resolve().parent.parent
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from darkitten import nbt, servers, worlds  # noqa: E402
+from darkitten.world_import import (  # noqa: E402
+    WorldImportCancelled,
+    WorldImportError,
+    import_into_server,
+    import_world,
+    inspect_world_source,
+)
+
+
+def _make_world(parent: Path, name: str = "远端世界") -> Path:
+    info = worlds.create_world(
+        parent,
+        name=name,
+        seed=424242,
+        game_mode=0,
+        difficulty=2,
+        version_id="1.20.1",
+    )
+    folder = info.folder
+    root = nbt.read_nbt(folder / "level.dat")
+    root["Data"]["Version"] = {
+        "Name": nbt.NBTString("1.20.1"),
+        "Id": nbt.Int(3465),
+    }
+    root["Data"]["DataVersion"] = nbt.Int(3465)
+    nbt.write_nbt_file(folder / "level.dat", root, compressed=True, backup=False)
+    (folder / "region").mkdir(exist_ok=True)
+    (folder / "region" / "r.0.0.mca").write_bytes(b"overworld-chunks")
+    (folder / "DIM-1" / "region").mkdir(parents=True, exist_ok=True)
+    (folder / "DIM-1" / "region" / "r.0.0.mca").write_bytes(b"nether-chunks")
+    (folder / "DIM1" / "region").mkdir(parents=True, exist_ok=True)
+    (folder / "DIM1" / "region" / "r.0.0.mca").write_bytes(b"end-chunks")
+    (folder / "dimensions" / "mypack" / "custom" / "region").mkdir(parents=True)
+    (folder / "dimensions" / "mypack" / "custom" / "region" / "r.0.0.mca").write_bytes(
+        b"custom-chunks"
+    )
+    (folder / "playerdata").mkdir(exist_ok=True)
+    (folder / "playerdata" / "abc.dat").write_bytes(b"player-inventory")
+    (folder / "stats").mkdir(exist_ok=True)
+    (folder / "stats" / "abc.json").write_text("{}", encoding="utf-8")
+    (folder / "advancements").mkdir(exist_ok=True)
+    (folder / "advancements" / "abc.json").write_text("{}", encoding="utf-8")
+    return folder
+
+
+def _digest(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+class ServerSeedTests(unittest.TestCase):
+    def test_seed_is_written_to_level_seed(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            with mock.patch.object(servers, "SERVERS_DIR", Path(tmp)):
+                info = servers.ServerInfo(
+                    folder="seed-server",
+                    name="种子服",
+                    kind="paper",
+                    mc_version="1.20.1",
+                    seed="123456789",
+                )
+                info.path.mkdir(parents=True)
+                servers.update_server_properties(info)
+                text = (info.path / "server.properties").read_text(encoding="utf-8")
+                self.assertIn("level-seed=123456789", text)
+
+    def test_blank_seed_keeps_existing_value(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            with mock.patch.object(servers, "SERVERS_DIR", Path(tmp)):
+                info = servers.ServerInfo(
+                    folder="seed-server",
+                    name="种子服",
+                    kind="paper",
+                    mc_version="1.20.1",
+                    seed="123456789",
+                )
+                info.path.mkdir(parents=True)
+                servers.update_server_properties(info)
+                info.seed = ""
+                servers.update_server_properties(info)
+                text = (info.path / "server.properties").read_text(encoding="utf-8")
+                self.assertIn("level-seed=123456789", text)
+
+
+class WorldImportTests(unittest.TestCase):
+    def test_inspect_detects_dimensions_and_players(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            source = _make_world(Path(tmp) / "src")
+            info = inspect_world_source(source)
+            self.assertEqual(info.seed, 424242)
+            self.assertEqual(info.version_name, "1.20.1")
+            self.assertEqual(info.players, 1)
+            self.assertIn("主世界", info.dimensions)
+            self.assertIn("下界", info.dimensions)
+            self.assertIn("末地", info.dimensions)
+            self.assertIn("mypack:custom", info.dimensions)
+
+    def test_folder_import_copies_everything_unchanged(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            source = _make_world(Path(tmp) / "src")
+            level_digest = _digest(source / "level.dat")
+            player_digest = _digest(source / "playerdata" / "abc.dat")
+
+            result = import_world(source, Path(tmp) / "saves")
+
+            self.assertEqual(result.folder.name, source.name)
+            self.assertTrue((result.folder / "level.dat").is_file())
+            self.assertEqual(_digest(result.folder / "level.dat"), level_digest)
+            self.assertEqual(
+                _digest(result.folder / "playerdata" / "abc.dat"), player_digest
+            )
+            for relative in (
+                Path("region/r.0.0.mca"),
+                Path("DIM-1/region/r.0.0.mca"),
+                Path("DIM1/region/r.0.0.mca"),
+                Path("dimensions/mypack/custom/region/r.0.0.mca"),
+                Path("stats/abc.json"),
+                Path("advancements/abc.json"),
+            ):
+                self.assertEqual(
+                    _digest(result.folder / relative),
+                    _digest(source / relative),
+                    msg=str(relative),
+                )
+            loaded, _ = worlds.load_world(result.folder)
+            self.assertEqual(loaded.seed, 424242)
+
+    def test_zip_import_with_wrapper_folder(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            source = _make_world(Path(tmp) / "src")
+            archive = Path(tmp) / "world.zip"
+            with zipfile.ZipFile(archive, "w", zipfile.ZIP_DEFLATED) as zf:
+                for path in source.rglob("*"):
+                    if path.is_file():
+                        zf.write(path, Path("我的世界") / path.relative_to(source))
+
+            info = inspect_world_source(archive)
+            self.assertEqual(info.name, "远端世界")
+            self.assertEqual(info.players, 1)
+            self.assertIn("末地", info.dimensions)
+
+            result = import_world(info, Path(tmp) / "saves", folder_name="导入世界")
+            self.assertEqual(result.folder.name, "导入世界")
+            self.assertEqual(
+                (result.folder / "DIM1" / "region" / "r.0.0.mca").read_bytes(),
+                b"end-chunks",
+            )
+            self.assertEqual(
+                (result.folder / "playerdata" / "abc.dat").read_bytes(),
+                b"player-inventory",
+            )
+
+    def test_existing_world_is_backed_up_not_deleted(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            saves = Path(tmp) / "saves"
+            source = _make_world(Path(tmp) / "src", name="新世界")
+            old = saves / source.name
+            old.mkdir(parents=True)
+            (old / "level.dat").write_bytes(b"old-world")
+
+            result = import_world(source, saves)
+
+            self.assertIsNotNone(result.backup)
+            self.assertTrue(result.backup.is_dir())
+            self.assertEqual((result.backup / "level.dat").read_bytes(), b"old-world")
+            self.assertNotEqual((result.folder / "level.dat").read_bytes(), b"old-world")
+
+    def test_zip_slip_is_ignored(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            source = _make_world(Path(tmp) / "src")
+            archive = Path(tmp) / "slip.zip"
+            with zipfile.ZipFile(archive, "w") as zf:
+                zf.writestr("world/level.dat", (source / "level.dat").read_bytes())
+                zf.writestr("../evil.txt", b"should-not-escape")
+                zf.writestr("/absolute.txt", b"should-not-be-absolute")
+
+            result = import_world(archive, Path(tmp) / "saves")
+            self.assertFalse((Path(tmp) / "evil.txt").exists())
+            self.assertFalse((result.folder / "absolute.txt").exists())
+            self.assertTrue((result.folder / "level.dat").is_file())
+
+    def test_multiple_worlds_in_one_folder_are_rejected(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            _make_world(Path(tmp) / "saves", name="世界一")
+            _make_world(Path(tmp) / "saves", name="世界二")
+            with self.assertRaises(WorldImportError):
+                inspect_world_source(Path(tmp) / "saves")
+
+    def test_cancel_stops_before_copying(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            source = _make_world(Path(tmp) / "src")
+            event = threading.Event()
+            event.set()
+            with self.assertRaises(WorldImportCancelled):
+                import_world(source, Path(tmp) / "saves", cancel_event=event)
+
+    def test_cancel_restores_existing_world_name(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            saves = Path(tmp) / "saves"
+            source = _make_world(Path(tmp) / "src", name="要导入的世界")
+            old = saves / source.name
+            old.mkdir(parents=True)
+            (old / "level.dat").write_bytes(b"old-world")
+            event = threading.Event()
+            event.set()
+
+            with self.assertRaises(WorldImportCancelled):
+                import_world(source, saves, cancel_event=event)
+
+            self.assertTrue(old.is_dir())
+            self.assertEqual((old / "level.dat").read_bytes(), b"old-world")
+            leftovers = [p.name for p in saves.iterdir() if ".bak-" in p.name]
+            self.assertEqual(leftovers, [])
+
+    def test_import_into_server_sets_level_name(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            with mock.patch.object(servers, "SERVERS_DIR", Path(tmp) / "servers"):
+                info = servers.ServerInfo(
+                    folder="my-server",
+                    name="我的服",
+                    kind="paper",
+                    mc_version="1.20.1",
+                )
+                info.path.mkdir(parents=True)
+                source = _make_world(Path(tmp) / "src")
+
+                result = import_into_server(info, source, level_name="world")
+
+                self.assertEqual(result.folder, info.path / "world")
+                self.assertTrue((info.path / "world" / "level.dat").is_file())
+                text = (info.path / "server.properties").read_text(encoding="utf-8")
+                self.assertIn("level-name=world", text)
 
 
 if __name__ == "__main__":
@@ -90233,18 +91737,20 @@ body.lightbox-open { overflow: hidden; }
     "指令生成器新增模板结构预览：灰色文字是锁定的指令关键字和固定语法，红色方括号里才是可修改的参数，参数旁边的下拉列表只是常用值。",
     "生成后的指令框可以直接编辑，复制、保存 .mcfunction 和导出数据包都会使用修改后的内容；所有下拉参数也允许直接输入清单里没有的值。",
     "指令生成器的参数选择框改为“输入框 + 展开按钮”：右侧箭头是一个专门的按钮，左键点开常用值清单，左键点条目填入；输入框随时可以直接输入或修改，不再需要右键切换编辑模式，手动输入的自定义值也不会写进清单。选择框和数值框都忽略滚轮，滚动页面时不会误改参数。",
-    "樱花穿透会优先进入已经创建好的隧道：账号下存在可用 TCP 隧道时直接复用并同步本地端口，只有一条隧道都没有时才新建，不会再因为“隧道数量已达上限”而启动失败；联机房间与服务端公网隧道会尽量各用各的，只有别无选择时才共用。"
+    "樱花穿透会优先进入已经创建好的隧道：账号下存在可用 TCP 隧道时直接复用并同步本地端口，只有一条隧道都没有时才新建，不会再因为“隧道数量已达上限”而启动失败；联机房间与服务端公网隧道会尽量各用各的，只有别无选择时才共用。",
+    "新建服务端时可以填写世界种子：留空则随机生成，数字种子和文字种子都支持，启动器会把种子写入 server.properties 的 level-seed；如果选择导入已有存档，种子会自动禁用，避免让人误以为会重新生成地形。",
+    "新增跨版本存档导入：新建服务端时可以选择世界文件夹或 .zip 作为初始世界；已有服务端可以在“设置”页点“导入存档”替换主世界；版本存档管理里也可以把其他版本的存档导入当前版本的 saves。导入只复制文件，level.dat、region、DIM-1、DIM1、dimensions、playerdata、stats 和 advancements 都原样保留，玩家数据、物品栏和进度不会变化，跨版本升级由 Minecraft 首次打开世界时完成。目标位置已有同名世界时会先重命名为 .bak-时间 备份，不会删除；服务端导入后会自动同步 level-name。"
   ],
   "download_url": "downloads/DKL-1.14.1-update.zip",
   "page_url": "https://lfelkeea.github.io/darkitten-launcher/",
   "source_url": "downloads/DarkittenLauncher-1.14.1-source.zip",
   "source_txt_url": "downloads/DarkittenLauncher-1.14.1-source.txt",
-  "sha256": "d79088e5570d5c37a340e0a8a916221af242d0587f7c79f2d4dca18fc30a323f",
-  "size": 1263921,
-  "source_sha256": "af03c490f229f2d62c5ec179a306be707bbae28cc173b9e1bdeb46903fd76559",
-  "source_size": 2525262,
-  "source_txt_sha256": "f5f274093bf3588aa1539bf0c48b1371073749aa617ec3667374e711d0a9f71f",
-  "source_txt_size": 3537052,
+  "sha256": "04fc008bc383c19c00a8487f5c47f8ae6202fd6e562cdf456fc32a2d5d775e69",
+  "size": 1277868,
+  "source_sha256": "8219e3fa324940f24e330c877189a29478303e3237502e07bec2c30fba3ee430",
+  "source_size": 2544813,
+  "source_txt_sha256": "d6a57f5160e1291f6956cc624a165a8e3ea66c0c667bc2e03293d2136372a28e",
+  "source_txt_size": 3598850,
   "pet": {
     "name": "LFELKEEA 桌宠",
     "version": "1.4.6",
@@ -90281,7 +91787,9 @@ body.lightbox-open { overflow: hidden; }
     "指令生成器新增模板结构预览：灰色文字是锁定的指令关键字和固定语法，红色方括号里才是可修改的参数，参数旁边的下拉列表只是常用值。",
     "生成后的指令框可以直接编辑，复制、保存 .mcfunction 和导出数据包都会使用修改后的内容；所有下拉参数也允许直接输入清单里没有的值。",
     "指令生成器的参数选择框改为“输入框 + 展开按钮”：右侧箭头是一个专门的按钮，左键点开常用值清单，左键点条目填入；输入框随时可以直接输入或修改，不再需要右键切换编辑模式，手动输入的自定义值也不会写进清单。选择框和数值框都忽略滚轮，滚动页面时不会误改参数。",
-    "樱花穿透会优先进入已经创建好的隧道：账号下存在可用 TCP 隧道时直接复用并同步本地端口，只有一条隧道都没有时才新建，不会再因为“隧道数量已达上限”而启动失败；联机房间与服务端公网隧道会尽量各用各的，只有别无选择时才共用。"
+    "樱花穿透会优先进入已经创建好的隧道：账号下存在可用 TCP 隧道时直接复用并同步本地端口，只有一条隧道都没有时才新建，不会再因为“隧道数量已达上限”而启动失败；联机房间与服务端公网隧道会尽量各用各的，只有别无选择时才共用。",
+    "新建服务端时可以填写世界种子：留空则随机生成，数字种子和文字种子都支持，启动器会把种子写入 server.properties 的 level-seed；如果选择导入已有存档，种子会自动禁用，避免让人误以为会重新生成地形。",
+    "新增跨版本存档导入：新建服务端时可以选择世界文件夹或 .zip 作为初始世界；已有服务端可以在“设置”页点“导入存档”替换主世界；版本存档管理里也可以把其他版本的存档导入当前版本的 saves。导入只复制文件，level.dat、region、DIM-1、DIM1、dimensions、playerdata、stats 和 advancements 都原样保留，玩家数据、物品栏和进度不会变化，跨版本升级由 Minecraft 首次打开世界时完成。目标位置已有同名世界时会先重命名为 .bak-时间 备份，不会删除；服务端导入后会自动同步 level-name。"
   ],
   "1.14.0": [
     "服务端详情页标题栏新增卸载按钮，整个服务端文件夹会移入回收站；设置页原来的按钮也改名为“卸载服务端”，不再藏在滚动区域底部。",
