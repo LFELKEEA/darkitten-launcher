@@ -873,6 +873,110 @@ main {
 .pet-meta strong { color: var(--text); font-weight: 600; }
 .pet-note { color: var(--muted-2); font-size: 10.5px; text-align: center; }
 
+/* App intros (pet / mod agent) ------------------------------------------- */
+
+.download-copy .app-lede {
+  margin: 0;
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.85;
+}
+
+.app-highlights {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.app-highlight {
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  background: rgba(255, 255, 255, 0.022);
+}
+
+.app-highlight strong {
+  display: block;
+  margin-bottom: 3px;
+  color: var(--text);
+  font-size: 11.5px;
+  font-weight: 700;
+}
+
+.app-highlight span {
+  display: block;
+  color: var(--muted-2);
+  font-size: 10.5px;
+  line-height: 1.65;
+}
+
+.app-details {
+  margin-top: 14px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.018);
+}
+
+.app-details summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 8px;
+  padding: 11px 14px;
+  color: var(--text);
+  font-size: 11.5px;
+  font-weight: 700;
+  cursor: pointer;
+  list-style: none;
+}
+
+.app-details summary::-webkit-details-marker { display: none; }
+
+.app-details summary::before {
+  content: "+";
+  color: var(--accent);
+  font-family: var(--mono);
+  font-weight: 800;
+}
+
+.app-details[open] summary::before { content: "−"; }
+.app-details summary span { color: var(--muted-2); font-size: 10px; font-weight: 500; }
+.app-details summary:hover { color: #fff; }
+
+.app-details ul {
+  margin: 0;
+  padding: 0 16px 14px 30px;
+  color: var(--muted);
+  font-size: 10.5px;
+  line-height: 1.8;
+}
+
+.app-details li { margin-bottom: 3px; }
+
+.app-details b {
+  margin-right: 4px;
+  color: #ffb3c6;
+  font-family: var(--mono);
+  font-size: 9.5px;
+  font-weight: 700;
+}
+
+.agent-card .app-details b { color: #b7adff; }
+
+.download-copy .app-note {
+  margin: 12px 0 0;
+  color: var(--muted-2);
+  font-size: 10.5px;
+  line-height: 1.75;
+}
+
+.download-copy .app-note code { color: #ffb3c6; font-size: 10.5px; }
+
+@media (max-width: 560px) {
+  .app-highlights { grid-template-columns: 1fr; }
+}
+
 .agent-card {
   border-color: rgba(139, 124, 255, 0.28);
   background:
