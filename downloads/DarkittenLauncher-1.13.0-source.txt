@@ -1,5 +1,5 @@
 ﻿Darkitten Launcher 1.13.0 完整源代码
-生成时间：2026-11-21 14:46:44
+生成时间：2026-11-21 14:56:40
 文本文件：153
 ================================================================================
 目录
@@ -83885,12 +83885,12 @@ body.lightbox-open { overflow: hidden; }
   "page_url": "https://lfelkeea.github.io/darkitten-launcher/",
   "source_url": "downloads/DarkittenLauncher-1.13.0-source.zip",
   "source_txt_url": "downloads/DarkittenLauncher-1.13.0-source.txt",
-  "sha256": "0eff86965cd5e1be986d4170f865b13d6d9dea1c16ff0e6992ea22cfd49b48c7",
-  "size": 1213265,
-  "source_sha256": "82d9c82d847629807040b6096b99fd649705aaac92e03b4afdf576c9190c061a",
-  "source_size": 1232907,
-  "source_txt_sha256": "8a47adcce913be4d8f459564ca2ed31698d24155b59cf89c355f43d39792a646",
-  "source_txt_size": 2671718,
+  "sha256": "fea193931b216d3dfa31859837feb187c497dd1371a3d98c8ce51e53b3cde669",
+  "size": 1214138,
+  "source_sha256": "ecd097fb76f8d20abddb18c079c011cb2463c5567d0e6a9ba05e18f5b81f15bb",
+  "source_size": 6127112,
+  "source_txt_sha256": "7019fad20c0208a092b844d18f6b21df3c351d50d6a660d1b9a9ba0abff171d6",
+  "source_txt_size": 3239504,
   "pet": {
     "name": "LFELKEEA 桌宠",
     "version": "1.4.6",
