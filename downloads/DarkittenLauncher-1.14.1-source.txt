@@ -1,5 +1,5 @@
 ﻿Darkitten Launcher 1.14.1 完整源代码
-生成时间：2026-11-21 20:04:20
+生成时间：2026-11-21 20:10:38
 文本文件：168
 ================================================================================
 目录
@@ -56373,6 +56373,7 @@ class ServerPage(QWidget):
             ),
             default_name=level_name,
             server_info=info,
+            target_version=info.mc_version,
         )
         dialog.exec()
         if dialog.import_result is not None:
@@ -62644,7 +62645,12 @@ from ..workers import (
     ServerInstallWorker,
     WorldImportWorker,
 )
-from ..world_import import WorldImportError, WorldSource, inspect_world_source
+from ..world_import import (
+    WorldImportError,
+    WorldSource,
+    inspect_world_source,
+    is_newer_version,
+)
 from .dialogs import NoticeDialog, StyledDialog
 from .version_picker import VersionPickerDialog
 from .widgets import SegmentedControl, Switch, colors
@@ -63011,19 +63017,33 @@ class ServerCreateDialog(StyledDialog):
             return
         self._import_source = source
         self.world_edit.setText(str(source.path))
-        self.world_hint.setText(
-            f"将导入「{source.name}」 · {source.version_text} · "
-            f"种子 {source.seed_text} · 维度：{source.dimension_text} · "
-            f"{source.player_text} · {source.size_text}。"
-            "所有维度、玩家数据和物品栏都会原样保留，不会重新生成世界。"
-        )
-        self.world_hint.setStyleSheet(f"color: {colors()['green']};")
         self.world_clear_btn.setVisible(True)
         self.seed_edit.setEnabled(False)
         self.seed_hint.setText(
             "已选择导入存档，种子只用于生成新世界，因此填写种子不再生效。"
         )
         self.seed_hint.setStyleSheet(f"color: {colors()['muted']};")
+        self._show_world_source()
+
+    def _show_world_source(self) -> None:
+        source = self._import_source
+        if source is None:
+            return
+        detail = (
+            f"将导入「{source.name}」 · {source.version_text} · "
+            f"种子 {source.seed_text} · 维度：{source.dimension_text} · "
+            f"{source.player_text} · {source.size_text}。"
+            "所有维度、玩家数据和物品栏都会原样保留，不会重新生成世界。"
+        )
+        if is_newer_version(source.version_name, self._current_mc()):
+            detail += (
+                f" 注意：来源版本 {source.version_name} 高于目标版本 "
+                f"{self._current_mc()}，Minecraft 不能降级打开世界，可能无法加载。"
+            )
+            self.world_hint.setStyleSheet(f"color: {colors()['orange']};")
+        else:
+            self.world_hint.setStyleSheet(f"color: {colors()['green']};")
+        self.world_hint.setText(detail)
 
     def _clear_world_source(self) -> None:
         self._import_source = None
@@ -63064,6 +63084,8 @@ class ServerCreateDialog(StyledDialog):
         self._refresh_loader_versions()
         self._refresh_java()
         self._update_port_note()
+        if self._import_source is not None:
+            self._show_world_source()
         self._update_action()
 
     def _refresh_loader_versions(self) -> None:
@@ -68954,7 +68976,12 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from ..world_import import WorldImportError, WorldSource, inspect_world_source
+from ..world_import import (
+    WorldImportError,
+    WorldSource,
+    inspect_world_source,
+    is_newer_version,
+)
 from ..workers import WorldImportWorker
 from .dialogs import NoticeDialog, StyledDialog
 from .widgets import colors
@@ -68974,10 +69001,12 @@ class WorldImportDialog(StyledDialog):
         initial_path: str | Path | None = None,
         server_info=None,
         dest_parent: str | Path | None = None,
+        target_version: str = "",
     ) -> None:
         super().__init__(parent, title, "globe", width=620)
         self.server_info = server_info
         self.dest_parent = Path(dest_parent) if dest_parent is not None else None
+        self.target_version = str(target_version or "").strip()
         self.source: WorldSource | None = None
         self.import_result = None
         self._worker: WorldImportWorker | None = None
@@ -69029,6 +69058,12 @@ class WorldImportDialog(StyledDialog):
         self.info_label.setWordWrap(True)
         self.info_label.setVisible(False)
         source_box.addWidget(self.info_label)
+        self.version_warning = QLabel("")
+        self.version_warning.setObjectName("Tiny")
+        self.version_warning.setWordWrap(True)
+        self.version_warning.setStyleSheet(f"color: {colors()['orange']};")
+        self.version_warning.setVisible(False)
+        source_box.addWidget(self.version_warning)
         self.body.addWidget(source_card)
 
         name_row = QHBoxLayout()
@@ -69109,6 +69144,14 @@ class WorldImportDialog(StyledDialog):
             f"{source.files} 个文件 · {source.size_text}"
         )
         self.info_label.setVisible(True)
+        if is_newer_version(source.version_name, self.target_version):
+            self.version_warning.setText(
+                f"来源版本 {source.version_name} 高于目标版本 {self.target_version}："
+                "Minecraft 不能降级打开世界，导入后可能无法加载。"
+            )
+            self.version_warning.setVisible(True)
+        else:
+            self.version_warning.setVisible(False)
         self.name_edit.setText(source.folder_name or "world")
         self._update_name_hint()
         self.import_btn.setEnabled(True)
@@ -69638,6 +69681,7 @@ class WorldManagerDialog(StyledDialog):
             default_name="",
             name_label="导入后的文件夹名",
             dest_parent=self.game_dir / "saves",
+            target_version=self.version_id,
         )
         dialog.exec()
         if dialog.import_result is not None:
@@ -75266,6 +75310,20 @@ def _skip_name(name: str) -> bool:
     return name.lower() in _SKIP_NAMES
 
 
+def version_key(text: str) -> tuple[int, int, int]:
+    match = re.search(r"(\d+)\.(\d+)(?:\.(\d+))?", str(text or ""))
+    if not match:
+        return (0, 0, 0)
+    return (int(match.group(1)), int(match.group(2)), int(match.group(3) or 0))
+
+
+def is_newer_version(source_version: str, target_version: str) -> bool:
+    """来源版本高于目标版本时返回 True；Minecraft 不能降级打开存档。"""
+    if not source_version or not target_version:
+        return False
+    return version_key(source_version) > version_key(target_version)
+
+
 def safe_folder_name(text: str, fallback: str = "world") -> str:
     value = _ILLEGAL_NAME.sub("-", str(text or "")).strip().rstrip(". ")
     if not value or value.split(".")[0].upper() in _WINDOWS_RESERVED:
@@ -78431,6 +78489,7 @@ from darkitten.world_import import (  # noqa: E402
     import_into_server,
     import_world,
     inspect_world_source,
+    is_newer_version,
 )
 
 
@@ -78506,6 +78565,16 @@ class ServerSeedTests(unittest.TestCase):
                 servers.update_server_properties(info)
                 text = (info.path / "server.properties").read_text(encoding="utf-8")
                 self.assertIn("level-seed=123456789", text)
+
+
+class VersionCompareTests(unittest.TestCase):
+    def test_newer_source_versions_are_detected(self) -> None:
+        self.assertTrue(is_newer_version("1.21.1", "1.20.1"))
+        self.assertTrue(is_newer_version("26.1", "1.21.11"))
+        self.assertFalse(is_newer_version("1.20.1", "1.21.1"))
+        self.assertFalse(is_newer_version("1.20.1", "1.20.1"))
+        self.assertFalse(is_newer_version("", "1.20.1"))
+        self.assertFalse(is_newer_version("1.20.1", ""))
 
 
 class WorldImportTests(unittest.TestCase):
@@ -91745,12 +91814,12 @@ body.lightbox-open { overflow: hidden; }
   "page_url": "https://lfelkeea.github.io/darkitten-launcher/",
   "source_url": "downloads/DarkittenLauncher-1.14.1-source.zip",
   "source_txt_url": "downloads/DarkittenLauncher-1.14.1-source.txt",
-  "sha256": "29228042457bae16bb0c78585a4012252e453cbef5080ad6e07fea0c00035433",
-  "size": 1277868,
-  "source_sha256": "d156ff414f5b7f8afa09e90999a392a13dc1cc030744c8ed680b72dbc1a5f1f8",
-  "source_size": 2544812,
-  "source_txt_sha256": "a06439f56b7fa93e48e2720e2f40a5320b8accb51ca3b2c3cf161a009dbc4abf",
-  "source_txt_size": 3598850,
+  "sha256": "0289c349f62ef549033b0f2e4f571b37bf422e4e6fdeac5931370e176f008468",
+  "size": 1277876,
+  "source_sha256": "3593dd57b9da60a6fa02cb969aa45651a16cefcfe228df3a6d745c99009c11f4",
+  "source_size": 2544821,
+  "source_txt_sha256": "0ed73caf87bdfec235eaf2be2d075772ca49cb8f3e3b4141abeb073f383e7ee0",
+  "source_txt_size": 3598892,
   "pet": {
     "name": "LFELKEEA 桌宠",
     "version": "1.4.6",
