@@ -1,5 +1,5 @@
 {
-  "version": "1.14.1",
+  "version": "1.14.2",
   "released": "2026-11-21",
   "notes": [
     "版本清单补全到 Mojang 全部 103 个正式版：包括 2026 年的 26.1 / 26.2 / 26.3，以及 1.11.1、1.10、1.9、1.8.1、1.4.6 等以前漏掉的版本，旧版也能直接选到。",
@@ -19,18 +19,19 @@
     "指令生成器的参数选择框改为“输入框 + 展开按钮”：右侧箭头是一个专门的按钮，左键点开常用值清单，左键点条目填入；输入框随时可以直接输入或修改，不再需要右键切换编辑模式，手动输入的自定义值也不会写进清单。选择框和数值框都忽略滚轮，滚动页面时不会误改参数。",
     "樱花穿透会优先进入已经创建好的隧道：账号下存在可用 TCP 隧道时直接复用并同步本地端口，只有一条隧道都没有时才新建，不会再因为“隧道数量已达上限”而启动失败；联机房间与服务端公网隧道会尽量各用各的，只有别无选择时才共用。",
     "新建服务端时可以填写世界种子：留空则随机生成，数字种子和文字种子都支持，启动器会把种子写入 server.properties 的 level-seed；如果选择导入已有存档，种子会自动禁用，避免让人误以为会重新生成地形。",
-    "新增跨版本存档导入：新建服务端时可以选择世界文件夹或 .zip 作为初始世界；已有服务端可以在“设置”页点“导入存档”替换主世界；版本存档管理里也可以把其他版本的存档导入当前版本的 saves。导入只复制文件，level.dat、region、DIM-1、DIM1、dimensions、playerdata、stats 和 advancements 都原样保留，玩家数据、物品栏和进度不会变化，跨版本升级由 Minecraft 首次打开世界时完成。目标位置已有同名世界时会先重命名为 .bak-时间 备份，不会删除；服务端导入后会自动同步 level-name。"
+    "新增跨版本存档导入：新建服务端时可以选择世界文件夹或 .zip 作为初始世界；已有服务端可以在“设置”页点“导入存档”替换主世界；版本存档管理里也可以把其他版本的存档导入当前版本的 saves。导入只复制文件，level.dat、region、DIM-1、DIM1、dimensions、playerdata、stats 和 advancements 都原样保留，玩家数据、物品栏和进度不会变化，跨版本升级由 Minecraft 首次打开世界时完成。目标位置已有同名世界时会先重命名为 .bak-时间 备份，不会删除；服务端导入后会自动同步 level-name。",
+    "修复服务端控制台指令输入框无法输入大写的问题：部分 Windows 键盘布局或输入法会把 Shift+字母当成小写文本，现在会在输入框处理前按 Shift / CapsLock 状态纠正大小写，玩家名、say 内容和带大写参数的指令都能正常发送。"
   ],
-  "download_url": "downloads/DKL-1.14.1-update.zip",
+  "download_url": "downloads/DKL-1.14.2-update.zip",
   "page_url": "https://lfelkeea.github.io/darkitten-launcher/",
-  "source_url": "downloads/DarkittenLauncher-1.14.1-source.zip",
-  "source_txt_url": "downloads/DarkittenLauncher-1.14.1-source.txt",
-  "sha256": "75b3cf74365354d97caa576e298ec08dac6021218664f06255568f410ca7a680",
-  "size": 1278416,
-  "source_sha256": "b0556d4adc73625e997778f2103510017b9b376261c57ab4b47d777787673558",
-  "source_size": 2545443,
-  "source_txt_sha256": "35b0ab6e00100ca5e2a0a0cb6ea7fc1d736d6ae97449fe88a31dff8b5f17a7cb",
-  "source_txt_size": 3601691,
+  "source_url": "downloads/DarkittenLauncher-1.14.2-source.zip",
+  "source_txt_url": "downloads/DarkittenLauncher-1.14.2-source.txt",
+  "sha256": "2d02d3214e7f87ef959175b8aa9adfc8c1295a4cce177ef50facbcbf05d03326",
+  "size": 1279055,
+  "source_sha256": "42309fe5728d3c50c6f23c1ff2b9c0dcfe2400d3162751a37525cdcda1803721",
+  "source_size": 2547566,
+  "source_txt_sha256": "91f4904ac7e104f7eeecfa206961eb6212cc2a8298abb47dfa025159efb8e1fb",
+  "source_txt_size": 3611922,
   "pet": {
     "name": "LFELKEEA 桌宠",
     "version": "1.4.6",
