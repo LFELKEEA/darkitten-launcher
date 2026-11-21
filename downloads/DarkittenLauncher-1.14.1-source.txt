@@ -1,6 +1,6 @@
 ﻿Darkitten Launcher 1.14.1 完整源代码
-生成时间：2026-11-21 19:31:43
-文本文件：163
+生成时间：2026-11-21 19:42:10
+文本文件：165
 ================================================================================
 目录
 ================================================================================
@@ -120,11 +120,13 @@
   requirements.txt
   tests/test_assistant_data.py
   tests/test_bridge.py
+  tests/test_choice_combo.py
   tests/test_config_names.py
   tests/test_game_assistant.py
   tests/test_game_catalog.py
   tests/test_launch_args.py
   tests/test_mc_versions.py
+  tests/test_sakura_tunnel_pick.py
   tests/test_server_icon.py
   tests/test_worlds.py
   tools/enchcracker/acknowledgedWarnings.properties
@@ -47031,6 +47033,8 @@ from ..version_picker import VersionPickerDialog
 from ..widgets import (
     Card,
     ChibiCompanion,
+    ChoiceComboBox,
+    NoWheelSpinBox,
     SegmentedControl,
     badge,
     colors,
@@ -48760,10 +48764,7 @@ class AssistantPage(QWidget):
 
     def _make_field_widget(self, field: ga.TemplateField) -> QWidget:
         if field.kind == "choice":
-            combo = QComboBox()
-            combo.setEditable(True)
-            combo.setInsertPolicy(QComboBox.NoInsert)
-            combo.setMaxVisibleItems(18)
+            combo = ChoiceComboBox()
             for option in field.options:
                 label = option.label
                 if option.value and option.label != option.value:
@@ -48798,7 +48799,7 @@ class AssistantPage(QWidget):
             component.setToolTip(field.help)
             return component
         if field.kind == "int":
-            spin = QSpinBox()
+            spin = NoWheelSpinBox()
             spin.setRange(-2147483647, 2147483647)
             spin.setToolTip(field.help)
             try:
@@ -53730,6 +53731,7 @@ class RoomPage(QWidget):
             preferred_tunnel_id=self.main.config.sakura_tunnel_id,
             frpc_path=self.main.config.sakura_frpc_path,
             parent=self,
+            avoid_tunnel_id=self.main.config.sakura_server_tunnel_id,
         )
         self._room_worker = worker
         worker.progress.connect(
@@ -56800,6 +56802,7 @@ class ServerPage(QWidget):
             parent=self,
             tunnel_name="DarkittenServer",
             make_room_code=False,
+            avoid_tunnel_id=self.main.config.sakura_tunnel_id,
         )
         self._sakura_worker = worker
         worker.progress.connect(
@@ -65523,6 +65526,18 @@ QComboBox::drop-down {{
     border: none;
     width: 26px;
 }}
+QComboBox#ChoiceCombo {{
+    padding-right: 40px;
+}}
+QComboBox#ChoiceCombo::drop-down {{
+    border: none;
+    width: 32px;
+}}
+QComboBox#ChoiceCombo::down-arrow {{
+    image: none;
+    width: 0;
+    height: 0;
+}}
 QComboBox QAbstractItemView {{
     background: {c['card']};
     color: {c['text']};
@@ -67052,6 +67067,7 @@ from PySide6.QtWidgets import (
     QAbstractButton,
     QApplication,
     QButtonGroup,
+    QComboBox,
     QFrame,
     QGraphicsOpacityEffect,
     QHBoxLayout,
@@ -67059,6 +67075,7 @@ from PySide6.QtWidgets import (
     QPlainTextEdit,
     QPushButton,
     QSizePolicy,
+    QSpinBox,
     QVBoxLayout,
     QWidget,
 )
@@ -67300,6 +67317,109 @@ class Switch(QAbstractButton):
         p.setBrush(QColor("#FFFFFF"))
         p.drawEllipse(QRectF(knob_x, 4, 14, 14))
         p.end()
+
+
+class ChoiceComboBox(QComboBox):
+    """可自由输入的选择框。
+
+    输入框始终可编辑，右侧箭头是一个专门的展开按钮：左键点箭头打开
+    常用值清单，左键点条目即可填入。手动输入的内容不会写回清单，
+    滚轮也只滚动页面，不会误改选项。
+    """
+
+    ARROW_WIDTH = 32
+
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setObjectName("ChoiceCombo")
+        self.setEditable(True)
+        self.setInsertPolicy(QComboBox.NoInsert)
+        self.setMaxVisibleItems(18)
+        self.setCompleter(None)
+        self.setMouseTracking(True)
+        self._arrow_hover = False
+        edit = self.lineEdit()
+        if edit is not None:
+            edit.setPlaceholderText("选常用值，或直接输入自定义值")
+            edit.setCursor(Qt.IBeamCursor)
+            edit.setToolTip("可以直接输入；点右侧按钮展开常用值清单")
+            edit.installEventFilter(self)
+        self.setToolTip("可以直接输入；点右侧按钮展开常用值清单")
+
+    def _arrow_rect(self) -> QRectF:
+        return QRectF(
+            self.width() - self.ARROW_WIDTH,
+            1,
+            self.ARROW_WIDTH - 1,
+            self.height() - 2,
+        )
+
+    def eventFilter(self, obj, event) -> bool:
+        if (
+            obj is self.lineEdit()
+            and event.type() == QEvent.Enter
+            and self._arrow_hover
+        ):
+            self._arrow_hover = False
+            self.update()
+        return super().eventFilter(obj, event)
+
+    def mouseMoveEvent(self, event) -> None:
+        hover = self._arrow_rect().contains(event.position())
+        if hover != self._arrow_hover:
+            self._arrow_hover = hover
+            self.setCursor(
+                Qt.PointingHandCursor if hover else Qt.ArrowCursor
+            )
+            self.update()
+        super().mouseMoveEvent(event)
+
+    def leaveEvent(self, event) -> None:
+        if self._arrow_hover:
+            self._arrow_hover = False
+            self.setCursor(Qt.ArrowCursor)
+            self.update()
+        super().leaveEvent(event)
+
+    def paintEvent(self, event) -> None:
+        super().paintEvent(event)
+        c = colors()
+        rect = self._arrow_rect()
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing)
+        if self._arrow_hover:
+            painter.setPen(Qt.NoPen)
+            painter.setBrush(QColor(c["accent_soft"]))
+            painter.drawRoundedRect(
+                rect.adjusted(2, 3, -3, -3), 6, 6
+            )
+        painter.setPen(QPen(QColor(c["border_strong"]), 1))
+        painter.drawLine(
+            QPointF(rect.left() - 2, rect.top() + 6),
+            QPointF(rect.left() - 2, rect.bottom() - 6),
+        )
+        pen = QPen(QColor(c["text"] if self._arrow_hover else c["muted"]), 1.8)
+        pen.setCapStyle(Qt.RoundCap)
+        pen.setJoinStyle(Qt.RoundJoin)
+        painter.setPen(pen)
+        cx = rect.center().x() - 1
+        cy = rect.center().y()
+        path = QPainterPath()
+        path.moveTo(cx - 4, cy - 2)
+        path.lineTo(cx, cy + 2)
+        path.lineTo(cx + 4, cy - 2)
+        painter.drawPath(path)
+        painter.end()
+
+    def wheelEvent(self, event) -> None:
+        event.ignore()
+
+
+class NoWheelSpinBox(QSpinBox):
+    """滚轮只滚动页面，不改数值。"""
+
+    def wheelEvent(self, event) -> None:
+        event.ignore()
 
 
 class SegmentedControl(QWidget):
@@ -73781,12 +73901,14 @@ class SakuraRoomWorker(QObject):
         parent=None,
         tunnel_name: str = ROOM_TUNNEL_NAME,
         make_room_code: bool = True,
+        avoid_tunnel_id: int = 0,
     ) -> None:
         super().__init__(parent)
         self._token = str(token or "").strip()
         self.local_port = int(local_port)
         self.node_id = int(node_id or 0)
         self.preferred_tunnel_id = int(preferred_tunnel_id or 0)
+        self.avoid_tunnel_id = int(avoid_tunnel_id or 0)
         self.frpc_path = str(frpc_path or "").strip()
         self.tunnel_name = str(tunnel_name or ROOM_TUNNEL_NAME).strip()
         self.make_room_code = bool(make_room_code)
@@ -73806,21 +73928,48 @@ class SakuraRoomWorker(QObject):
         if message and not self.cancel_event.is_set():
             self.log_line.emit(message)
 
+    @staticmethod
+    def _usable_tunnel(tunnel: SakuraTunnel) -> bool:
+        return str(tunnel.type or "").lower() == "tcp" and tunnel.status != 2
+
     def _pick_tunnel(
         self, tunnels: list[SakuraTunnel]
     ) -> tuple[SakuraTunnel | None, bool]:
+        """优先进入已有隧道，只有一条可用隧道都没有时才新建。"""
+        usable = [tunnel for tunnel in tunnels if self._usable_tunnel(tunnel)]
         if self.preferred_tunnel_id:
-            for tunnel in tunnels:
+            for tunnel in usable:
                 if tunnel.id == self.preferred_tunnel_id:
                     return tunnel, True
-        candidates = [
+
+        def rank(tunnel: SakuraTunnel) -> tuple[int, int]:
+            name = tunnel.name.lower()
+            hint = 0
+            if tunnel.local_port == self.local_port:
+                hint += 4
+            if any(
+                word in name
+                for word in ("darkitten", "minecraft", "我的世界", "服务器", "server")
+            ):
+                hint += 3
+            if tunnel.online:
+                hint += 1
+            return hint, tunnel.id
+
+        same_name = [
             tunnel
-            for tunnel in tunnels
-            if tunnel.name.startswith(self.tunnel_name) and tunnel.type == "tcp"
+            for tunnel in usable
+            if tunnel.name.startswith(self.tunnel_name)
         ]
-        if candidates:
-            return max(candidates, key=lambda item: item.id), True
-        return None, False
+        if same_name:
+            return max(same_name, key=rank), True
+        if not usable:
+            return None, False
+        # 另一功能（房间/服务端）已经占用的隧道尽量留给它，只有别无选择时才共用。
+        pool = [
+            tunnel for tunnel in usable if tunnel.id != self.avoid_tunnel_id
+        ] or usable
+        return max(pool, key=rank), True
 
     def _pick_node(
         self,
@@ -73864,7 +74013,7 @@ class SakuraRoomWorker(QObject):
             if reused and tunnel is not None:
                 if tunnel.node not in nodes:
                     raise Exception(
-                        f"现有 {self.tunnel_name} 隧道所在节点已不存在，"
+                        f"现有隧道 {tunnel.name}（#{tunnel.id}）所在节点已不存在，"
                         "请到樱花穿透面板迁移或删除该隧道后重试。"
                     )
                 node = nodes[tunnel.node]
@@ -73874,13 +74023,15 @@ class SakuraRoomWorker(QObject):
                 raise Exception(f"节点“{node.label}”当前离线，请换一个节点。")
 
             if tunnel is not None:
-                if tunnel.type != "tcp":
+                if str(tunnel.type or "").lower() != "tcp":
                     raise Exception(
-                        f"现有 {self.tunnel_name} 隧道不是 TCP 类型，请到面板改为 TCP。"
+                        f"现有隧道 {tunnel.name}（#{tunnel.id}）不是 TCP 类型，"
+                        "请到面板改为 TCP。"
                     )
                 if tunnel.status == 2:
                     raise Exception(
-                        f"现有 {self.tunnel_name} 隧道已被封禁，请到樱花穿透面板处理。"
+                        f"现有隧道 {tunnel.name}（#{tunnel.id}）已被封禁，"
+                        "请到樱花穿透面板处理。"
                     )
                 self._log(
                     f"复用隧道 {tunnel.name}（#{tunnel.id}）· 节点 {node.label}"
@@ -75822,6 +75973,143 @@ if __name__ == "__main__":
 
 
 ################################################################################
+# FILE: tests/test_choice_combo.py
+################################################################################
+"""指令生成器选择框交互的单元测试（不显示窗口）。"""
+
+from __future__ import annotations
+
+import os
+import sys
+import unittest
+from pathlib import Path
+
+os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+
+ROOT = Path(__file__).resolve().parent.parent
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from PySide6.QtCore import QPoint, QPointF, Qt  # noqa: E402
+from PySide6.QtGui import QWheelEvent  # noqa: E402
+from PySide6.QtTest import QTest  # noqa: E402
+from PySide6.QtWidgets import QApplication  # noqa: E402
+
+from darkitten.ui.widgets import ChoiceComboBox, NoWheelSpinBox  # noqa: E402
+
+
+def app() -> QApplication:
+    instance = QApplication.instance()
+    return instance if instance is not None else QApplication([])
+
+
+def combo() -> ChoiceComboBox:
+    widget = ChoiceComboBox()
+    widget.addItem("等级（levels）", "levels")
+    widget.addItem("秒（seconds）", "seconds")
+    widget.setCurrentIndex(0)
+    widget.resize(240, 34)
+    return widget
+
+
+def wheel_event() -> QWheelEvent:
+    return QWheelEvent(
+        QPointF(10, 10),
+        QPointF(10, 10),
+        QPoint(0, 0),
+        QPoint(0, -120),
+        Qt.NoButton,
+        Qt.NoModifier,
+        Qt.NoScrollPhase,
+        False,
+    )
+
+
+class ChoiceComboTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls._app = app()
+
+    def tearDown(self) -> None:
+        QApplication.processEvents()
+
+    def test_text_field_is_always_editable(self) -> None:
+        widget = combo()
+        self.assertTrue(widget.isEditable())
+        self.assertFalse(widget.lineEdit().isReadOnly())
+
+    def test_arrow_button_opens_list(self) -> None:
+        widget = combo()
+        widget.show()
+        QTest.mouseClick(
+            widget,
+            Qt.LeftButton,
+            pos=QPoint(widget.width() - 15, widget.height() // 2),
+        )
+        self.assertTrue(widget.view().isVisible())
+        widget.hidePopup()
+
+    def test_clicking_text_area_does_not_open_list(self) -> None:
+        widget = combo()
+        widget.show()
+        QTest.mouseClick(
+            widget,
+            Qt.LeftButton,
+            pos=QPoint(12, widget.height() // 2),
+        )
+        self.assertFalse(widget.view().isVisible())
+
+    def test_selecting_item_fills_field(self) -> None:
+        widget = combo()
+        widget.setCurrentIndex(1)
+        self.assertEqual(widget.currentText(), "秒（seconds）")
+        self.assertEqual(widget.currentData(), "seconds")
+
+    def test_custom_text_is_not_added_to_list(self) -> None:
+        widget = combo()
+        widget.setEditText("tick")
+        self.assertEqual(widget.count(), 2)
+        self.assertEqual(widget.currentText(), "tick")
+
+    def test_wheel_does_not_change_value(self) -> None:
+        widget = combo()
+        widget.wheelEvent(wheel_event())
+        self.assertEqual(widget.currentIndex(), 0)
+
+    def test_assistant_choice_field_uses_editable_combo(self) -> None:
+        from darkitten import game_assistant as ga
+        from darkitten import game_ids
+        from darkitten.ui.pages.assistant import AssistantPage
+
+        field = ga.TemplateField(
+            key="unit",
+            label="单位",
+            default="levels",
+            kind="choice",
+            options=(
+                game_ids.Option("levels", "等级"),
+                game_ids.Option("seconds", "秒"),
+            ),
+        )
+        widget = AssistantPage._make_field_widget(object(), field)
+        self.assertIsInstance(widget, ChoiceComboBox)
+        self.assertFalse(widget.lineEdit().isReadOnly())
+        self.assertEqual(widget.currentData(), "levels")
+        self.assertEqual(widget.count(), 2)
+
+    def test_spin_box_ignores_wheel(self) -> None:
+        spin = NoWheelSpinBox()
+        spin.setRange(0, 100)
+        spin.setValue(5)
+        spin.wheelEvent(wheel_event())
+        self.assertEqual(spin.value(), 5)
+
+
+if __name__ == "__main__":
+    unittest.main()
+
+
+################################################################################
 # FILE: tests/test_config_names.py
 ################################################################################
 """版本显示名称的单元测试：只改显示，不动内部版本目录。"""
@@ -76671,6 +76959,111 @@ class TemplateSkeletonTests(unittest.TestCase):
             ]
             for word in fixed:
                 self.assertIn(word, command, template.id)
+
+
+if __name__ == "__main__":
+    unittest.main()
+
+
+################################################################################
+# FILE: tests/test_sakura_tunnel_pick.py
+################################################################################
+"""樱花穿透隧道复用逻辑的单元测试。"""
+
+from __future__ import annotations
+
+import sys
+import unittest
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from darkitten.sakura import SakuraTunnel  # noqa: E402
+from darkitten.workers import SakuraRoomWorker  # noqa: E402
+
+
+def tunnel(
+    tunnel_id: int,
+    name: str = "tunnel",
+    tunnel_type: str = "tcp",
+    status: int = 0,
+    local_port: int = 25565,
+    online: bool = False,
+    node: int = 1,
+) -> SakuraTunnel:
+    return SakuraTunnel(
+        id=tunnel_id,
+        name=name,
+        type=tunnel_type,
+        node=node,
+        status=status,
+        online=online,
+        local_ip="127.0.0.1",
+        local_port=local_port,
+    )
+
+
+def worker(
+    preferred: int = 0,
+    avoid: int = 0,
+    local_port: int = 25565,
+    name: str = "DarkittenServer",
+) -> SakuraRoomWorker:
+    return SakuraRoomWorker(
+        "token",
+        local_port,
+        preferred_tunnel_id=preferred,
+        tunnel_name=name,
+        avoid_tunnel_id=avoid,
+    )
+
+
+class PickTunnelTests(unittest.TestCase):
+    def test_preferred_tunnel_wins(self) -> None:
+        picked, reused = worker(preferred=7)._pick_tunnel(
+            [tunnel(3, "DarkittenServer-1"), tunnel(7, "mine")]
+        )
+        self.assertTrue(reused)
+        self.assertIsNotNone(picked)
+        self.assertEqual(picked.id, 7)
+
+    def test_any_existing_tcp_tunnel_is_reused(self) -> None:
+        # 用户自己命名的隧道也要能直接进入，不能因为没有固定前缀就新建。
+        picked, reused = worker()._pick_tunnel(
+            [tunnel(11, "我的世界"), tunnel(12, "nas", tunnel_type="http")]
+        )
+        self.assertTrue(reused)
+        self.assertIsNotNone(picked)
+        self.assertEqual(picked.id, 11)
+
+    def test_ignores_banned_and_non_tcp_tunnels(self) -> None:
+        picked, reused = worker()._pick_tunnel(
+            [tunnel(1, "banned", status=2), tunnel(2, "web", tunnel_type="http")]
+        )
+        self.assertFalse(reused)
+        self.assertIsNone(picked)
+
+    def test_avoid_tunnel_is_skipped_when_alternative_exists(self) -> None:
+        picked, reused = worker(avoid=1)._pick_tunnel(
+            [tunnel(1, "mine", local_port=25565), tunnel(2, "other", local_port=25570)]
+        )
+        self.assertTrue(reused)
+        self.assertIsNotNone(picked)
+        self.assertEqual(picked.id, 2)
+
+    def test_avoid_tunnel_still_used_when_it_is_the_only_one(self) -> None:
+        # 只有一条隧道时宁可复用，也不去触发“隧道数量已达上限”。
+        picked, reused = worker(avoid=1)._pick_tunnel([tunnel(1, "mine")])
+        self.assertTrue(reused)
+        self.assertIsNotNone(picked)
+        self.assertEqual(picked.id, 1)
+
+    def test_empty_list_means_create_new(self) -> None:
+        picked, reused = worker()._pick_tunnel([])
+        self.assertFalse(reused)
+        self.assertIsNone(picked)
 
 
 if __name__ == "__main__":
@@ -89808,6 +90201,7 @@ body.lightbox-open { overflow: hidden; }
   "notes": [
     "版本清单补全到 Mojang 全部 103 个正式版：包括 2026 年的 26.1 / 26.2 / 26.3，以及 1.11.1、1.10、1.9、1.8.1、1.4.6 等以前漏掉的版本，旧版也能直接选到。",
     "模组下载、服务端新建和指令生成器的版本选择统一使用这份完整清单，并自动合并启动器缓存的最新版本和本机已安装版本。",
+    "服务端“设置”页的正版验证开关改为改动即保存，切换标签页或重新选择服务端都不会回退；“公网联机”页重复的正版开关已移除，改为只读状态显示，并提供“去设置修改”按钮。",
     "修复“一键联机”里“允许非正版玩家进入”关不掉的问题：局域网世界由 Minecraft 自己托管，启动器无法强制正版验证，所以不再显示一个点不动的开关，而是明确标注“固定开启”，并提供“改用专用服务端”按钮；在专用服务端的“公网联机”页可以真正关闭非正版进入。",
     "新建服务端窗口的游戏版本同样改成“选择…”清单：可以搜索全部正式版并后台同步 Mojang，默认跟随当前选中的已安装版本，没有安装记录时使用最新正式版，不再只能在下拉框里上下滚动。",
     "服务端标题栏新增“修改服务器图标”按钮：选择任意 PNG / JPG 图片后自动居中裁剪并缩放成 64×64，写入服务端的 server-icon.png，重启服务端后朋友就能在多人列表里看到新图标。",
@@ -89824,12 +90218,12 @@ body.lightbox-open { overflow: hidden; }
   "page_url": "https://lfelkeea.github.io/darkitten-launcher/",
   "source_url": "downloads/DarkittenLauncher-1.14.1-source.zip",
   "source_txt_url": "downloads/DarkittenLauncher-1.14.1-source.txt",
-  "sha256": "e96a21ee451ced867b84f46b1457adc968925ea2bec9415cf647fb4299ba2271",
-  "size": 1264315,
-  "source_sha256": "8a54100f22f9f111298ca033a405bda5e37e1fe3a9f3060d2a112699a0b27986",
-  "source_size": 2523694,
-  "source_txt_sha256": "3616fe95485f1ad46d3b879980fed3f71cf7884b604fe76dbb05b145ae92182a",
-  "source_txt_size": 3521444,
+  "sha256": "547c3cec6148b4709e24b9fbb5e3cc477e13652176bd8b054bc01685c7c64d0d",
+  "size": 1264598,
+  "source_sha256": "6f26eaa68ccc78ed5103b8cdb4556fe9499a88225312c161c844fe2a1056e378",
+  "source_size": 2524264,
+  "source_txt_sha256": "6975210c50162743e1797e8c7f0cad3c74a92be524d43a97ef90b7526a930272",
+  "source_txt_size": 3523039,
   "pet": {
     "name": "LFELKEEA 桌宠",
     "version": "1.4.6",
@@ -89864,7 +90258,9 @@ body.lightbox-open { overflow: hidden; }
     "在线注册表会合入启动器内置的中文名和说明，搜索仍然支持中文名、英文 ID 和分类；断网或接口失败时自动退回内置常用清单，不影响生成指令。",
     "导出数据包会按目标版本写入正确的 pack_format（26.3 = 121、1.21.11 = 94、1.21.5 = 71、1.20.1 = 15 等），不再把所有 1.21 以上版本都写成 61。",
     "指令生成器新增模板结构预览：灰色文字是锁定的指令关键字和固定语法，红色方括号里才是可修改的参数，参数旁边的下拉列表只是常用值。",
-    "生成后的指令框可以直接编辑，复制、保存 .mcfunction 和导出数据包都会使用修改后的内容；所有下拉参数也允许直接输入清单里没有的值。"
+    "生成后的指令框可以直接编辑，复制、保存 .mcfunction 和导出数据包都会使用修改后的内容；所有下拉参数也允许直接输入清单里没有的值。",
+    "指令生成器的参数选择框改为“输入框 + 展开按钮”：右侧箭头是一个专门的按钮，左键点开常用值清单，左键点条目填入；输入框随时可以直接输入或修改，不再需要右键切换编辑模式，手动输入的自定义值也不会写进清单。选择框和数值框都忽略滚轮，滚动页面时不会误改参数。",
+    "樱花穿透会优先进入已经创建好的隧道：账号下存在可用 TCP 隧道时直接复用并同步本地端口，只有一条隧道都没有时才新建，不会再因为“隧道数量已达上限”而启动失败；联机房间与服务端公网隧道会尽量各用各的，只有别无选择时才共用。"
   ],
   "1.14.0": [
     "服务端详情页标题栏新增卸载按钮，整个服务端文件夹会移入回收站；设置页原来的按钮也改名为“卸载服务端”，不再藏在滚动区域底部。",
