@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 from PySide6.QtCore import Qt, QTimer
+from pathlib import Path
+
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
+    QFileDialog,
     QFrame,
     QHBoxLayout,
     QLabel,
@@ -28,8 +31,14 @@ from ..servers import (
     required_java_major,
     save_server,
 )
-from ..workers import LoaderVersionsWorker, ManifestWorker, ServerInstallWorker
-from .dialogs import StyledDialog
+from ..workers import (
+    LoaderVersionsWorker,
+    ManifestWorker,
+    ServerInstallWorker,
+    WorldImportWorker,
+)
+from ..world_import import WorldImportError, WorldSource, inspect_world_source
+from .dialogs import NoticeDialog, StyledDialog
 from .version_picker import VersionPickerDialog
 from .widgets import SegmentedControl, Switch, colors
 
@@ -56,6 +65,9 @@ class ServerCreateDialog(StyledDialog):
         self._installing = False
         self._name_auto = True
         self._form_widgets: list[QWidget] = []
+        self._import_source: WorldSource | None = None
+        self._import_worker: WorldImportWorker | None = None
+        self._import_retry = False
 
         intro = QLabel(
             "在本地创建独立服务端。文件保存在启动器目录的 servers 文件夹中，"
@@ -127,6 +139,52 @@ class ServerCreateDialog(StyledDialog):
         self.port_spin = self._add_spin_row(form_layout, "端口", 1024, 65535, 25565, 1)
         self.port_spin.valueChanged.connect(lambda _: self._update_port_note())
 
+        self.seed_edit = self._add_line_row(
+            form_layout, "世界种子", "留空随机生成；可填数字或任意文字"
+        )
+        self.seed_edit.setMaxLength(64)
+        self.seed_hint = QLabel(
+            "只影响新生成的世界；数字种子和文字种子都可以，游戏会用相同算法生成地形。"
+        )
+        self.seed_hint.setObjectName("Tiny")
+        self.seed_hint.setWordWrap(True)
+        form_layout.addWidget(self.seed_hint)
+
+        world_row = QHBoxLayout()
+        world_row.setSpacing(10)
+        world_row.addWidget(self._row_label("初始存档"))
+        self.world_edit = QLineEdit()
+        self.world_edit.setReadOnly(True)
+        self.world_edit.setPlaceholderText("不使用：安装后生成新世界")
+        world_row.addWidget(self.world_edit, 1)
+        self.world_folder_btn = QPushButton("文件夹…")
+        self.world_folder_btn.setObjectName("Ghost")
+        self.world_folder_btn.setCursor(Qt.PointingHandCursor)
+        self.world_folder_btn.setToolTip("选择其他游戏版本的完整存档文件夹")
+        self.world_folder_btn.clicked.connect(lambda: self._pick_world_source(False))
+        world_row.addWidget(self.world_folder_btn)
+        self.world_zip_btn = QPushButton("压缩包…")
+        self.world_zip_btn.setObjectName("Ghost")
+        self.world_zip_btn.setCursor(Qt.PointingHandCursor)
+        self.world_zip_btn.setToolTip("选择包含 level.dat 的 .zip 存档压缩包")
+        self.world_zip_btn.clicked.connect(lambda: self._pick_world_source(True))
+        world_row.addWidget(self.world_zip_btn)
+        self.world_clear_btn = QPushButton("清除")
+        self.world_clear_btn.setObjectName("Ghost")
+        self.world_clear_btn.setCursor(Qt.PointingHandCursor)
+        self.world_clear_btn.setVisible(False)
+        self.world_clear_btn.clicked.connect(self._clear_world_source)
+        world_row.addWidget(self.world_clear_btn)
+        form_layout.addLayout(world_row)
+
+        self.world_hint = QLabel(
+            "可以导入其他游戏版本的存档，作为服务端主世界：所有维度、玩家数据和"
+            "物品栏都会原样保留，跨版本升级由 Minecraft 首次打开时完成。"
+        )
+        self.world_hint.setObjectName("Tiny")
+        self.world_hint.setWordWrap(True)
+        form_layout.addWidget(self.world_hint)
+
         self.java_combo = self._add_combo_row(form_layout, "Java")
         self.java_combo.setMinimumWidth(360)
 
@@ -176,6 +234,11 @@ class ServerCreateDialog(StyledDialog):
             self.loader_widget,
             self.memory_spin,
             self.port_spin,
+            self.seed_edit,
+            self.world_edit,
+            self.world_folder_btn,
+            self.world_zip_btn,
+            self.world_clear_btn,
             self.java_combo,
             self.online_switch,
             self.eula_check,
@@ -316,6 +379,61 @@ class ServerCreateDialog(StyledDialog):
             return
         self.mc_combo.setEditText(version)
         self._on_mc_changed()
+
+    def _pick_world_source(self, zip_file: bool) -> None:
+        start = Path.home()
+        if zip_file:
+            path, _ = QFileDialog.getOpenFileName(
+                self,
+                "选择存档压缩包",
+                str(start),
+                "存档压缩包 (*.zip);;所有文件 (*.*)",
+            )
+        else:
+            path = QFileDialog.getExistingDirectory(
+                self, "选择世界文件夹（里面要有 level.dat）", str(start)
+            )
+        if not path:
+            return
+        try:
+            source = inspect_world_source(path)
+        except WorldImportError as error:
+            NoticeDialog(
+                self, "无法读取存档", str(error), icon_name="warning"
+            ).exec()
+            return
+        self._import_source = source
+        self.world_edit.setText(str(source.path))
+        self.world_hint.setText(
+            f"将导入「{source.name}」 · {source.version_text} · "
+            f"种子 {source.seed_text} · 维度：{source.dimension_text} · "
+            f"{source.player_text} · {source.size_text}。"
+            "所有维度、玩家数据和物品栏都会原样保留，不会重新生成世界。"
+        )
+        self.world_hint.setStyleSheet(f"color: {colors()['green']};")
+        self.world_clear_btn.setVisible(True)
+        self.seed_edit.setEnabled(False)
+        self.seed_hint.setText(
+            "已选择导入存档，种子只用于生成新世界，因此填写种子不再生效。"
+        )
+        self.seed_hint.setStyleSheet(f"color: {colors()['muted']};")
+
+    def _clear_world_source(self) -> None:
+        self._import_source = None
+        self._import_retry = False
+        self.install_btn.setText("创建并安装")
+        self.world_edit.clear()
+        self.world_clear_btn.setVisible(False)
+        self.seed_edit.setEnabled(True)
+        self.world_hint.setText(
+            "可以导入其他游戏版本的存档，作为服务端主世界：所有维度、玩家数据和"
+            "物品栏都会原样保留，跨版本升级由 Minecraft 首次打开时完成。"
+        )
+        self.world_hint.setStyleSheet("")
+        self.seed_hint.setText(
+            "只影响新生成的世界；数字种子和文字种子都可以，游戏会用相同算法生成地形。"
+        )
+        self.seed_hint.setStyleSheet("")
 
     def _on_name_edited(self, _text: str) -> None:
         self._name_auto = False
@@ -503,6 +621,9 @@ class ServerCreateDialog(StyledDialog):
         if self._installing:
             self._cancel_install()
             return
+        if self._import_retry and self._pending_info is not None:
+            self._start_world_import(self._pending_info)
+            return
         if not self.install_btn.isEnabled():
             return
         kind = self._current_kind()
@@ -516,6 +637,7 @@ class ServerCreateDialog(StyledDialog):
             if kind in LOADER_KINDS
             else ""
         )
+        seed = "" if self._import_source is not None else self.seed_edit.text().strip()
         if kind in LOADER_KINDS and not loader_version:
             self.main.toast("请选择加载器版本", "error")
             return
@@ -530,6 +652,7 @@ class ServerCreateDialog(StyledDialog):
             info.memory_mb = self.memory_spin.value()
             info.port = self.port_spin.value()
             info.online_mode = self.online_switch.isChecked()
+            info.seed = seed
         else:
             name = self.name_edit.text().strip()
             folder = new_server_folder(name, kind, mc)
@@ -543,6 +666,7 @@ class ServerCreateDialog(StyledDialog):
                 memory_mb=self.memory_spin.value(),
                 port=self.port_spin.value(),
                 online_mode=self.online_switch.isChecked(),
+                seed=seed,
             )
             self._pending_info = info
         save_server(info)
@@ -585,6 +709,11 @@ class ServerCreateDialog(StyledDialog):
         )
 
     def _cancel_install(self) -> None:
+        if self._import_worker is not None:
+            self.progress_text.setText("正在取消导入…")
+            self.install_btn.setEnabled(False)
+            self._import_worker.cancel()
+            return
         if self._install_worker:
             self.progress_text.setText("正在取消…")
             self.install_btn.setEnabled(False)
@@ -598,6 +727,7 @@ class ServerCreateDialog(StyledDialog):
         for widget in self._form_widgets:
             widget.setEnabled(enabled)
         if enabled:
+            self.seed_edit.setEnabled(self._import_source is None)
             self.loader_widget.setEnabled(self._current_kind() in LOADER_KINDS)
             self._update_java_note()
             self._update_action()
@@ -616,18 +746,15 @@ class ServerCreateDialog(StyledDialog):
         self._install_worker = None
         if self._task is not None:
             self._task.metadata["ui_handled"] = True
+        if success and self._pending_info is not None and self._import_source is not None:
+            self._start_world_import(self._pending_info)
+            return
         self._set_form_enabled(True)
         self.close_btn.setEnabled(True)
         self.close_btn.setText("关闭")
         self.install_btn.setText("创建并安装")
         if success and self._pending_info is not None:
-            self.progress.setValue(100)
-            self.progress_text.setText("安装完成")
-            self.server = self._pending_info
-            if hasattr(self.main, "server_page"):
-                self.main.server_page.refresh_servers(self.server.folder)
-            self.main.toast(f"{self.server.name} 服务端已就绪", "success")
-            QTimer.singleShot(500, self.accept)
+            self._finish_success()
             return
         if "取消" in str(message):
             self.progress_text.setText("安装已取消")
@@ -637,11 +764,85 @@ class ServerCreateDialog(StyledDialog):
         self.install_btn.setText("重试安装")
         self.main.toast(f"服务端安装失败：{message}", "error")
 
+    def _finish_success(self) -> None:
+        if self._pending_info is None:
+            return
+        self.progress.setValue(100)
+        self.progress_text.setText("安装完成")
+        self.server = self._pending_info
+        if hasattr(self.main, "server_page"):
+            self.main.server_page.refresh_servers(self.server.folder)
+        self.main.toast(f"{self.server.name} 服务端已就绪", "success")
+        QTimer.singleShot(500, self.accept)
+
+    # ------------------------------------------------------------------
+    def _start_world_import(self, info: ServerInfo) -> None:
+        if self._import_source is None:
+            self._finish_success()
+            return
+        self._import_retry = False
+        self._installing = True
+        self._set_form_enabled(False)
+        self.progress.setValue(0)
+        self.progress_text.setText("服务端已安装，正在导入存档…")
+        self.log.appendPlainText(
+            f"开始导入存档：{self._import_source.path} → {info.path / 'world'}"
+        )
+        self.install_btn.setText("取消导入")
+        self.close_btn.setEnabled(True)
+        self.close_btn.setText("后台运行")
+        worker = WorldImportWorker(
+            self._import_source,
+            server_info=info,
+            folder_name="world",
+            parent=self,
+        )
+        self._import_worker = worker
+        worker.progress.connect(self._on_import_progress)
+        worker.finished.connect(self._on_import_finished)
+        worker.start()
+
+    def _on_import_progress(self, percent: int, message: str) -> None:
+        self.progress.setValue(max(0, min(100, percent)))
+        self.progress_text.setText(message)
+        if message:
+            bar = self.log.verticalScrollBar()
+            last = self.log.toPlainText().splitlines()[-1:] or [""]
+            if last[0] != message:
+                self.log.appendPlainText(message)
+                bar.setValue(bar.maximum())
+
+    def _on_import_finished(self, success: bool, message: str, _result) -> None:
+        self._import_worker = None
+        self._installing = False
+        self._set_form_enabled(True)
+        self.close_btn.setEnabled(True)
+        self.close_btn.setText("关闭")
+        if success and self._pending_info is not None:
+            self._import_source = None
+            self.progress.setValue(100)
+            self.progress_text.setText(message)
+            self._finish_success()
+            return
+        self.server = self._pending_info
+        if self._pending_info is not None and hasattr(self.main, "server_page"):
+            self.main.server_page.refresh_servers(self._pending_info.folder)
+        if "取消" in message:
+            self.progress_text.setText("存档导入已取消，服务端已安装但没有导入世界")
+            self.install_btn.setText("创建并安装")
+            self.main.toast("存档导入已取消，服务端已安装", "info")
+            return
+        self.progress_text.setText(f"服务端已安装，但存档导入失败：{message}")
+        self.install_btn.setText("重试导入存档")
+        self.install_btn.setEnabled(True)
+        self._import_retry = True
+        self.main.toast(f"存档导入失败：{message}", "error")
+
     def reject(self) -> None:
         if self._installing:
             self.main.toast(
-                "服务端安装已转到顶栏继续，可以继续操作启动器；"
-                "点击顶栏进度可以查看任务",
+                "服务端任务已在后台继续，可以继续操作启动器；"
+                "完成后会更新服务端列表",
                 "info",
             )
         super().reject()

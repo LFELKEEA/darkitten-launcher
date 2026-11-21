@@ -10,7 +10,7 @@ ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from darkitten.sakura import SakuraTunnel  # noqa: E402
+from darkitten.sakura import SakuraTunnel, _friendly_api_error  # noqa: E402
 from darkitten.workers import SakuraRoomWorker  # noqa: E402
 
 
@@ -94,6 +94,23 @@ class PickTunnelTests(unittest.TestCase):
         picked, reused = worker()._pick_tunnel([])
         self.assertFalse(reused)
         self.assertIsNone(picked)
+
+
+class FriendlyErrorTests(unittest.TestCase):
+    def test_tunnel_limit_is_not_reported_as_auth_problem(self) -> None:
+        message = _friendly_api_error(
+            403, "您的隧道数量已达到上限（当前 2 + 创建 1 > 2）"
+        )
+        self.assertIn("隧道数量已达上限", message)
+        self.assertNotIn("认证", message)
+
+    def test_real_auth_error_keeps_its_message(self) -> None:
+        message = _friendly_api_error(403, "请先完成实名认证")
+        self.assertIn("认证未完成", message)
+
+    def test_invalid_token_still_reported(self) -> None:
+        message = _friendly_api_error(401, "访问密钥无效")
+        self.assertIn("访问密钥无效", message)
 
 
 if __name__ == "__main__":

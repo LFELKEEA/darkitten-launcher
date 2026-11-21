@@ -32,6 +32,7 @@ from PySide6.QtWidgets import (
 )
 
 from ...java import pick_java
+from ...server_config import read_server_properties
 from ...servers import (
     EULA_URL,
     SERVER_BADGE,
@@ -858,6 +859,17 @@ class ServerPage(QWidget):
         self.pack_btn.setIcon(icons.icon("package", colors()["accent"], 14))
         self.pack_btn.clicked.connect(self.export_server_pack)
         actions.addWidget(self.pack_btn)
+
+        self.import_world_btn = QPushButton("导入存档")
+        self.import_world_btn.setObjectName("Soft")
+        self.import_world_btn.setCursor(Qt.PointingHandCursor)
+        self.import_world_btn.setIcon(icons.icon("globe", colors()["accent"], 14))
+        self.import_world_btn.setToolTip(
+            "把其他游戏版本的完整存档导入为这个服务端的世界，"
+            "所有维度和玩家数据都会保留"
+        )
+        self.import_world_btn.clicked.connect(self.import_world_dialog)
+        actions.addWidget(self.import_world_btn)
 
         self.reinstall_btn = QPushButton("重新安装")
         self.reinstall_btn.setObjectName("Soft")
@@ -1866,6 +1878,37 @@ class ServerPage(QWidget):
         from ..server_pack_dialog import ServerPackExportDialog
 
         ServerPackExportDialog(self.main, info).exec()
+
+    def import_world_dialog(self) -> None:
+        info = self._current_info()
+        if info is None:
+            self.toast("先选一个服务端，再导入存档", "info")
+            return
+        if self._state_of(info) != "stopped":
+            self.toast("请先停止服务端再导入存档，避免世界正在写入", "error")
+            return
+        if self._install_worker is not None and self._install_folder == info.folder:
+            self.toast("服务端还在安装，等装完再导入存档", "info")
+            return
+        properties = read_server_properties(info.path / "server.properties")
+        level_name = (properties.get("level-name") or "world").strip() or "world"
+        from ..world_import_dialog import WorldImportDialog
+
+        dialog = WorldImportDialog(
+            self.main,
+            target_text=(
+                f"把完整存档导入服务端「{info.name}」，作为它的主世界。"
+                "导入后 server.properties 的 level-name 会同步更新。"
+            ),
+            default_name=level_name,
+            server_info=info,
+        )
+        dialog.exec()
+        if dialog.result is not None:
+            self.refresh_servers(info.folder)
+            backup = getattr(dialog.result, "backup", None)
+            suffix = f"，原世界已备份为 {backup.name}" if backup is not None else ""
+            self.toast(f"存档已导入服务端{suffix}", "success")
 
     def open_import_dialog(self, path: str | Path | None = None) -> None:
         from ..server_pack_dialog import ServerPackImportDialog

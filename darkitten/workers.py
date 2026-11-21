@@ -100,6 +100,12 @@ from .sakura import (
 )
 from .skins import change_skin, fetch_account_skin, reset_skin
 from .littleskin import LittleSkinAccount, fetch_skin, login as littleskin_login
+from .world_import import (
+    WorldImportCancelled,
+    WorldSource,
+    import_into_server,
+    import_world,
+)
 
 
 class InstallWorker(QObject):
@@ -2902,3 +2908,67 @@ class EasyTierJoinWorker(QObject):
                 session.stop()
             else:
                 self.ready.emit(session, "")
+
+
+class WorldImportWorker(QObject):
+    """在后台把完整世界导入服务端或启动器存档目录。"""
+
+    progress = Signal(int, str)
+    finished = Signal(bool, str, object)
+
+    def __init__(
+        self,
+        source: WorldSource | Path,
+        *,
+        dest_parent: Path | None = None,
+        folder_name: str = "",
+        server_info: ServerInfo | None = None,
+        parent: QObject | None = None,
+    ) -> None:
+        super().__init__(parent)
+        self.source = source
+        self.dest_parent = Path(dest_parent) if dest_parent is not None else None
+        self.folder_name = folder_name
+        self.server_info = server_info
+        self.cancel_event = threading.Event()
+        self._thread: threading.Thread | None = None
+
+    def start(self) -> None:
+        self._thread = threading.Thread(target=self._run, daemon=True)
+        self._thread.start()
+
+    def cancel(self) -> None:
+        self.cancel_event.set()
+
+    def _progress(self, percent: int, message: str) -> None:
+        self.progress.emit(max(0, min(100, int(percent))), str(message))
+
+    def _run(self) -> None:
+        try:
+            if self.server_info is not None:
+                result = import_into_server(
+                    self.server_info,
+                    self.source,
+                    level_name=self.folder_name or "world",
+                    progress_cb=self._progress,
+                    cancel_event=self.cancel_event,
+                )
+            else:
+                if self.dest_parent is None:
+                    raise ValueError("没有指定导入目标")
+                result = import_world(
+                    self.source,
+                    self.dest_parent,
+                    folder_name=self.folder_name,
+                    progress_cb=self._progress,
+                    cancel_event=self.cancel_event,
+                )
+        except WorldImportCancelled:
+            self.finished.emit(False, "导入已取消", None)
+        except Exception as exc:
+            if self.cancel_event.is_set():
+                self.finished.emit(False, "导入已取消", None)
+            else:
+                self.finished.emit(False, str(exc) or "导入失败", None)
+        else:
+            self.finished.emit(True, f"已导入「{result.source.name}」", result)

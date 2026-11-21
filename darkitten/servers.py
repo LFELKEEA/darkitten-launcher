@@ -105,6 +105,7 @@ class ServerInfo:
     memory_mb: int = 4096
     port: int = 25565
     online_mode: bool = False
+    seed: str = ""
     eula: bool = False
     installed: bool = False
     install_error: str = ""
@@ -286,6 +287,9 @@ def update_server_properties(
             "online-mode": "true" if info.online_mode else "false",
         }
     )
+    seed = str(getattr(info, "seed", "") or "").strip()
+    if seed:
+        values["level-seed"] = seed
     for key, value in (updates or {}).items():
         values[str(key)] = str(value)
 
