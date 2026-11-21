@@ -6,6 +6,8 @@
     {
       "id": "lfelkeea.qq_bridge",
       "name": "QQ 桥接（SnowLuma）",
+      "tagline": "把 QQ 私聊、群聊和空间接进桌宠，带人格、记忆和语音。",
+      "category": "social",
       "version": "1.8.0",
       "author": "LFELKEEA",
       "description": "通过 SnowLuma 把 QQ 私聊和群聊接进桌宠：可视化设置面板、人格卡、长期记忆、黑话库、可加备注的白名单、盯人即时回复、习惯化回复、收藏表情、QQ 空间与评论自动回复、SnowLuma 自动启停、聊天图片识别，以及 Windows 本地语音 / GPT-SoVITS 自定义音色的 TTS 语音回复。1.6.0 起 GPT-SoVITS 也能自动探测安装目录、后台无窗口启动，并在设置面板里切换参考音色。1.7.0 起可以接入「活人感内核」：回复会带上她当前的状态、最近的自我认识和按话题召回的记忆，聊天也会写回内核，成为下一次重逢的素材；1.8.0 起提示词进一步接入身份核心、工作记忆、能力边界和隐私规则，群聊默认不召回私聊内容，消息按 message_id 幂等写回，避免重复记账；没安装内核时完全按原来的逻辑工作。",
@@ -160,6 +162,8 @@
     {
       "id": "lfelkeea.focus_guard",
       "name": "专注时间",
+      "tagline": "50 分钟专注 + 5 分钟休息，到点让桌宠提醒你活动。",
+      "category": "efficiency",
       "version": "1.0.0",
       "author": "LFELKEEA",
       "description": "专注 50 分钟、休息 5 分钟的循环提醒；结束时让桌宠提醒你站起来活动。",
@@ -193,6 +197,8 @@
     {
       "id": "lfelkeea.quiz_helper",
       "name": "做题助手",
+      "tagline": "截屏识别题目，给出答案和解析，还能自动填进答题框。",
+      "category": "study",
       "version": "1.3.1",
       "author": "LFELKEEA",
       "description": "截取当前屏幕，识别题目并让 AI 给出答案与解析；支持 Windows OCR 和图片理解，右键菜单可直接触发。答完会自动扫描页面上的答题框，按 AI 的判断逐个填入对应位置。",
@@ -254,6 +260,8 @@
     {
       "id": "lfelkeea.alive_core",
       "name": "活人感内核（姐妹人格与记忆）",
+      "tagline": "让桌宠有稳定的身份、长期记忆和作息，而不是每次从头聊天。",
+      "category": "persona",
       "version": "2.1.3",
       "author": "LFELKEEA",
       "description": "按《姐妹人格与记忆系统》实现的活人感内核：身份、长期记忆 v2、工作记忆、功能状态、节律与有界探索。2.1 起高把握记忆自动沉淀，`## 可成长` 会自己更新和淡出；说话规则按“看不出是 AI 写的”重写，并在回复时清理明显的 AI 套话；可成长段默认保留 60 条、每条最长 160 字（总 6000 字），超出才淡出；身份历史默认只留 10 个版本。",
@@ -369,6 +377,8 @@
     {
       "id": "lfelkeea.deepseek_chan",
       "name": "深度求索娘（大肥鱼皮肤）",
+      "tagline": "把桌宠换成蓝色大肥鱼，带 40 个动作、22 个表情和配套口癖。",
+      "category": "persona",
       "version": "1.0.9",
       "author": "LFELKEEA",
       "description": "把桌宠换成网络同人形象「深度求索娘」（蓝色大肥鱼）：Live2D 模型、38 套动作、22 个表情，右键「动作」菜单会换成这套皮肤自己的动作和表情，还有摸头/戳一戳/聊天反应、配套口癖和台词。会自动按作者提供的水印开关隐藏模型自带水印；也兼容任意 Live2D 模型：支持 .model3.json、模型文件夹和 zip / rar / 7z，会自动读取模型的参数、动作和表情。插件不附带模型文件；大肥鱼请到 B 站神宫凉子（UID 13737731）下载 DeepSeek免费公皮.zip。原画及拆分：神宫凉子，Live2D 建模：霓虹猫_NeonNeko。",
@@ -471,6 +481,8 @@
     {
       "id": "lfelkeea.qq_inspiration",
       "name": "灵感获取（QQ桥接 / 桌宠对话）",
+      "tagline": "从聊天、记忆和群聊梗里提炼插件点子，一键丢给自开发工坊。",
+      "category": "dev",
       "version": "1.1.2",
       "author": "LFELKEEA",
       "description": "从 QQ 桥接记忆、桌宠对话和聊天里的黑话梗中提炼可做插件的灵感，也可以直接让 AI 按主题生成新点子；支持一键删除、Ctrl/Shift 多选批量删除，灵感存在本地，可一键复制到自开发工坊。",
@@ -539,6 +551,8 @@
     {
       "id": "lfelkeea.self_dev",
       "name": "自开发工坊（Agent 工具链）",
+      "tagline": "给桌宠一套会积累的编程工具：读代码、跑命令、查资料、做插件。",
+      "category": "dev",
       "version": "1.6.5",
       "author": "LFELKEEA",
       "description": "让桌宠拥有一套会积累的编程工具：在专属开发区里读文件、改代码、跑命令、查语法，还能用技能沉淀做法、用本地知识库检索旧结论、用连接器接入 HTTP API 和 MCP 服务器。技能和连接器改成开关式管理，不用删除就能停用，默认全部关闭；插件自带 45 个技能和 43 个连接器，开发专区按编程核心、文档与创作、API 专用、HTTP 连接器、MCP 连接器分成五组，支持一键开启推荐套装或全部开启。连接器里的旧式双花括号环境变量占位符会在加载时自动迁移成 ${ENV_NAME}，避免请求头把变量名当成令牌原样发出去。GitHub 访问拆成两条通道：github-public 浏览别人的公开仓库、issue、PR 和文件，只读且不需要令牌；github 操作自己的仓库，支持私有仓库和写操作，才需要 GITHUB_PAT。MCP Git 使用 uvx 启动固定版本的 mcp-server-git，默认操作当前工作区，需要 uv/uvx；依赖检查会重新读取注册表 PATH，启动后新装的 uv 不用重启桌宠也能识别，并会跳过缺少 uv 的旧 uvx 包装器。这些条目除了 GitHub、飞书、Notion、SearXNG、只读 SQL 网关、Context7、Playwright、Blender 和常用 MCP，也把日常在用的 Word/PDF/Excel/PPT 处理、长文写作、知识库、draw.io、技术图表、图像生成、联网调研、本地文件搜索和自然化写作收了进来，还补了 OpenAI 兼容 API、Tavily、arXiv、Crossref、OpenAlex、维基百科。启用后可以先做依赖体检：检查缺少哪些环境变量、启动命令或下载资源；环境变量可在「环境与依赖」里本机保存，只显示状态不回传明文；MCP 的 npm/PyPI 包、Playwright 浏览器和技能声明的资源可以在确认后预下载。代理需要用到关闭的条目时，会说明理由并弹窗申请打开。缺技能时会自己上 GitHub 搜索、浏览仓库目录并安装回来，缺连接器时会找 MCP 服务器、读 README、推断 npx/uvx 启动命令后保存，不熟悉的库或报错也会主动搜索网页、GitHub 和 PyPI。成果可以直接做成新的桌宠插件安装到插件目录；不再限制步数和输出长度，可以一直做到任务完成。改动会自动记录基线，一键就能还原到最初状态；做好的插件还能导出成 ZIP 分享或投稿。工作台会实时展示每一步调用，危险操作默认要主人点头；所有路径都相对于开发区，换一台电脑、换一个安装目录也能直接用。知识库和网页搜索不依赖 SQLite 或 XML 解析器，打包版桌宠也能直接运行。",
@@ -645,6 +659,8 @@
     {
       "id": "example.hello",
       "name": "示例：定时问候",
+      "tagline": "最小示例：定时说一句话，演示 say / every / settings。",
+      "category": "example",
       "version": "1.0.0",
       "author": "LFELKEEA",
       "description": "每隔一段时间说一句话，演示 say / every / settings / events 的用法。",
@@ -676,6 +692,8 @@
     {
       "id": "example.screen_note",
       "name": "示例：屏幕观察补充",
+      "tagline": "最小示例：在屏幕观察时补充一条上下文。",
+      "category": "example",
       "version": "1.0.0",
       "author": "LFELKEEA",
       "description": "在屏幕观察时补充一条上下文，让 LFELKEEA 更容易说对话题。",

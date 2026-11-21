@@ -189,6 +189,7 @@
 
 .pl-filters {
   display: inline-flex;
+  flex-wrap: wrap;
   gap: 4px;
   padding: 4px;
   border: 1px solid var(--line);
@@ -235,6 +236,7 @@
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 16px;
+  align-items: start;
 }
 
 .pl-grid > * { min-width: 0; }
@@ -277,7 +279,6 @@
 .pl-card.is-hidden { display: none; }
 
 .pl-card.pl-featured {
-  grid-column: 1 / -1;
   border-color: rgba(255, 61, 110, 0.3);
   background:
     radial-gradient(680px 260px at 88% -10%, rgba(255, 61, 110, 0.16), transparent 68%),
@@ -371,7 +372,60 @@
   line-height: 1.8;
 }
 
-.pl-featured .pl-desc { max-width: 720px; font-size: 13.5px; }
+.pl-tagline {
+  margin: 0;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.7;
+}
+
+.pl-featured .pl-tagline { max-width: 720px; font-size: 13.5px; }
+
+/* Detail block ----------------------------------------------------------- */
+
+.pl-more {
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+}
+
+.pl-more summary {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--accent-2);
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+  list-style: none;
+}
+
+.pl-more summary::-webkit-details-marker { display: none; }
+.pl-more summary::before { content: "+"; color: var(--accent); font-family: var(--mono); font-weight: 800; }
+.pl-more[open] summary::before { content: "−"; }
+.pl-more summary:hover { color: #fff; }
+
+.pl-more-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-top: 10px;
+}
+
+.pl-detail-desc {
+  margin: 0;
+  color: var(--muted);
+  font-size: 11.5px;
+  line-height: 1.8;
+}
+
+.pl-detail-label {
+  color: var(--muted-2);
+  font-family: var(--mono);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+}
 
 /* External requirements -------------------------------------------------- */
 
@@ -597,6 +651,92 @@
 .pl-tip-dependency strong { color: #ffcf8a; }
 .pl-tip-dependency a { color: #ffcf8a; text-decoration: none; border-bottom: 1px dashed rgba(255, 207, 138, 0.45); }
 .pl-tip-dependency a:hover { color: #ffe1b3; border-bottom-color: #ffe1b3; }
+
+/* Usage tips ------------------------------------------------------------- */
+
+.pl-tip-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 14px;
+  margin-top: 18px;
+}
+
+.pl-tip-card {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  padding: 20px 22px;
+  border: 1px solid rgba(104, 224, 173, 0.22);
+  border-radius: 16px;
+  background: rgba(104, 224, 173, 0.05);
+}
+
+.pl-tip-card.pl-tip-dependency {
+  border-color: rgba(255, 176, 92, 0.26);
+  background: rgba(255, 176, 92, 0.05);
+}
+
+.pl-tip-tag {
+  align-self: flex-start;
+  padding: 3px 9px;
+  border: 1px solid rgba(104, 224, 173, 0.3);
+  border-radius: 999px;
+  color: #b7f0d6;
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+}
+
+.pl-tip-dependency .pl-tip-tag {
+  border-color: rgba(255, 176, 92, 0.34);
+  color: #ffcf8a;
+}
+
+.pl-tip-card h3 {
+  margin: 0;
+  font-size: 15px;
+  line-height: 1.45;
+  font-weight: 800;
+}
+
+.pl-tip-card > p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 11.5px;
+  line-height: 1.8;
+}
+
+.pl-tip-card details {
+  padding-top: 8px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.pl-tip-card summary {
+  color: var(--accent-2);
+  font-size: 10.5px;
+  font-weight: 700;
+  cursor: pointer;
+  list-style: none;
+}
+
+.pl-tip-card summary::-webkit-details-marker { display: none; }
+.pl-tip-card summary::before { content: "+ "; color: var(--accent); font-family: var(--mono); }
+.pl-tip-card details[open] summary::before { content: "− "; }
+
+.pl-tip-card details p {
+  margin: 8px 0 0;
+  color: var(--muted-2);
+  font-size: 10.5px;
+  line-height: 1.8;
+}
+
+.pl-tip-card code {
+  padding: 1px 5px;
+  border-radius: 5px;
+  background: rgba(255, 255, 255, 0.05);
+  color: #ffb3c6;
+  font-size: 10.5px;
+}
 
 /* Develop ---------------------------------------------------------------- */
 

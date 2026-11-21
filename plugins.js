@@ -38,6 +38,15 @@
     detailed: "详细"
   };
 
+  const CATEGORY_LABELS = {
+    social: "社交",
+    efficiency: "效率",
+    study: "学习",
+    persona: "人格",
+    dev: "开发",
+    example: "示例"
+  };
+
   let plugins = [];
 
   function escapeHtml(value) {
@@ -75,10 +84,11 @@
     return "plugins/" + id + "-" + version + ".zip";
   }
 
-  function settingChips(settings) {
+  function settingChips(settings, limit) {
     if (!settings || typeof settings !== "object") return "";
     const chips = [];
     Object.keys(settings).forEach((key) => {
+      if (limit && chips.length >= limit) return;
       const raw = settings[key];
       if (raw === "" || raw === null || raw === undefined) return;
       if (Array.isArray(raw) && !raw.length) return;
@@ -98,14 +108,17 @@
     return chips.length ? '<div class="pl-settings">' + chips.join("") + "</div>" : "";
   }
 
-  function highlightChips(plugin) {
-    const items = Array.isArray(plugin.highlights) ? plugin.highlights : [];
+  function highlightChips(plugin, limit) {
+    let items = Array.isArray(plugin.highlights) ? plugin.highlights : [];
+    if (limit) items = items.slice(0, limit);
     if (!items.length) return "";
     const chips = items.map((item) => {
       if (!item || typeof item !== "object") return "";
+      let value = String(item.value || "");
+      if (limit && value.length > 26) value = value.slice(0, 26) + "…";
       return (
         '<span class="pl-setting">' + escapeHtml(item.label || "说明") +
-        " <strong>" + escapeHtml(item.value || "") + "</strong></span>"
+        " <strong>" + escapeHtml(value) + "</strong></span>"
       );
     }).filter(Boolean);
     return chips.length ? '<div class="pl-settings pl-highlights">' + chips.join("") + "</div>" : "";
@@ -144,6 +157,28 @@
     return '<span class="pl-badge">社区</span>';
   }
 
+  function detailBlock(plugin) {
+    const sections = [];
+    if (plugin.description) {
+      sections.push('<p class="pl-detail-desc">' + escapeHtml(plugin.description) + "</p>");
+    }
+    const allHighlights = highlightChips(plugin);
+    if (allHighlights) {
+      sections.push('<div class="pl-detail-label">全部特性</div>' + allHighlights);
+    }
+    const allSettings = settingChips(plugin.settings);
+    if (allSettings) {
+      sections.push('<div class="pl-detail-label">默认设置</div>' + allSettings);
+    }
+    if (!sections.length) return "";
+    return (
+      '<details class="pl-more">' +
+        "<summary>完整说明与全部特性</summary>" +
+        '<div class="pl-more-body">' + sections.join("") + "</div>" +
+      "</details>"
+    );
+  }
+
   function cardFor(plugin) {
     const id = String(plugin.id || "");
     const version = String(plugin.version || "");
@@ -152,11 +187,15 @@
     const href = safeFile(plugin.file, id, version);
     const sha = String(plugin.sha256 || "");
     const apiVersion = plugin.api_version ? "v" + esc(plugin.api_version) : "—";
+    const category = String(plugin.category || "");
+    const categoryLabel = CATEGORY_LABELS[category] || "其他";
+    const tagline = String(plugin.tagline || plugin.description || "");
 
     const article = document.createElement("article");
     article.className = "pl-card" + (plugin.featured ? " pl-featured" : "");
     article.dataset.featured = plugin.featured ? "true" : "false";
     article.dataset.bundled = plugin.bundled ? "true" : "false";
+    article.dataset.category = category;
     article.innerHTML =
       '<div class="pl-card-top">' +
         badgeFor(plugin) +
@@ -167,11 +206,13 @@
         '<div class="pl-name"><h3>' + escapeHtml(name) + "</h3>" +
         '<span class="pl-id">' + escapeHtml(id) + "</span></div>" +
       "</div>" +
-      '<p class="pl-desc">' + escapeHtml(plugin.description || "") + "</p>" +
+      '<p class="pl-tagline">' + escapeHtml(tagline) + "</p>" +
       requiresBlock(plugin) +
-      (highlightChips(plugin) || settingChips(plugin.settings)) +
+      (highlightChips(plugin, 6) || settingChips(plugin.settings, 4)) +
       permissionChips(plugin) +
+      detailBlock(plugin) +
       '<dl class="pl-meta">' +
+        "<div><dt>分类</dt><dd>" + escapeHtml(categoryLabel) + "</dd></div>" +
         "<div><dt>包大小</dt><dd>" + escapeHtml(formatBytes(plugin.size)) + "</dd></div>" +
         "<div><dt>接口</dt><dd>API " + escapeHtml(apiVersion) + "</dd></div>" +
         '<div><dt>作者</dt><dd>' + escapeHtml(author) + "</dd></div>" +
@@ -216,7 +257,16 @@
     $$(".pl-card", grid).forEach((card) => {
       const featured = card.dataset.featured === "true";
       const bundled = card.dataset.bundled === "true";
-      const show = kind === "all" || (kind === "featured" && featured) || (kind === "bundled" && bundled);
+      const category = card.dataset.category || "";
+      const show = kind === "all"
+        ? true
+        : kind === "featured"
+          ? featured
+          : kind === "bundled"
+            ? bundled
+            : kind.indexOf("cat:") === 0
+              ? category === kind.slice(4)
+              : true;
       card.classList.toggle("is-hidden", !show);
       if (show) visible += 1;
     });
@@ -318,10 +368,11 @@
       console.warn("plugins.json 读取失败", error);
       grid.innerHTML =
         '<p class="pl-noscript">插件清单暂时读取失败。可以直接下载：' +
-        '<a href="plugins/lfelkeea.qq_bridge-1.3.0.zip">QQ 桥接（SnowLuma）</a>、' +
+        '<a href="plugins/lfelkeea.qq_bridge-1.8.0.zip">QQ 桥接（SnowLuma）</a>、' +
         '<a href="plugins/lfelkeea.focus_guard-1.0.0.zip">专注时间</a>、' +
-        '<a href="plugins/example.hello-1.0.0.zip">示例：定时问候</a>、' +
-        '<a href="plugins/example.screen_note-1.0.0.zip">示例：屏幕观察补充</a>。' +
+        '<a href="plugins/lfelkeea.quiz_helper-1.3.1.zip">做题助手</a>、' +
+        '<a href="plugins/lfelkeea.self_dev-1.6.5.zip">自开发工坊</a>、' +
+        '<a href="plugins/example.hello-1.0.0.zip">示例：定时问候</a>。' +
         "刷新页面可以重试。</p>";
     }
   }

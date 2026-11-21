@@ -27,6 +27,7 @@
     <symbol id="i-palette" viewBox="0 0 24 24"><path d="M12 3a9 9 0 1 0 0 18h1.2a2.1 2.1 0 0 0 0-4.2h-.7a2 2 0 0 1 0-4h4.3A4.2 4.2 0 0 0 21 8.6C21 5.5 17 3 12 3Z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><circle cx="7.6" cy="10" r="1.1" fill="currentColor"/><circle cx="10" cy="6.8" r="1.1" fill="currentColor"/><circle cx="14" cy="6.6" r="1.1" fill="currentColor"/></symbol>
     <symbol id="i-terminal" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="m7 9 3 3-3 3M13 15h4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></symbol>
     <symbol id="i-gallery" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.7"/><circle cx="8.5" cy="9" r="1.5" fill="currentColor"/><path d="m4 17 5-5 3.5 3.5L16 12l4 4" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-map" viewBox="0 0 24 24"><path d="m9 4 6 2 5-2v14l-5 2-6-2-5 2V6l5-2Z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><path d="M9 4v14M15 6v14" fill="none" stroke="currentColor" stroke-width="1.7"/></symbol>
     <symbol id="i-zoom" viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6.5" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="m15.5 15.5 4 4M8 10.5h5M10.5 8v5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></symbol>
     <symbol id="i-close" viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></symbol>
     <symbol id="i-chevron-left" viewBox="0 0 24 24"><path d="m15 5-7 7 7 7" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></symbol>
@@ -66,7 +67,7 @@
       <div class="hero-copy reveal">
         <div class="eyebrow"><span class="pulse"></span>DKL <b data-version>1.13.0</b><span class="eyebrow-sep">/</span>LATEST BUILD</div>
         <h1>恶魔小猫的<br><em>秘密基地</em></h1>
-        <p class="lede">从原版安装、Fabric / Forge / NeoForge 加载器，到 Mod、整合包、皮肤、P2P 联机和服务端，全收进同一个猫窝。<strong>更新只换代码，存档、账户和配置原地不动。</strong></p>
+        <p class="lede">从原版安装、Fabric / Forge / NeoForge 加载器，到 Mod、整合包、皮肤、P2P 联机、服务端和存档管理，全收进同一个猫窝。游戏助手还能查种子、生成指令、预测附魔。<strong>更新只换代码，存档、账户和配置原地不动。</strong></p>
         <div class="hero-actions">
           <a class="btn btn-primary" href="downloads/DarkittenLauncher-1.13.0-source.zip" data-source-download download>
             <svg class="icon"><use href="#i-download"></use></svg>
@@ -105,7 +106,7 @@
       <div class="stat"><strong>02</strong><span>Mod 下载源</span></div>
       <div class="stat"><strong>03</strong><span>加载器生态</span></div>
       <div class="stat"><strong>05</strong><span>服务端类型</span></div>
-      <div class="stat"><strong>09</strong><span>核心页面</span></div>
+      <div class="stat"><strong>10</strong><span>核心能力</span></div>
       <div class="stat-note"><span class="pulse"></span>当前稳定版 v<span data-version>1.13.0</span> 已上线</div>
     </section>
 
@@ -113,7 +114,7 @@
       <div class="section-head reveal">
         <span class="kicker">INSIDE DKL</span>
         <h2>先看看猫窝<br>长什么样。</h2>
-        <p>下面是启动器的真实界面截图，不是概念图。新版本新增的游戏助手页可以从左侧导航直接打开。点缩略图切换页面，点大图可以放大看细节。</p>
+        <p>9 张真实界面截图，覆盖版本、模组、皮肤、联机、服务端和设置。点缩略图切换页面，点大图可以放大看细节。</p>
       </div>
 
       <div class="gallery-shell reveal">
@@ -313,6 +314,20 @@
           </ul>
           <div class="feature-tags"><span>level.dat</span><span>servers.dat</span><span>种子</span><span>游戏规则</span></div>
         </article>
+
+        <article class="feature-card reveal">
+          <div class="feature-icon"><svg class="icon"><use href="#i-map"></use></svg></div>
+          <span class="feature-no">10</span>
+          <h3>游戏助手：种子、指令、附魔，一站查</h3>
+          <p>不用进游戏，在启动器里查种子对应的群系和区块、生成单条或多命令方块指令、按 RNG 流程预测附魔，也能直接打开 MC 百科。</p>
+          <ul class="feature-points">
+            <li>种子地图自动读取版本列表，缩放拖动查看群系与区块</li>
+            <li>指令生成支持 AI 补全复杂命令和复合命令方块</li>
+            <li>附魔预测附带教程，按步骤复现目标附魔</li>
+            <li>MC 百科在启动器内打开，查资料不用切窗口</li>
+          </ul>
+          <div class="feature-tags"><span>种子地图</span><span>指令生成</span><span>附魔预测</span><span>MC 百科</span></div>
+        </article>
       </div>
 
       <div class="flow-strip reveal" aria-label="从下载到进入游戏的流程">
@@ -480,7 +495,28 @@
             <span class="kicker">DESKTOP PET</span>
           </div>
           <h2>把 LFELKEEA 放在桌面上。</h2>
-          <p>会眨眼、会闲聊的桌面小猫。1.1.0 起可以定时看一眼屏幕、结合画面主动搭话，也支持插件扩展；1.1.1 起插件还能带自己的设置面板，在插件管理里点「设置」就能配置，不用手改 JSON。1.2.0 起支持自动更新：设置页或托盘菜单可以检查、下载并重启替换，插件也能在插件管理里直接更新；1.3.0 修复了替换脚本启动失败导致更新没反应的问题，启动后也会主动检查一次；1.3.1 把麦克风打开和关闭移到后台线程，按下去、拖动和松手都不再卡顿；1.3.2 在桌宠右键菜单里加了「检查更新…」；1.3.3 在插件管理里加了「插件市场」，可以直接浏览、下载和更新站点上的插件；1.3.4 在每张插件卡片上加了「删除」，删除时先停止插件，再把文件夹移入回收站并清理设置和运行存储；1.3.5 修复了插件市场一直显示启动时缓存清单、下载到旧版本的问题，现在每次打开市场都会重新读取插件库；1.4.0 给插件开放了 Live2D 模型接口，插件市场里的「深度求索娘（大肥鱼皮肤）」可以换模型、加 38 个动作和 22 个表情，并替换成配套的说话方式；1.4.1 让皮肤插件可以接管右键「动作」菜单，点开就是这套皮肤自己的分组动作和表情，卸载后自动恢复；1.4.2 修复换模型时整个桌宠退出的问题，并把头发、尾巴和裙摆的物理改成固定步长，动作和待机不再抖；1.4.3 让右键「动作」菜单点选立即生效，并自动隐藏模型作者提供的水印文字；1.4.4 修正了 Live2D 动作贝塞尔关键帧的解析顺序，狗尾草、举手、竖手指等动作不再出现手臂错位、道具离手，同时加大了动作渲染边界，挥手和伸懒腰时手臂不会被裁掉；1.4.5 修复插件重载或重新扫描后桌宠消失的问题，并让配套插件支持「换回短裙」「变回原样」和「还原默认动作 / 表情」。插件库里新增「做题助手」：把题目窗口切到最前面，说「做题」就能识别屏幕上的题目并给出答案和解析，默认先走本机 OCR，读不到文字再发截图。1.4.6 让插件可以往右键菜单加入口，做题助手升级到 1.1.0 后，右键桌宠就能直接选「识别屏幕上的题目」。Live2D 模型不随桌宠或插件分发：请到 B 站神宫凉子（UID：13737731）下载 <code>DeepSeek免费公皮.zip</code>，放到 D 盘根目录或下载目录，插件会自动识别。完整包解压后运行 <code>LFELKEEA.exe</code>；也可以在启动器首页的「桌宠 LFELKEEA」入口一键下载、安装和启动。API Key 只保存在桌宠自己的设置页，启动器不读取也不上传。</p>
+          <p class="app-lede">会眨眼、会闲聊、会看屏幕的桌面小猫。可以换 Live2D 模型、装插件、接 QQ 和语音；API Key 只留在桌宠自己的设置里。</p>
+          <div class="app-highlights">
+            <div class="app-highlight"><strong>桌面陪伴</strong><span>眨眼、待机动作、闲聊和摸头反应，待机时也会自己找事做。</span></div>
+            <div class="app-highlight"><strong>Live2D 换装</strong><span>支持 .model3.json、模型文件夹和 zip / rar / 7z，动作、表情和口癖随皮肤切换。</span></div>
+            <div class="app-highlight"><strong>插件市场</strong><span>右键「插件管理」就能浏览、安装、更新插件；新插件默认不启用。</span></div>
+            <div class="app-highlight"><strong>语音与 QQ</strong><span>Windows 本地语音或 GPT-SoVITS 克隆音色；QQ 私聊、群聊和空间评论可接进来。</span></div>
+            <div class="app-highlight"><strong>自动更新</strong><span>设置页、托盘菜单或右键菜单检查更新，下载后自动替换并重启。</span></div>
+            <div class="app-highlight"><strong>数据留在本机</strong><span>设置、记忆和聊天记录都在 data 目录，不上传，更新也不会覆盖。</span></div>
+          </div>
+          <details class="app-details">
+            <summary>1.4.x 更新记录 <span>从插件市场到右键识别题目</span></summary>
+            <ul>
+              <li><b>1.4.0</b> 插件可以调用 Live2D 模型接口，换模型、加动作和表情，并替换配套说话方式。</li>
+              <li><b>1.4.1</b> 皮肤插件可以接管右键「动作」菜单，卸载后自动恢复。</li>
+              <li><b>1.4.2</b> 修复换模型时整个桌宠退出的问题；头发、尾巴和裙摆的物理改成固定步长。</li>
+              <li><b>1.4.3</b> 动作菜单点选立即生效，并自动隐藏模型作者提供的水印文字。</li>
+              <li><b>1.4.4</b> 修正 Live2D 动作关键帧解析顺序，手臂不再错位；加大动作渲染边界。</li>
+              <li><b>1.4.5</b> 修复插件重载或重新扫描后桌宠消失的问题，配套插件支持还原短裙和默认动作。</li>
+              <li><b>1.4.6</b> 插件可以往右键菜单加入口；做题助手升级后可直接选「识别屏幕上的题目」。</li>
+            </ul>
+          </details>
+          <p class="app-note">Live2D 模型不随桌宠或插件分发：请到 B 站神宫凉子（UID：13737731）下载 <code>DeepSeek免费公皮.zip</code>，放到 D 盘根目录或下载目录，插件会自动识别。原画及拆分：神宫凉子，Live2D 建模：霓虹猫_NeonNeko。</p>
           <div class="pet-meta">
             <span>版本 <strong data-pet-version>1.4.6</strong></span>
             <span>大小 <strong data-pet-size>读取中…</strong></span>
@@ -504,7 +540,7 @@
             <svg class="icon"><use href="#i-terminal"></use></svg>
             桌宠源码
           </a>
-          <span class="pet-note">GitHub Releases 托管 · 约 139 MB · 模型需自行从原作者处下载</span>
+          <span class="pet-note">GitHub Releases 托管 · 模型需自行从原作者处下载</span>
         </div>
       </div>
 
@@ -515,15 +551,25 @@
             <span class="kicker">MOD AGENT</span>
           </div>
           <h2>把恶魔小猫工坊放进桌面。</h2>
-          <p>恶魔小猫工坊是独立运行的 Minecraft Java 模组开发 Agent，面向 Fabric / Forge / NeoForge / Architectury。它把「读代码 → 改代码 → 真实编译 → 启动开发端 → 断言验证」做成一条完整闭环，每一步都有备份和回退。</p>
-          <p>主要能力：按 MC 版本和加载器生成可编译工程；执行 build / runClient / runServer / GameTest；Forge 1.20.1 会启动真实开发端，用回环探针读取状态、背包、方块、界面和截图，并用场景卡片断言结果，其他加载器以编译结果、运行日志和 GameTest 为准；导入 JAR 后可反编译出参考源码；内置领域技能、连接器与本地知识库。2.0 起加入规格与任务图、强制验收门禁、构建前快照与回滚、176 条静态规则，以及资产库和兼容矩阵等工具。</p>
-          <p>3.4.4 起可以接管游戏本身：AI 直接换中文、新建存档，按测试要求操控玩家看视角、走位、按键、攻击、使用物品、挖方块、发聊天与执行命令，点界面和输入文本；每一步都能截图回看实际画面，再决定改哪里。Forge 1.20.1 可做完整交互与断言，其他加载器仍以编译、日志和 GameTest 为准。</p>
-          <p>3.4.5 修正了测试难度：新建存档默认 normal，不再因为 peaceful 而刷不出敌对生物；AI 可以把时间拨到夜晚、切换生存模式、在玩家周围生成指定怪物，攻击后再用状态和截图确认结果。</p>
-          <p>3.4.6 让停止真的能停：取消信号贯通开发端启动、探针安装、进服握手、游戏测试步骤与存档等待，取消后只清理本次任务新起的进程；运行期间运行面板不再整体锁死，停止全部与刷新状态始终可用。新增多方案外观：生物、物品图标与方块一次给出 2-8 套候选，可预览挑选、补充描述重新生成、保留模型只改图案，或直接上传自己的 PNG / JSON / bbmodel，选定后自动写入贴图与模型文件。</p>
-          <p>3.6.3 把手动绘图和模型编辑器的 3D 预览做成 Blockbench 式自由视角：拖动旋转、中键平移、滚轮缩放，任意角度都能正确看到前后遮挡；模型编辑器可以逐个勾选部件显隐、只看选中，绘图页也能单独显示某一层，方便画被帽子、外套挡住的皮肤区域。3.6.1/3.6.2 的启动加速、单实例激活、数据目录兜底与模型库清理继续保留。</p>
-          <p>所有写入先进入待确认列表，覆盖前自动备份；知识库、反编译和探针都在本机完成，不上传工程文件。</p>
+          <p class="app-lede">独立的 Minecraft Java 模组开发 Agent，面向 Fabric / Forge / NeoForge / Architectury。从读代码、改代码到真实编译、启动开发端、断言验证，一条闭环走完。</p>
+          <div class="app-highlights">
+            <div class="app-highlight"><strong>完整闭环</strong><span>按 MC 版本和加载器生成可编译工程，执行 build / runClient / runServer / GameTest。</span></div>
+            <div class="app-highlight"><strong>真实操控</strong><span>Forge 1.20.1 可接管游戏：换中文、新建存档、走位、攻击、挖方块、发命令，每一步截图回看。</span></div>
+            <div class="app-highlight"><strong>外观工坊</strong><span>生物、物品、方块一次给 2–8 套候选；Blockbench 式 3D 预览，拖动旋转、中键平移、滚轮缩放。</span></div>
+            <div class="app-highlight"><strong>安全回滚</strong><span>写入先进入待确认列表，覆盖前自动备份；构建前快照，可一键回滚。</span></div>
+          </div>
+          <details class="app-details">
+            <summary>3.4 – 3.6 更新记录 <span>从接管游戏到 3D 预览</span></summary>
+            <ul>
+              <li><b>3.4.4</b> 可以接管游戏本身：换中文、新建存档、操控玩家、点界面，每一步截图回看。</li>
+              <li><b>3.4.5</b> 新建存档默认 normal，可拨到夜晚、切生存、生成指定怪物再验证结果。</li>
+              <li><b>3.4.6</b> 停止真的能停；新增多方案外观，生物、物品和方块一次给 2–8 套候选。</li>
+              <li><b>3.6.3</b> 3D 预览改成 Blockbench 式自由视角；模型编辑器可逐部件显隐，绘图页可单独显示某一层。</li>
+            </ul>
+          </details>
+          <p class="app-note">知识库、反编译和探针都在本机完成，不上传工程文件。</p>
           <div class="pet-meta">
-            <span>版本 <strong data-agent-version>3.1.0</strong></span>
+            <span>版本 <strong data-agent-version>3.6.3</strong></span>
             <span>大小 <strong data-agent-size>读取中…</strong></span>
             <span>发布 <strong data-agent-date>—</strong></span>
             <span>平台 <strong>Windows 10 / 11</strong></span>
