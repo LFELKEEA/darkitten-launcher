@@ -1,5 +1,5 @@
 ﻿Darkitten Launcher 1.14.1 完整源代码
-生成时间：2026-11-21 19:21:11
+生成时间：2026-11-21 19:31:43
 文本文件：163
 ================================================================================
 目录
@@ -52572,7 +52572,6 @@ from ..widgets import (
     Card,
     ChibiCompanion,
     SegmentedControl,
-    Switch,
     badge,
     colors,
     hline,
@@ -52764,16 +52763,21 @@ class RoomPage(QWidget):
 
         offline_row = QHBoxLayout()
         offline_row.setSpacing(6)
-        self.allow_offline_switch = Switch()
-        self.allow_offline_switch.setChecked(True)
-        self.allow_offline_switch.setEnabled(False)
-        self.allow_offline_switch.setToolTip(
-            "局域网世界默认允许非正版玩家进入，无法在启动器里关闭。"
-        )
-        offline_row.addWidget(self.allow_offline_switch)
-        offline_label = QLabel("允许非正版玩家进入")
+        offline_row.addWidget(badge("固定开启", "orange"))
+        offline_label = QLabel("局域网世界允许非正版玩家进入")
         offline_label.setObjectName("Tiny")
+        offline_label.setToolTip(
+            "Minecraft 的局域网世界由游戏本身托管，启动器无法关闭离线玩家加入。"
+        )
         offline_row.addWidget(offline_label)
+        self.quick_server_btn = QPushButton("改用专用服务端")
+        self.quick_server_btn.setObjectName("Ghost")
+        self.quick_server_btn.setCursor(Qt.PointingHandCursor)
+        self.quick_server_btn.setToolTip(
+            "专用服务端可以严格开启正版验证，在“服务器 → 公网联机”里关闭非正版进入。"
+        )
+        self.quick_server_btn.clicked.connect(self._open_server_page)
+        offline_row.addWidget(self.quick_server_btn)
         action_row.addLayout(offline_row)
         action_row.addStretch(1)
         layout.addLayout(action_row)
@@ -52784,8 +52788,8 @@ class RoomPage(QWidget):
         layout.addWidget(self.quick_status)
 
         hint = QLabel(
-            "局域网世界始终允许离线玩家。需要严格正版验证时，请改用专用服务端，"
-            "在“服务器 → 公网联机”里关闭非正版进入。"
+            "局域网世界由 Minecraft 自己托管，启动器无法强制正版验证，所以这里不再放一个关不掉的开关。"
+            "需要严格正版验证时，点“改用专用服务端”，在“服务器 → 公网联机”里关闭非正版进入。"
         )
         hint.setObjectName("Tiny")
         hint.setWordWrap(True)
@@ -53184,6 +53188,13 @@ class RoomPage(QWidget):
 
     # ------------------------------------------------------------------
     # 状态与主题
+
+    def _open_server_page(self) -> None:
+        switch = getattr(self.main, "switch_page", None)
+        if callable(switch):
+            switch("server")
+            return
+        self.toast("请先在左侧打开“服务器”页", "info")
 
     def _switch_mode(self, mode: str) -> None:
         if not hasattr(self, "mode_stack"):
@@ -55232,7 +55243,7 @@ class ServerPage(QWidget):
         online_row.addWidget(self._form_label("正版验证"))
         self.settings_online = Switch()
         online_row.addWidget(self.settings_online)
-        self.settings_online.toggled.connect(lambda _: self._update_online_hint())
+        self.settings_online.toggled.connect(self._settings_online_toggled)
         self.online_hint = QLabel("")
         self.online_hint.setObjectName("Tiny")
         self.online_hint.setWordWrap(True)
@@ -55442,18 +55453,25 @@ class ServerPage(QWidget):
         access_layout.setSpacing(6)
         offline_row = QHBoxLayout()
         offline_row.setSpacing(8)
-        offline_title = QLabel("允许非正版玩家进入")
+        offline_title = QLabel("正版验证")
         offline_title.setStyleSheet("font-weight: 700; font-size: 12px;")
         offline_row.addWidget(offline_title)
-        self.online_offline_switch = Switch()
-        self.online_offline_switch.toggled.connect(self._online_offline_toggled)
-        offline_row.addWidget(self.online_offline_switch)
+        self.online_offline_badge = badge("仅正版账户", "gray")
+        offline_row.addWidget(self.online_offline_badge)
         self.online_offline_hint = QLabel("")
         self.online_offline_hint.setObjectName("Tiny")
         self.online_offline_hint.setWordWrap(True)
         offline_row.addWidget(self.online_offline_hint, 1)
+        self.online_settings_btn = QPushButton("去设置修改")
+        self.online_settings_btn.setObjectName("Ghost")
+        self.online_settings_btn.setCursor(Qt.PointingHandCursor)
+        self.online_settings_btn.clicked.connect(self._show_online_settings_tab)
+        offline_row.addWidget(self.online_settings_btn)
         access_layout.addLayout(offline_row)
-        note = QLabel("关闭后服务端只接受正版账户；修改需要重启服务端才会生效。")
+        note = QLabel(
+            "这里的值和“设置”页的正版验证开关是同一个配置，修改请到“设置”页操作；"
+            "保存后需要重启服务端才会生效。"
+        )
         note.setObjectName("Tiny")
         note.setWordWrap(True)
         access_layout.addWidget(note)
@@ -56188,7 +56206,9 @@ class ServerPage(QWidget):
         self.settings_name.setText(info.name)
         self.settings_memory.setValue(max(1024, min(32768, info.memory_mb)))
         self.settings_port.setValue(max(1024, min(65535, info.port)))
+        self.settings_online.blockSignals(True)
         self.settings_online.setChecked(info.online_mode)
+        self.settings_online.blockSignals(False)
         self._populate_java_combo(info)
         self._update_eula_badge(info)
         self._update_online_hint()
@@ -56699,39 +56719,48 @@ class ServerPage(QWidget):
             return 0
 
     def _load_online_settings(self, info: ServerInfo) -> None:
-        self.online_offline_switch.blockSignals(True)
-        self.online_offline_switch.setChecked(not info.online_mode)
-        self.online_offline_switch.blockSignals(False)
+        """公网联机页只读展示设置页的正版验证状态，避免两个开关各保存一份。"""
+        self.online_offline_badge.setText(
+            "仅正版账户" if info.online_mode else "允许离线玩家"
+        )
+        self.online_offline_badge.setProperty(
+            "badge", "green" if info.online_mode else "orange"
+        )
+        repolish(self.online_offline_badge)
         self.online_offline_hint.setText(
-            "离线玩家可以直接进入"
-            if not info.online_mode
-            else "只允许正版账户进入"
+            "服务器会拒绝未登录正版账户的玩家" if info.online_mode
+            else "服务器允许非正版账户进入"
         )
         self._sync_online_controls()
 
-    def _online_offline_toggled(self, checked: bool) -> None:
+    def _show_online_settings_tab(self) -> None:
+        self.tabs.set_value("settings", emit=True)
+
+    def _settings_online_toggled(self, checked: bool) -> None:
+        """设置页的正版验证开关立即写盘，切换页面后不会回退。"""
         info = self._current_info()
         if info is None:
+            self._update_online_hint()
             return
-        info.online_mode = not bool(checked)
+        if bool(info.online_mode) == bool(checked):
+            self._update_online_hint()
+            return
+        info.online_mode = bool(checked)
         try:
             save_server(info)
             update_server_properties(info)
         except Exception as exc:
+            self.settings_online.blockSignals(True)
+            self.settings_online.setChecked(not bool(checked))
+            self.settings_online.blockSignals(False)
+            self._update_online_hint()
             self.toast(f"保存正版验证设置失败：{exc}", "error")
             return
-        self.settings_online.blockSignals(True)
-        self.settings_online.setChecked(info.online_mode)
-        self.settings_online.blockSignals(False)
         self._update_online_hint()
-        self.online_offline_hint.setText(
-            "离线玩家可以直接进入"
-            if not info.online_mode
-            else "只允许正版账户进入"
-        )
+        self._load_online_settings(info)
         process = self._processes.get(info.folder)
         if process is not None and process.state != "stopped":
-            self.toast("设置会在重启服务端后生效", "info")
+            self.toast("正版验证设置已保存，重启服务端后生效", "info")
         else:
             self.toast("正版验证设置已保存", "success")
 
@@ -56971,7 +57000,7 @@ class ServerPage(QWidget):
         self.online_node_refresh.setEnabled(
             not self._sakura_busy and not active
         )
-        self.online_offline_switch.setEnabled(bool(info) and not self._sakura_busy)
+        self.online_settings_btn.setEnabled(bool(info))
         if active and self._sakura_payload is not None:
             address = str(self._sakura_payload.get("address") or "")
             if address:
@@ -89777,9 +89806,17 @@ body.lightbox-open { overflow: hidden; }
   "version": "1.14.1",
   "released": "2026-11-21",
   "notes": [
-    "模组下载、服务端新建和指令生成器的版本选择统一使用完整正式版清单（含 1.21.11 到 1.4.7），并自动合并启动器缓存的最新版本和本机已安装版本。",
+    "版本清单补全到 Mojang 全部 103 个正式版：包括 2026 年的 26.1 / 26.2 / 26.3，以及 1.11.1、1.10、1.9、1.8.1、1.4.6 等以前漏掉的版本，旧版也能直接选到。",
+    "模组下载、服务端新建和指令生成器的版本选择统一使用这份完整清单，并自动合并启动器缓存的最新版本和本机已安装版本。",
+    "修复“一键联机”里“允许非正版玩家进入”关不掉的问题：局域网世界由 Minecraft 自己托管，启动器无法强制正版验证，所以不再显示一个点不动的开关，而是明确标注“固定开启”，并提供“改用专用服务端”按钮；在专用服务端的“公网联机”页可以真正关闭非正版进入。",
+    "新建服务端窗口的游戏版本同样改成“选择…”清单：可以搜索全部正式版并后台同步 Mojang，默认跟随当前选中的已安装版本，没有安装记录时使用最新正式版，不再只能在下拉框里上下滚动。",
+    "服务端标题栏新增“修改服务器图标”按钮：选择任意 PNG / JPG 图片后自动居中裁剪并缩放成 64×64，写入服务端的 server-icon.png，重启服务端后朋友就能在多人列表里看到新图标。",
     "模组下载窗口的 Minecraft 版本旁新增“选择…”按钮，打开可搜索的版本清单，不再只靠下拉框上下滚动；清单里会标出本机已安装的版本，也支持手动输入快照或自定义版本。",
+    "版本选择窗口打开后会后台向 Mojang 同步一次最新清单，以后新版本发布不用等启动器更新；同步失败时继续用内置的 103 个正式版。",
     "指令生成器的目标版本同样支持搜索清单和手动输入，输入过的自定义版本不会被切回默认值。",
+    "指令选择窗口改为从网站按目标版本拉取完整注册表：方块 1100+、物品 1500+、实体 150+、音效 1800+，不再只有内置的 109 个方块；数据会缓存到本机，下次打开直接加载，点“刷新清单”可以重新下载。",
+    "在线注册表会合入启动器内置的中文名和说明，搜索仍然支持中文名、英文 ID 和分类；断网或接口失败时自动退回内置常用清单，不影响生成指令。",
+    "导出数据包会按目标版本写入正确的 pack_format（26.3 = 121、1.21.11 = 94、1.21.5 = 71、1.20.1 = 15 等），不再把所有 1.21 以上版本都写成 61。",
     "指令生成器新增模板结构预览：灰色文字是锁定的指令关键字和固定语法，红色方括号里才是可修改的参数，参数旁边的下拉列表只是常用值。",
     "生成后的指令框可以直接编辑，复制、保存 .mcfunction 和导出数据包都会使用修改后的内容；所有下拉参数也允许直接输入清单里没有的值。"
   ],
@@ -89787,12 +89824,12 @@ body.lightbox-open { overflow: hidden; }
   "page_url": "https://lfelkeea.github.io/darkitten-launcher/",
   "source_url": "downloads/DarkittenLauncher-1.14.1-source.zip",
   "source_txt_url": "downloads/DarkittenLauncher-1.14.1-source.txt",
-  "sha256": "24311fe1b72f0cd09ca1c6bc5f767d6583243aabd21211b75f5d0a4c6d42d179",
-  "size": 1253862,
-  "source_sha256": "8e7e4a152962013cb54623ae80a94deb9ab3f9a35f45f360d984802ea8a485ee",
-  "source_size": 2509616,
-  "source_txt_sha256": "b231d9a5b28c4ca8769d8bc9eabfaf191cc5d5560642779a939e3363edeee80c",
-  "source_txt_size": 3472081,
+  "sha256": "e96a21ee451ced867b84f46b1457adc968925ea2bec9415cf647fb4299ba2271",
+  "size": 1264315,
+  "source_sha256": "8a54100f22f9f111298ca033a405bda5e37e1fe3a9f3060d2a112699a0b27986",
+  "source_size": 2523694,
+  "source_txt_sha256": "3616fe95485f1ad46d3b879980fed3f71cf7884b604fe76dbb05b145ae92182a",
+  "source_txt_size": 3521444,
   "pet": {
     "name": "LFELKEEA 桌宠",
     "version": "1.4.6",
@@ -89816,6 +89853,8 @@ body.lightbox-open { overflow: hidden; }
   "1.14.1": [
     "版本清单补全到 Mojang 全部 103 个正式版：包括 2026 年的 26.1 / 26.2 / 26.3，以及 1.11.1、1.10、1.9、1.8.1、1.4.6 等以前漏掉的版本，旧版也能直接选到。",
     "模组下载、服务端新建和指令生成器的版本选择统一使用这份完整清单，并自动合并启动器缓存的最新版本和本机已安装版本。",
+    "服务端“设置”页的正版验证开关改为改动即保存，切换标签页或重新选择服务端都不会回退；“公网联机”页重复的正版开关已移除，改为只读状态显示，并提供“去设置修改”按钮。",
+    "修复“一键联机”里“允许非正版玩家进入”关不掉的问题：局域网世界由 Minecraft 自己托管，启动器无法强制正版验证，所以不再显示一个点不动的开关，而是明确标注“固定开启”，并提供“改用专用服务端”按钮；在专用服务端的“公网联机”页可以真正关闭非正版进入。",
     "新建服务端窗口的游戏版本同样改成“选择…”清单：可以搜索全部正式版并后台同步 Mojang，默认跟随当前选中的已安装版本，没有安装记录时使用最新正式版，不再只能在下拉框里上下滚动。",
     "服务端标题栏新增“修改服务器图标”按钮：选择任意 PNG / JPG 图片后自动居中裁剪并缩放成 64×64，写入服务端的 server-icon.png，重启服务端后朋友就能在多人列表里看到新图标。",
     "模组下载窗口的 Minecraft 版本旁新增“选择…”按钮，打开可搜索的版本清单，不再只靠下拉框上下滚动；清单里会标出本机已安装的版本，也支持手动输入快照或自定义版本。",
