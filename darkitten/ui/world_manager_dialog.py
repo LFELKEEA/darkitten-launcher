@@ -414,8 +414,8 @@ class WorldManagerDialog(StyledDialog):
             dest_parent=self.game_dir / "saves",
         )
         dialog.exec()
-        if dialog.result is not None:
-            self._toast(f"已导入存档「{dialog.result.source.name}」", "success")
+        if dialog.import_result is not None:
+            self._toast(f"已导入存档「{dialog.import_result.source.name}」", "success")
             self._reload()
 
     def _create_world(self) -> None:

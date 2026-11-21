@@ -1904,9 +1904,9 @@ class ServerPage(QWidget):
             server_info=info,
         )
         dialog.exec()
-        if dialog.result is not None:
+        if dialog.import_result is not None:
             self.refresh_servers(info.folder)
-            backup = getattr(dialog.result, "backup", None)
+            backup = getattr(dialog.import_result, "backup", None)
             suffix = f"，原世界已备份为 {backup.name}" if backup is not None else ""
             self.toast(f"存档已导入服务端{suffix}", "success")
 

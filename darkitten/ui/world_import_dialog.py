@@ -42,7 +42,7 @@ class WorldImportDialog(StyledDialog):
         self.server_info = server_info
         self.dest_parent = Path(dest_parent) if dest_parent is not None else None
         self.source: WorldSource | None = None
-        self.result = None
+        self.import_result = None
         self._worker: WorldImportWorker | None = None
         self._busy = False
         self._initial_path = str(initial_path or "")
@@ -252,7 +252,7 @@ class WorldImportDialog(StyledDialog):
         if success:
             self.progress.setValue(100)
             self.progress_text.setText(message)
-            self.result = result
+            self.import_result = result
             parent = self.parentWidget()
             toast = getattr(parent, "toast", None)
             if callable(toast):
