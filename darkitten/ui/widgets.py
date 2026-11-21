@@ -174,6 +174,13 @@ def badge(text: str, kind: str = "gray") -> QLabel:
     return label
 
 
+def tiny(text: str = "") -> QLabel:
+    label = QLabel(text)
+    label.setObjectName("Tiny")
+    label.setWordWrap(True)
+    return label
+
+
 def hline() -> QFrame:
     line = QFrame()
     line.setObjectName("Divider")
@@ -1132,6 +1139,7 @@ class VersionRow(QFrame):
         bound_loader: str = "",
         save_count: int = 0,
         server_count: int = 0,
+        display_name: str = "",
     ) -> None:
         super().__init__(parent)
         self.summary = summary
@@ -1161,8 +1169,10 @@ class VersionRow(QFrame):
         info.setSpacing(2)
         title = QHBoxLayout()
         title.setSpacing(6)
-        name = QLabel(summary.id)
+        name = QLabel(display_name or summary.id)
         name.setStyleSheet("font-weight: 700; font-size: 13px;")
+        if display_name and display_name != summary.id:
+            name.setToolTip(f"内部版本：{summary.id}")
         title.addWidget(name)
         loader_name = bound_loader or summary.loader
         kind = loader_name or summary.type_name

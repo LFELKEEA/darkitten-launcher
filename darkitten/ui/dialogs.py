@@ -213,9 +213,13 @@ class TextInputDialog(StyledDialog):
         message: str,
         value: str,
         button_text: str = "保存",
+        max_length: int = 16,
+        placeholder: str = "3-16 位字母、数字或下划线",
+        player_name: bool = True,
     ) -> None:
         super().__init__(parent, title, "user", width=440)
         self._result = value
+        self._player_name = player_name
 
         text = QLabel(message)
         text.setObjectName("DialogText")
@@ -223,8 +227,8 @@ class TextInputDialog(StyledDialog):
         self.body.addWidget(text)
 
         self.edit = QLineEdit(value)
-        self.edit.setMaxLength(16)
-        self.edit.setPlaceholderText("3-16 位字母、数字或下划线")
+        self.edit.setMaxLength(max(1, int(max_length)))
+        self.edit.setPlaceholderText(placeholder)
         self.edit.returnPressed.connect(self._save)
         self.body.addWidget(self.edit)
 
@@ -239,7 +243,11 @@ class TextInputDialog(StyledDialog):
 
     def _save(self) -> None:
         value = self.edit.text().strip()
-        if not valid_player_name(value):
+        if not value:
+            self.error.setText("名称不能为空。")
+            self.error.setVisible(True)
+            return
+        if self._player_name and not valid_player_name(value):
             self.error.setText("名称需为 3-16 位字母、数字或下划线。")
             self.error.setVisible(True)
             return

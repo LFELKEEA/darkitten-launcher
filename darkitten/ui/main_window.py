@@ -291,6 +291,7 @@ class MainWindow(QWidget):
         self._launch_cancel_requested = False
         self._launch_closing = False
         self._launch_connect_address = ""
+        self._launch_quick_world = ""
         self._launch_auto_retry = True
         self._launch_profile_id = ""
         self._running_version = ""
@@ -1438,9 +1439,11 @@ class MainWindow(QWidget):
 
     def _update_status_version(self) -> None:
         if hasattr(self, "mc_label"):
-            self.mc_label.setText(
-                f"MC: {self.selected_version}" if self.selected_version else "MC: —"
-            )
+            version_id = self.selected_version
+            display = self.config.version_name(version_id) if version_id else ""
+            text = f"MC: {display or version_id}" if version_id else "MC: —"
+            self.mc_label.setText(text)
+            self.mc_label.setToolTip(version_id)
         self._update_java_label()
 
     def ensure_java_detected(self, force: bool = False) -> None:
@@ -1841,6 +1844,40 @@ class MainWindow(QWidget):
         from .mod_dialog import ModBrowserDialog
 
         ModBrowserDialog(self).exec()
+        self._refresh_download_chip()
+
+    def open_mod_info(self, info) -> None:
+        """从已安装列表打开内容介绍；有项目 ID 就复用下载页的详情视图。"""
+        from .mod_dialog import ModBrowserDialog
+
+        project_id = str(getattr(info, "project_id", "") or "")
+        if not project_id:
+            from .dialogs import NoticeDialog
+
+            name = str(getattr(info, "name", "") or "Mod 介绍")
+            intro = str(getattr(info, "intro", "") or "").strip()
+            description = str(getattr(info, "description", "") or "").strip()
+            parts = [intro]
+            if description and description != intro:
+                parts.append("原版简介：\n" + description)
+            if not any(parts):
+                parts.append("这个文件没有保存介绍信息。")
+            NoticeDialog(self, name, "\n\n".join(parts), icon_name="cube").exec()
+            return
+        hit = {
+            "project_id": project_id,
+            "title": str(getattr(info, "name", "") or ""),
+            "slug": "",
+            "description": str(getattr(info, "description", "") or ""),
+            "project_url": str(getattr(info, "project_url", "") or ""),
+            "source": str(getattr(info, "source", "") or "modrinth"),
+            "source_label": str(getattr(info, "source_label", "") or ""),
+            "content_type": "mod",
+            "categories": [],
+            "downloads": 0,
+            "icon_url": "",
+        }
+        ModBrowserDialog(self, hit).exec()
         self._refresh_download_chip()
 
     def open_mod_learn(self) -> None:
@@ -2718,6 +2755,7 @@ class MainWindow(QWidget):
         checked: bool = False,
         auto_retry: bool = True,
         connect_address: str = "",
+        quick_world: str = "",
     ) -> None:
         if self.game_running:
             self.toast("游戏已经在运行了", "info")
@@ -2736,6 +2774,7 @@ class MainWindow(QWidget):
         self._launch_cancel_requested = False
         self._launch_closing = False
         self._launch_connect_address = connect_address
+        self._launch_quick_world = quick_world
         self._launch_auto_retry = auto_retry
         profile_id, instance_id = self.launch_profile(self.selected_version)
         self._launch_profile_id = profile_id
@@ -2746,6 +2785,7 @@ class MainWindow(QWidget):
             self.java_installs,
             self.current_account(),
             server_address=connect_address,
+            quick_world=quick_world,
             parent=self,
             instance_id=instance_id,
         )
@@ -2762,6 +2802,7 @@ class MainWindow(QWidget):
             f"准备启动 {self.selected_version}"
             f"{self._launch_mode_note(profile_id, instance_id)}"
             + (f" · 联机 {connect_address}" if connect_address else "")
+            + (f" · 存档 {quick_world}" if quick_world else "")
         )
         self.loading_overlay.show_loading(self.selected_version)
         worker.start()
@@ -2818,6 +2859,7 @@ class MainWindow(QWidget):
             + f" · Java {plan.java.version or plan.java.major}"
             f" · 内存 {self.config.memory_mb} MB"
             + (f" · 联机 {self._launch_connect_address}" if self._launch_connect_address else "")
+            + (f" · 存档 {self._launch_quick_world}" if self._launch_quick_world else "")
         )
         try:
             from ..config import append_log

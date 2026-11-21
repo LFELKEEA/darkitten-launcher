@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import ctypes
+import re
 import shlex
 import subprocess
 import sys
@@ -188,6 +189,36 @@ def _java_info_for(
     return chosen
 
 
+def _mc_version_tuple(value: str) -> tuple[int, ...]:
+    """把 1.21.4 / 1.20.6 之类的版本号转成可比较的元组。"""
+    parts: list[int] = []
+    for chunk in str(value or "").split("."):
+        match = re.match(r"\d+", chunk.strip())
+        if not match:
+            break
+        parts.append(int(match.group()))
+    return tuple(parts)
+
+
+def _server_launch_args(host: str, port: int, mc_version: str) -> list[str]:
+    """1.20+ 用 quickPlay 直接进服；旧版本退回 --server/--port。"""
+    host = str(host or "").strip()
+    if host.startswith("[") and host.endswith("]"):
+        host = host[1:-1]
+    if _mc_version_tuple(mc_version) >= (1, 20):
+        address = f"[{host}]:{port}" if ":" in host else f"{host}:{port}"
+        return ["--quickPlayMultiplayer", address]
+    return ["--server", host, "--port", str(port)]
+
+
+def _singleplayer_launch_args(level_id: str, mc_version: str) -> list[str]:
+    """1.20+ 支持用 quickPlay 直接进入指定存档。"""
+    level = str(level_id or "").strip()
+    if not level or _mc_version_tuple(mc_version) < (1, 20):
+        return []
+    return ["--quickPlaySingleplayer", level]
+
+
 def _check_files(game_dir: Path, resolved: ResolvedVersion) -> list[str]:
     missing = check_installation(game_dir, resolved, check_assets=False)
     for native in active_natives(resolved):
@@ -204,6 +235,7 @@ def prepare_launch(
     java_info: JavaInfo | None = None,
     account: Account | None = None,
     server_address: str = "",
+    singleplayer_world: str = "",
     instance_id: str = "",
     status_cb: Callable[[str], None] | None = None,
 ) -> LaunchPlan:
@@ -392,7 +424,13 @@ def prepare_launch(
         from .sakura import parse_server_address
 
         server_host, server_port = parse_server_address(server_address)
-        command.extend(["--server", server_host, "--port", str(server_port)])
+        command.extend(
+            _server_launch_args(server_host, server_port, resolved.jar_id)
+        )
+    elif str(singleplayer_world or "").strip():
+        command.extend(
+            _singleplayer_launch_args(singleplayer_world, resolved.jar_id)
+        )
 
     run_dir.mkdir(parents=True, exist_ok=True)
     (run_dir / "mods").mkdir(parents=True, exist_ok=True)

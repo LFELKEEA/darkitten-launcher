@@ -91,6 +91,7 @@ from .sakura import (
     SakuraNode,
     SakuraTunnel,
     config_server_addr,
+    detect_game_lan_ports,
     ensure_frpc,
     room_code_for_address,
     tunnel_public_address,
@@ -181,6 +182,7 @@ class LaunchWorker(QObject):
         server_address: str = "",
         parent: QObject | None = None,
         instance_id: str = "",
+        quick_world: str = "",
     ) -> None:
         super().__init__(parent)
         self.game_dir = Path(game_dir)
@@ -190,6 +192,7 @@ class LaunchWorker(QObject):
         self.installs = list(installs or [])
         self.account = copy.deepcopy(account)
         self.server_address = str(server_address or "")
+        self.quick_world = str(quick_world or "")
         self.cancel_event = threading.Event()
 
     def start(self) -> None:
@@ -249,6 +252,7 @@ class LaunchWorker(QObject):
                 self.installs,
                 account=account,
                 server_address=self.server_address,
+                singleplayer_world=self.quick_world,
                 instance_id=self.instance_id,
                 status_cb=self.status.emit,
             )
@@ -2270,8 +2274,32 @@ class SakuraLoginWorker(QObject):
             )
 
 
+class LanPortWorker(QObject):
+    """在后台读取游戏进程监听的端口，避免轮询 netstat 时卡住界面。"""
+
+    ready = Signal(object)
+
+    def __init__(self, pid: int, parent=None) -> None:
+        super().__init__(parent)
+        self.pid = int(pid or 0)
+
+    def start(self) -> None:
+        threading.Thread(target=self._run, daemon=True).start()
+
+    def _run(self) -> None:
+        try:
+            ports = detect_game_lan_ports(self.pid)
+        except Exception:
+            ports = []
+        self.ready.emit(ports)
+
+
 class SakuraRoomWorker(QObject):
-    """准备（复用/创建）隧道、下载 frpc 并生成房间号。"""
+    """准备（复用/创建）隧道、下载 frpc 并生成房间号。
+
+    房间页用它生成房间号；服务端页把 ``make_room_code`` 设为 False，
+    只返回可以直接填进多人游戏的公网地址。
+    """
 
     progress = Signal(int, str)
     log_line = Signal(str)
@@ -2286,6 +2314,8 @@ class SakuraRoomWorker(QObject):
         preferred_tunnel_id: int = 0,
         frpc_path: str = "",
         parent=None,
+        tunnel_name: str = ROOM_TUNNEL_NAME,
+        make_room_code: bool = True,
     ) -> None:
         super().__init__(parent)
         self._token = str(token or "").strip()
@@ -2293,6 +2323,8 @@ class SakuraRoomWorker(QObject):
         self.node_id = int(node_id or 0)
         self.preferred_tunnel_id = int(preferred_tunnel_id or 0)
         self.frpc_path = str(frpc_path or "").strip()
+        self.tunnel_name = str(tunnel_name or ROOM_TUNNEL_NAME).strip()
+        self.make_room_code = bool(make_room_code)
         self.cancel_event = threading.Event()
 
     def start(self) -> None:
@@ -2319,7 +2351,7 @@ class SakuraRoomWorker(QObject):
         candidates = [
             tunnel
             for tunnel in tunnels
-            if tunnel.name.startswith(ROOM_TUNNEL_NAME) and tunnel.type == "tcp"
+            if tunnel.name.startswith(self.tunnel_name) and tunnel.type == "tcp"
         ]
         if candidates:
             return max(candidates, key=lambda item: item.id), True
@@ -2367,7 +2399,7 @@ class SakuraRoomWorker(QObject):
             if reused and tunnel is not None:
                 if tunnel.node not in nodes:
                     raise Exception(
-                        "现有 DarkittenRoom 隧道所在节点已不存在，"
+                        f"现有 {self.tunnel_name} 隧道所在节点已不存在，"
                         "请到樱花穿透面板迁移或删除该隧道后重试。"
                     )
                 node = nodes[tunnel.node]
@@ -2378,9 +2410,13 @@ class SakuraRoomWorker(QObject):
 
             if tunnel is not None:
                 if tunnel.type != "tcp":
-                    raise Exception("现有 DarkittenRoom 隧道不是 TCP 类型，请到面板改为 TCP。")
+                    raise Exception(
+                        f"现有 {self.tunnel_name} 隧道不是 TCP 类型，请到面板改为 TCP。"
+                    )
                 if tunnel.status == 2:
-                    raise Exception("现有 DarkittenRoom 隧道已被封禁，请到樱花穿透面板处理。")
+                    raise Exception(
+                        f"现有 {self.tunnel_name} 隧道已被封禁，请到樱花穿透面板处理。"
+                    )
                 self._log(
                     f"复用隧道 {tunnel.name}（#{tunnel.id}）· 节点 {node.label}"
                 )
@@ -2394,9 +2430,9 @@ class SakuraRoomWorker(QObject):
             else:
                 if not node.can_create:
                     raise Exception(f"节点“{node.label}”当前无法创建隧道，请换一个节点。")
-                self._progress(20, "正在创建 DarkittenRoom 隧道…")
+                self._progress(20, f"正在创建 {self.tunnel_name} 隧道…")
                 created = client.create_tunnel(
-                    ROOM_TUNNEL_NAME, node.id, self.local_port
+                    self.tunnel_name, node.id, self.local_port
                 )
                 warning = str(created.get("important_warning_for_ai") or "").strip()
                 if warning:
@@ -2405,7 +2441,7 @@ class SakuraRoomWorker(QObject):
                 self._log(f"已创建隧道 #{tunnel_id} · 节点 {node.label}")
                 tunnel = SakuraTunnel(
                     id=tunnel_id,
-                    name=str(created.get("name") or ROOM_TUNNEL_NAME),
+                    name=str(created.get("name") or self.tunnel_name),
                     type="tcp",
                     node=node.id,
                     remote=str(created.get("remote") or ""),
@@ -2449,15 +2485,18 @@ class SakuraRoomWorker(QObject):
             if not server_addr and not node.host:
                 raise Exception("隧道配置里没有服务器地址，请稍后重试。")
 
-            self._progress(92, "正在生成房间号…")
             room_code = ""
             code_error = ""
             direct_address = address
-            try:
-                room_code, direct_address = room_code_for_address(address)
-            except Exception as exc:
-                code_error = str(exc)
-                self._log(code_error)
+            if self.make_room_code:
+                self._progress(92, "正在生成房间号…")
+                try:
+                    room_code, direct_address = room_code_for_address(address)
+                except Exception as exc:
+                    code_error = str(exc)
+                    self._log(code_error)
+            else:
+                self._progress(92, "正在准备公网地址…")
 
             payload = {
                 "room_code": room_code,

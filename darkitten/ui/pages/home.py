@@ -519,6 +519,7 @@ class HomePage(QWidget):
                 bound_loader=bound_loader,
                 save_count=save_count,
                 server_count=server_count,
+                display_name=self.main.config.version_name(summary.id),
             )
             row.clicked.connect(self.select_version)
             row.double_clicked.connect(self._launch_version)
@@ -620,8 +621,12 @@ class HomePage(QWidget):
         display_type = loader_name or summary.type_name
         suffix = "（绑定加载器）" if profile else ""
         java_text = f" · Java {summary.java_major}+" if summary.java_major else ""
+        custom_name = self.main.config.version_name(summary.id)
+        title = custom_name or summary.id
+        if custom_name:
+            title += f"（{summary.id}）"
         self.hero_sub.setText(
-            f"Minecraft {summary.id} · {display_type}{suffix}{java_text}"
+            f"Minecraft {title} · {display_type}{suffix}{java_text}"
         )
         self.hero_title.setText(
             f"今天也要去捣乱吗，{self.main.display_name()}？"

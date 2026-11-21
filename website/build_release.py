@@ -30,10 +30,12 @@ MAX_PAGES_FILE_BYTES = 30 * 1024 * 1024
 EXCLUDED_NAMES = {
     "config.json",
     "social.json",
+    "assistant.json",
     "frpc.exe",
 }
 EXCLUDED_PARTS = {
     "__pycache__",
+    ".writing",
     "cache",
     # EasyTier 联机组件由启动器首次开房时按需下载，不随包分发。
     "easytier",

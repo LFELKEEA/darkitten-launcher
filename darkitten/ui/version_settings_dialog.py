@@ -8,6 +8,8 @@ from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
     QLabel,
+    QLineEdit,
+    QPushButton,
     QVBoxLayout,
 )
 
@@ -46,6 +48,36 @@ class VersionSettingsDialog(StyledDialog):
             self.body.addWidget(missing)
             self.add_button("关闭", "Secondary", self.reject)
             return
+
+        name_box = QFrame()
+        name_box.setObjectName("SoftCard")
+        name_box.setAttribute(Qt.WA_StyledBackground, True)
+        name_layout = QVBoxLayout(name_box)
+        name_layout.setContentsMargins(14, 11, 14, 11)
+        name_layout.setSpacing(6)
+        name_label = QLabel("显示名称")
+        name_label.setStyleSheet("font-weight: 700; font-size: 12px;")
+        name_layout.addWidget(name_label)
+        name_row = QHBoxLayout()
+        name_row.setSpacing(8)
+        self.name_edit = QLineEdit(main.config.version_name(version_id))
+        self.name_edit.setMaxLength(48)
+        self.name_edit.setPlaceholderText(summary.id)
+        self.name_edit.returnPressed.connect(self._save_name)
+        name_row.addWidget(self.name_edit, 1)
+        save_name_btn = QPushButton("保存名称")
+        save_name_btn.setObjectName("Soft")
+        save_name_btn.setCursor(Qt.PointingHandCursor)
+        save_name_btn.clicked.connect(self._save_name)
+        name_row.addWidget(save_name_btn)
+        name_layout.addLayout(name_row)
+        name_hint = QLabel(
+            "只改变启动器里显示的名称；版本目录、存档和 Mod 位置保持不变。"
+        )
+        name_hint.setObjectName("Tiny")
+        name_hint.setWordWrap(True)
+        name_layout.addWidget(name_hint)
+        self.body.addWidget(name_box)
 
         info_box = QFrame()
         info_box.setObjectName("SoftCard")
@@ -164,6 +196,20 @@ class VersionSettingsDialog(StyledDialog):
             details.append(f"需要 Java {profile.java_major}+")
         self.hint.setText(" · ".join(details))
         self.hint.setStyleSheet(f"color: {accent};")
+
+    def _save_name(self) -> None:
+        name = self.name_edit.text().strip()
+        self.main.config.set_version_name(self.version_id, name)
+        self.main.config.save()
+        display = name or self.version_id
+        self.name_edit.setText(name)
+        self.name_edit.setPlaceholderText(self.version_id)
+        self.title_label.setText(f"版本设置 · {display}")
+        if hasattr(self.main, "home_page"):
+            self.main.home_page.refresh_versions()
+        if hasattr(self.main, "_update_status_version"):
+            self.main._update_status_version()
+        self.main.toast("版本显示名称已更新", "success")
 
     def _open_folder(self) -> None:
         self.main.open_path(

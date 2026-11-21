@@ -1,6 +1,6 @@
 # Darkitten Launcher
 
-Windows 上的 Minecraft 启动器：版本、加载器、Mod、整合包、皮肤、P2P 联机、服务端、存档和游戏助手都在同一个窗口里完成。当前版本 `1.13.0`，界面基于 PySide6。
+Windows 上的 Minecraft 启动器：版本、加载器、Mod、整合包、皮肤、P2P 联机、服务端、存档和游戏助手都在同一个窗口里完成。当前版本 `1.14.0`，界面基于 PySide6。
 
 - 下载站：https://lfelkeea.github.io/darkitten-launcher/
 - 更新清单：`update.json`

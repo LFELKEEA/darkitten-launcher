@@ -1705,6 +1705,16 @@ class AddonFile:
     filename: str
     size: int
     enabled: bool
+    project_id: str = ""
+    source: str = ""
+    source_label: str = ""
+    project_url: str = ""
+    description: str = ""
+    description_zh: str = ""
+
+    @property
+    def intro(self) -> str:
+        return self.description_zh or self.description
 
     @property
     def size_text(self) -> str:
@@ -1739,13 +1749,26 @@ def list_addons(info: ServerInfo) -> list[AddonFile]:
             size = path.stat().st_size
         except OSError:
             size = 0
+        meta = {}
+        try:
+            from .mods import load_mod_meta
+
+            meta = load_mod_meta(directory, name)
+        except Exception:  # noqa: BLE001 - 元数据损坏时退回文件名
+            meta = {}
         result.append(
             AddonFile(
                 path=path,
-                name=display,
+                name=str(meta.get("title") or display),
                 filename=name,
                 size=size,
                 enabled=enabled,
+                project_id=str(meta.get("project_id") or ""),
+                source=str(meta.get("source") or ""),
+                source_label=str(meta.get("source_label") or meta.get("source") or ""),
+                project_url=str(meta.get("project_url") or ""),
+                description=str(meta.get("description") or ""),
+                description_zh=str(meta.get("description_zh") or ""),
             )
         )
     result.sort(key=lambda item: item.name.lower())

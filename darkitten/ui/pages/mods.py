@@ -110,6 +110,7 @@ class ModRow(QFrame):
     toggled = Signal(object, bool)
     delete_requested = Signal(object)
     update_requested = Signal(object, object)
+    details_requested = Signal(object)
 
     def __init__(
         self, mod: ModInfo, parent=None, update: ModUpdate | None = None
@@ -199,6 +200,9 @@ class ModRow(QFrame):
         switch.setToolTip("启用或禁用此 Mod")
         switch.toggled.connect(lambda checked: self.toggled.emit(self.mod, checked))
 
+        info_btn = icon_button("message", "查看介绍", colors()["accent"], 30, 15)
+        info_btn.clicked.connect(lambda _=False: self.details_requested.emit(self.mod))
+
         delete_btn = icon_button("trash", "删除此 Mod", colors()["muted"], 30, 15)
         delete_btn.clicked.connect(lambda _=False: self.delete_requested.emit(self.mod))
 
@@ -206,10 +210,12 @@ class ModRow(QFrame):
         layout.addLayout(info, 1)
         if update_btn is not None:
             layout.addWidget(update_btn)
+        layout.addWidget(info_btn)
         layout.addWidget(switch)
         layout.addWidget(delete_btn)
         transparent_children(self)
         switch.setAttribute(Qt.WA_TransparentForMouseEvents, False)
+        info_btn.setAttribute(Qt.WA_TransparentForMouseEvents, False)
         delete_btn.setAttribute(Qt.WA_TransparentForMouseEvents, False)
         if update_btn is not None:
             update_btn.setAttribute(Qt.WA_TransparentForMouseEvents, False)
@@ -569,6 +575,7 @@ class ModsPage(QWidget):
             row.toggled.connect(self._toggle_mod)
             row.delete_requested.connect(self._delete_mod)
             row.update_requested.connect(self._update_one)
+            row.details_requested.connect(self.main.open_mod_info)
             self.list_layout.insertWidget(self.list_layout.count() - 1, row)
         self.update_all_btn.setVisible(bool(self._updates))
         if self._updates:
