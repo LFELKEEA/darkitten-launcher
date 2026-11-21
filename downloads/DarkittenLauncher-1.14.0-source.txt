@@ -1,5 +1,5 @@
 ﻿Darkitten Launcher 1.14.0 完整源代码
-生成时间：2026-11-21 18:23:54
+生成时间：2026-11-21 18:29:45
 文本文件：157
 ================================================================================
 目录
@@ -55510,8 +55510,8 @@ class ServerPage(QWidget):
         )
         self._sync_online_controls()
         worker = SakuraRoomWorker(
-            self.main.config.sakura_access_token
-            or self.online_token_edit.text().strip(),
+            self.online_token_edit.text().strip()
+            or self.main.config.sakura_access_token,
             info.port,
             node_id=self._selected_online_node_id(),
             preferred_tunnel_id=self.main.config.sakura_server_tunnel_id,
@@ -88002,12 +88002,12 @@ body.lightbox-open { overflow: hidden; }
   "page_url": "https://lfelkeea.github.io/darkitten-launcher/",
   "source_url": "downloads/DarkittenLauncher-1.14.0-source.zip",
   "source_txt_url": "downloads/DarkittenLauncher-1.14.0-source.txt",
-  "sha256": "7a5e479174642c536089bc74d45991d009d488882c2a095a39cd0bf36baf91c6",
+  "sha256": "8742ee290267a06d1fd61d0c0699bef7c932d839cd118d5f527a77c431083fd5",
   "size": 1247174,
-  "source_sha256": "a2f25a0e58a514f4e8fbd9abc7d2feff9f0909be1c836098a362840eb7cb581e",
-  "source_size": 2498948,
-  "source_txt_sha256": "76ad64e77b5640943d53849661551947249e34adbf59ce19a51733b3cad3c6c5",
-  "source_txt_size": 3451888,
+  "source_sha256": "70f8d46209608a052a04f87f6e4820ee3981a8d8e563a039277379a52e0c9404",
+  "source_size": 2499894,
+  "source_txt_sha256": "c9ed9528a19f5049dce631afd38e3d74b58fb90ed77c9857ac383e89fec3c4b3",
+  "source_txt_size": 3453797,
   "pet": {
     "name": "LFELKEEA 桌宠",
     "version": "1.4.6",
