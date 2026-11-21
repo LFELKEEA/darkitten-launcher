@@ -2253,8 +2253,8 @@ class ServerPage(QWidget):
         )
         self._sync_online_controls()
         worker = SakuraRoomWorker(
-            self.main.config.sakura_access_token
-            or self.online_token_edit.text().strip(),
+            self.online_token_edit.text().strip()
+            or self.main.config.sakura_access_token,
             info.port,
             node_id=self._selected_online_node_id(),
             preferred_tunnel_id=self.main.config.sakura_server_tunnel_id,
