@@ -1,5 +1,5 @@
 ﻿Darkitten Launcher 1.14.1 完整源代码
-生成时间：2026-11-21 19:42:10
+生成时间：2026-11-21 19:48:55
 文本文件：165
 ================================================================================
 目录
@@ -25331,14 +25331,16 @@ class SakuraError(Exception):
 
 def _friendly_api_error(code: int, message: str) -> str:
     text = str(message or "").strip()
+    # 隧道数量超限时接口也可能返回 403，必须先于“实名/认证”判断，
+    # 否则会把“隧道已满”误导成账户认证问题。
+    if "隧道" in text and ("上限" in text or "数量" in text or "限制" in text):
+        return "隧道数量已达上限，请先在樱花穿透面板删除不用的隧道。"
     if code == 401 or "访问密钥" in text or "token" in text.lower():
         return "樱花穿透访问密钥无效，请在管理面板重新复制访问密钥。"
     if code == 403 or "实名" in text or "认证" in text:
         return f"樱花穿透账户认证未完成：{text or '请先在管理面板完成实名认证。'}"
     if code == 429 or "频繁" in text:
         return "请求过于频繁，请稍后再试。"
-    if "隧道" in text and ("上限" in text or "数量" in text or "限制" in text):
-        return "隧道数量已达上限，请先在樱花穿透面板删除不用的隧道。"
     if "节点" in text and ("不可用" in text or "满载" in text or "离线" in text):
         return f"节点当前不可用：{text}"
     return f"樱花穿透接口返回错误：{text or f'HTTP {code}'}"
@@ -76980,7 +76982,7 @@ ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from darkitten.sakura import SakuraTunnel  # noqa: E402
+from darkitten.sakura import SakuraTunnel, _friendly_api_error  # noqa: E402
 from darkitten.workers import SakuraRoomWorker  # noqa: E402
 
 
@@ -77064,6 +77066,23 @@ class PickTunnelTests(unittest.TestCase):
         picked, reused = worker()._pick_tunnel([])
         self.assertFalse(reused)
         self.assertIsNone(picked)
+
+
+class FriendlyErrorTests(unittest.TestCase):
+    def test_tunnel_limit_is_not_reported_as_auth_problem(self) -> None:
+        message = _friendly_api_error(
+            403, "您的隧道数量已达到上限（当前 2 + 创建 1 > 2）"
+        )
+        self.assertIn("隧道数量已达上限", message)
+        self.assertNotIn("认证", message)
+
+    def test_real_auth_error_keeps_its_message(self) -> None:
+        message = _friendly_api_error(403, "请先完成实名认证")
+        self.assertIn("认证未完成", message)
+
+    def test_invalid_token_still_reported(self) -> None:
+        message = _friendly_api_error(401, "访问密钥无效")
+        self.assertIn("访问密钥无效", message)
 
 
 if __name__ == "__main__":
@@ -90212,18 +90231,20 @@ body.lightbox-open { overflow: hidden; }
     "在线注册表会合入启动器内置的中文名和说明，搜索仍然支持中文名、英文 ID 和分类；断网或接口失败时自动退回内置常用清单，不影响生成指令。",
     "导出数据包会按目标版本写入正确的 pack_format（26.3 = 121、1.21.11 = 94、1.21.5 = 71、1.20.1 = 15 等），不再把所有 1.21 以上版本都写成 61。",
     "指令生成器新增模板结构预览：灰色文字是锁定的指令关键字和固定语法，红色方括号里才是可修改的参数，参数旁边的下拉列表只是常用值。",
-    "生成后的指令框可以直接编辑，复制、保存 .mcfunction 和导出数据包都会使用修改后的内容；所有下拉参数也允许直接输入清单里没有的值。"
+    "生成后的指令框可以直接编辑，复制、保存 .mcfunction 和导出数据包都会使用修改后的内容；所有下拉参数也允许直接输入清单里没有的值。",
+    "指令生成器的参数选择框改为“输入框 + 展开按钮”：右侧箭头是一个专门的按钮，左键点开常用值清单，左键点条目填入；输入框随时可以直接输入或修改，不再需要右键切换编辑模式，手动输入的自定义值也不会写进清单。选择框和数值框都忽略滚轮，滚动页面时不会误改参数。",
+    "樱花穿透会优先进入已经创建好的隧道：账号下存在可用 TCP 隧道时直接复用并同步本地端口，只有一条隧道都没有时才新建，不会再因为“隧道数量已达上限”而启动失败；联机房间与服务端公网隧道会尽量各用各的，只有别无选择时才共用。"
   ],
   "download_url": "downloads/DKL-1.14.1-update.zip",
   "page_url": "https://lfelkeea.github.io/darkitten-launcher/",
   "source_url": "downloads/DarkittenLauncher-1.14.1-source.zip",
   "source_txt_url": "downloads/DarkittenLauncher-1.14.1-source.txt",
-  "sha256": "547c3cec6148b4709e24b9fbb5e3cc477e13652176bd8b054bc01685c7c64d0d",
-  "size": 1264598,
-  "source_sha256": "6f26eaa68ccc78ed5103b8cdb4556fe9499a88225312c161c844fe2a1056e378",
-  "source_size": 2524264,
-  "source_txt_sha256": "6975210c50162743e1797e8c7f0cad3c74a92be524d43a97ef90b7526a930272",
-  "source_txt_size": 3523039,
+  "sha256": "d79088e5570d5c37a340e0a8a916221af242d0587f7c79f2d4dca18fc30a323f",
+  "size": 1263921,
+  "source_sha256": "af03c490f229f2d62c5ec179a306be707bbae28cc173b9e1bdeb46903fd76559",
+  "source_size": 2525262,
+  "source_txt_sha256": "f5f274093bf3588aa1539bf0c48b1371073749aa617ec3667374e711d0a9f71f",
+  "source_txt_size": 3537052,
   "pet": {
     "name": "LFELKEEA 桌宠",
     "version": "1.4.6",
