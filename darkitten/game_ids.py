@@ -966,12 +966,84 @@ PICKER_TITLES: dict[str, str] = {
 }
 
 
+# 运行时从网站拉取的全量清单。为空时继续使用上面的常用清单，
+# 这样第一次打开、断网或接口失败都不会影响基本使用。
+_DYNAMIC: dict[str, tuple[Entry, ...]] = {}
+_DYNAMIC_VERSION = ""
+
+
+def set_catalog(entries: dict[str, tuple[Entry, ...]], version: str = "") -> None:
+    global _DYNAMIC, _DYNAMIC_VERSION
+    _DYNAMIC = {
+        str(kind): tuple(rows) for kind, rows in dict(entries or {}).items() if rows
+    }
+    _DYNAMIC_VERSION = str(version or "")
+
+
+def clear_catalog() -> None:
+    global _DYNAMIC, _DYNAMIC_VERSION
+    _DYNAMIC = {}
+    _DYNAMIC_VERSION = ""
+
+
+def catalog_version() -> str:
+    return _DYNAMIC_VERSION
+
+
+def catalog_loaded(kind: str | None = None) -> bool:
+    if kind is None:
+        return bool(_DYNAMIC)
+    return bool(_DYNAMIC.get(str(kind or "")))
+
+
+def _merged_dataset(kind: str) -> tuple[Entry, ...]:
+    key = str(kind or "")
+    dynamic = _DYNAMIC.get(key)
+    if not dynamic:
+        return DATASETS.get(key, ())
+    curated = {entry.value: entry for entry in DATASETS.get(key, ())}
+    result: list[Entry] = []
+    seen: set[str] = set()
+    for entry in dynamic:
+        if entry.value in seen:
+            continue
+        seen.add(entry.value)
+        base = curated.get(entry.value)
+        if base is not None:
+            entry = Entry(
+                entry.value,
+                base.name or entry.name,
+                entry.category or base.category,
+                base.help or entry.help,
+            )
+        result.append(entry)
+    # 注册表已经覆盖的类别不再混入内置旧条目，避免出现当前版本已删除的 ID；
+    # 结构清单只从 biomes 拉到了群系，要塞/村庄等仍由内置条目补齐。
+    if key == "structure":
+        for entry in DATASETS.get(key, ()):
+            if entry.value not in seen:
+                seen.add(entry.value)
+                result.append(entry)
+    return tuple(result)
+
+
 def dataset(kind: str) -> tuple[Entry, ...]:
-    return DATASETS.get(str(kind or ""), ())
+    return _merged_dataset(kind)
 
 
 def categories(kind: str) -> tuple[str, ...]:
-    return CATEGORIES.get(str(kind or ""), ("全部",))
+    entries = dataset(kind)
+    if not entries:
+        return CATEGORIES.get(str(kind or ""), ("全部",))
+    result: list[str] = ["全部"]
+    seen: set[str] = set()
+    for entry in entries:
+        category = str(entry.category or "").strip()
+        if not category or category in seen:
+            continue
+        seen.add(category)
+        result.append(category)
+    return tuple(result)
 
 
 def picker_title(kind: str) -> str:

@@ -15,6 +15,7 @@ from PySide6.QtGui import (
 from PySide6.QtWidgets import (
     QApplication,
     QComboBox,
+    QFileDialog,
     QFrame,
     QHBoxLayout,
     QLabel,
@@ -129,6 +130,26 @@ class _ElidedLabel(QLabel):
 
 
 SERVER_ICON_NAMES = ("server-icon.png", "icon.png")
+SERVER_ICON_SIZE = 64
+
+
+def _fit_server_icon(image: QImage) -> QImage:
+    """居中裁剪成正方形并缩放到 64×64，Minecraft 服务端只认这个尺寸。"""
+    if image.isNull():
+        return image
+    side = min(image.width(), image.height())
+    cropped = image.copy(
+        max(0, (image.width() - side) // 2),
+        max(0, (image.height() - side) // 2),
+        side,
+        side,
+    )
+    return cropped.scaled(
+        SERVER_ICON_SIZE,
+        SERVER_ICON_SIZE,
+        Qt.IgnoreAspectRatio,
+        Qt.SmoothTransformation,
+    )
 
 
 def _server_icon_pixmap(
@@ -509,6 +530,15 @@ class ServerPage(QWidget):
         self.folder_btn.clicked.connect(self._open_server_folder)
         header.addWidget(self.folder_btn)
 
+        self.icon_edit_btn = icon_button(
+            "image",
+            "修改服务器图标（自动生成 64×64 的 server-icon.png）",
+            size=32,
+            icon_size=16,
+        )
+        self.icon_edit_btn.clicked.connect(self.change_server_icon)
+        header.addWidget(self.icon_edit_btn)
+
         self.rename_icon_btn = icon_button(
             "edit", "重命名服务端", size=32, icon_size=16
         )
@@ -753,7 +783,7 @@ class ServerPage(QWidget):
         online_row.addWidget(self._form_label("正版验证"))
         self.settings_online = Switch()
         online_row.addWidget(self.settings_online)
-        self.settings_online.toggled.connect(lambda _: self._update_online_hint())
+        self.settings_online.toggled.connect(self._settings_online_toggled)
         self.online_hint = QLabel("")
         self.online_hint.setObjectName("Tiny")
         self.online_hint.setWordWrap(True)
@@ -963,18 +993,25 @@ class ServerPage(QWidget):
         access_layout.setSpacing(6)
         offline_row = QHBoxLayout()
         offline_row.setSpacing(8)
-        offline_title = QLabel("允许非正版玩家进入")
+        offline_title = QLabel("正版验证")
         offline_title.setStyleSheet("font-weight: 700; font-size: 12px;")
         offline_row.addWidget(offline_title)
-        self.online_offline_switch = Switch()
-        self.online_offline_switch.toggled.connect(self._online_offline_toggled)
-        offline_row.addWidget(self.online_offline_switch)
+        self.online_offline_badge = badge("仅正版账户", "gray")
+        offline_row.addWidget(self.online_offline_badge)
         self.online_offline_hint = QLabel("")
         self.online_offline_hint.setObjectName("Tiny")
         self.online_offline_hint.setWordWrap(True)
         offline_row.addWidget(self.online_offline_hint, 1)
+        self.online_settings_btn = QPushButton("去设置修改")
+        self.online_settings_btn.setObjectName("Ghost")
+        self.online_settings_btn.setCursor(Qt.PointingHandCursor)
+        self.online_settings_btn.clicked.connect(self._show_online_settings_tab)
+        offline_row.addWidget(self.online_settings_btn)
         access_layout.addLayout(offline_row)
-        note = QLabel("关闭后服务端只接受正版账户；修改需要重启服务端才会生效。")
+        note = QLabel(
+            "这里的值和“设置”页的正版验证开关是同一个配置，修改请到“设置”页操作；"
+            "保存后需要重启服务端才会生效。"
+        )
         note.setObjectName("Tiny")
         note.setWordWrap(True)
         access_layout.addWidget(note)
@@ -1709,7 +1746,9 @@ class ServerPage(QWidget):
         self.settings_name.setText(info.name)
         self.settings_memory.setValue(max(1024, min(32768, info.memory_mb)))
         self.settings_port.setValue(max(1024, min(65535, info.port)))
+        self.settings_online.blockSignals(True)
         self.settings_online.setChecked(info.online_mode)
+        self.settings_online.blockSignals(False)
         self._populate_java_combo(info)
         self._update_eula_badge(info)
         self._update_online_hint()
@@ -1880,6 +1919,36 @@ class ServerPage(QWidget):
             return
         self.refresh_servers(info.folder)
         self.toast("服务端名称已更新", "success")
+
+    def change_server_icon(self) -> None:
+        info = self._current_info()
+        if info is None:
+            self.toast("先选一个服务端，再修改图标", "info")
+            return
+        if not info.path.is_dir():
+            self.toast("服务端文件夹不存在", "error")
+            return
+        pictures = Path.home() / "Pictures"
+        start = pictures if pictures.is_dir() else Path.home()
+        path, _ = QFileDialog.getOpenFileName(
+            self,
+            "选择服务器图标",
+            str(start),
+            "图片文件 (*.png *.jpg *.jpeg *.bmp *.gif *.webp)",
+        )
+        if not path:
+            return
+        image = QImage(path)
+        if image.isNull():
+            self.toast("这个文件无法作为图片读取", "error")
+            return
+        icon = _fit_server_icon(image)
+        target = info.path / "server-icon.png"
+        if not icon.save(str(target), "PNG"):
+            self.toast("图标写入失败，请检查服务端文件夹权限", "error")
+            return
+        self.refresh_servers(info.folder)
+        self.toast("服务器图标已更新，重启服务端后生效", "success")
 
     def _open_server_folder(self) -> None:
         info = self._current_info()
@@ -2190,39 +2259,48 @@ class ServerPage(QWidget):
             return 0
 
     def _load_online_settings(self, info: ServerInfo) -> None:
-        self.online_offline_switch.blockSignals(True)
-        self.online_offline_switch.setChecked(not info.online_mode)
-        self.online_offline_switch.blockSignals(False)
+        """公网联机页只读展示设置页的正版验证状态，避免两个开关各保存一份。"""
+        self.online_offline_badge.setText(
+            "仅正版账户" if info.online_mode else "允许离线玩家"
+        )
+        self.online_offline_badge.setProperty(
+            "badge", "green" if info.online_mode else "orange"
+        )
+        repolish(self.online_offline_badge)
         self.online_offline_hint.setText(
-            "离线玩家可以直接进入"
-            if not info.online_mode
-            else "只允许正版账户进入"
+            "服务器会拒绝未登录正版账户的玩家" if info.online_mode
+            else "服务器允许非正版账户进入"
         )
         self._sync_online_controls()
 
-    def _online_offline_toggled(self, checked: bool) -> None:
+    def _show_online_settings_tab(self) -> None:
+        self.tabs.set_value("settings", emit=True)
+
+    def _settings_online_toggled(self, checked: bool) -> None:
+        """设置页的正版验证开关立即写盘，切换页面后不会回退。"""
         info = self._current_info()
         if info is None:
+            self._update_online_hint()
             return
-        info.online_mode = not bool(checked)
+        if bool(info.online_mode) == bool(checked):
+            self._update_online_hint()
+            return
+        info.online_mode = bool(checked)
         try:
             save_server(info)
             update_server_properties(info)
         except Exception as exc:
+            self.settings_online.blockSignals(True)
+            self.settings_online.setChecked(not bool(checked))
+            self.settings_online.blockSignals(False)
+            self._update_online_hint()
             self.toast(f"保存正版验证设置失败：{exc}", "error")
             return
-        self.settings_online.blockSignals(True)
-        self.settings_online.setChecked(info.online_mode)
-        self.settings_online.blockSignals(False)
         self._update_online_hint()
-        self.online_offline_hint.setText(
-            "离线玩家可以直接进入"
-            if not info.online_mode
-            else "只允许正版账户进入"
-        )
+        self._load_online_settings(info)
         process = self._processes.get(info.folder)
         if process is not None and process.state != "stopped":
-            self.toast("设置会在重启服务端后生效", "info")
+            self.toast("正版验证设置已保存，重启服务端后生效", "info")
         else:
             self.toast("正版验证设置已保存", "success")
 
@@ -2262,6 +2340,7 @@ class ServerPage(QWidget):
             parent=self,
             tunnel_name="DarkittenServer",
             make_room_code=False,
+            avoid_tunnel_id=self.main.config.sakura_tunnel_id,
         )
         self._sakura_worker = worker
         worker.progress.connect(
@@ -2462,7 +2541,7 @@ class ServerPage(QWidget):
         self.online_node_refresh.setEnabled(
             not self._sakura_busy and not active
         )
-        self.online_offline_switch.setEnabled(bool(info) and not self._sakura_busy)
+        self.online_settings_btn.setEnabled(bool(info))
         if active and self._sakura_payload is not None:
             address = str(self._sakura_payload.get("address") or "")
             if address:

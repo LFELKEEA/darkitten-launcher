@@ -334,6 +334,9 @@ def required_java_major(mc_version: str) -> int:
         return 21
     major, minor = pieces[0], pieces[1]
     patch = pieces[2] if len(pieces) > 2 else 0
+    # 2026 年起 Mojang 改用年份版本号（26.x），Paper 与官方服务端最低要求 Java 25。
+    if major >= 26:
+        return 25
     if major > 1 or (major == 1 and minor >= 21):
         return 21
     if (major, minor, patch) >= (1, 20, 5):

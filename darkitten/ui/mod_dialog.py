@@ -30,6 +30,7 @@ from PySide6.QtWidgets import (
 )
 
 from ..config import APP_DIR
+from ..mc_versions import release_versions
 from ..descriptions import (
     category_labels,
     project_zh_intro,
@@ -47,6 +48,7 @@ from . import icons
 from .dialogs import StyledDialog
 from .download_center import TASK_CANCELLED, TASK_SUCCESS, DownloadTask
 from .loader_dialog import LoaderDialog
+from .version_picker import VersionPickerDialog
 from .widgets import (
     DependencyBar,
     SegmentedControl,
@@ -56,17 +58,6 @@ from .widgets import (
     repolish,
     transparent_children,
 )
-
-COMMON_VERSIONS = [
-    "1.21.1",
-    "1.21",
-    "1.20.6",
-    "1.20.4",
-    "1.20.1",
-    "1.19.4",
-    "1.18.2",
-    "1.16.5",
-]
 
 LOADER_LABELS = {"fabric": "Fabric", "neoforge": "NeoForge", "forge": "Forge"}
 CONTENT_LABELS = {
@@ -471,9 +462,15 @@ class ModBrowserDialog(StyledDialog):
         self.mc_combo = QComboBox()
         self.mc_combo.setEditable(True)
         self.mc_combo.setMinimumWidth(132)
+        self.mc_combo.setMaxVisibleItems(20)
         self.mc_combo.setInsertPolicy(QComboBox.NoInsert)
         row.addWidget(mc_label)
         row.addWidget(self.mc_combo)
+        self.mc_pick_btn = QPushButton("选择…")
+        self.mc_pick_btn.setObjectName("Ghost")
+        self.mc_pick_btn.setCursor(Qt.PointingHandCursor)
+        self.mc_pick_btn.clicked.connect(self._pick_mc_version)
+        row.addWidget(self.mc_pick_btn)
 
         loader_label = QLabel("加载器")
         loader_label.setFixedWidth(46)
@@ -1142,7 +1139,7 @@ class ModBrowserDialog(StyledDialog):
 
     def _reload_bases(self) -> None:
         current = self.mc_combo.currentText().strip()
-        bases: list[str] = []
+        installed: list[str] = []
         preferred = ""
         selected = next(
             (v for v in self.main.versions if v.id == self.main.selected_version),
@@ -1158,11 +1155,9 @@ class ModBrowserDialog(StyledDialog):
             except Exception:
                 preferred = selected.id
         for base, _loader, _version_id in self._installed_versions():
-            if base not in bases:
-                bases.append(base)
-        for version in COMMON_VERSIONS:
-            if version not in bases:
-                bases.append(version)
+            if base not in installed:
+                installed.append(base)
+        bases = release_versions(installed)
 
         self.mc_combo.blockSignals(True)
         self.mc_combo.clear()
@@ -1186,6 +1181,21 @@ class ModBrowserDialog(StyledDialog):
         self.loader_tabs.set_value(loader)
         self._reload_target_versions()
         self._update_context()
+
+    def _pick_mc_version(self) -> None:
+        installed = [base for base, _loader, _vid in self._installed_versions()]
+        dialog = VersionPickerDialog(
+            self,
+            self.mc_combo.currentText().strip(),
+            installed,
+        )
+        if not dialog.exec():
+            return
+        version = dialog.value().strip()
+        if not version or version == self.mc_combo.currentText().strip():
+            return
+        self.mc_combo.setEditText(version)
+        self._on_context_changed()
 
     def _update_context(self) -> None:
         mc = self.mc_combo.currentText().strip()

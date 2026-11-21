@@ -408,8 +408,12 @@ class DatapackTests(unittest.TestCase):
         self.assertEqual(ga.datapack_folders("1.21"), ("function", "function"))
 
     def test_pack_format_by_version(self):
+        self.assertEqual(ga.pack_format_for("26.3"), 121)
+        self.assertEqual(ga.pack_format_for("26.1"), 101)
+        self.assertEqual(ga.pack_format_for("1.21.11"), 94)
+        self.assertEqual(ga.pack_format_for("1.21.5"), 71)
         self.assertEqual(ga.pack_format_for("1.21.4"), 61)
-        self.assertEqual(ga.pack_format_for("1.20.1"), 26)
+        self.assertEqual(ga.pack_format_for("1.20.1"), 15)
         self.assertEqual(ga.pack_format_for("1.16.5"), 6)
 
     def test_modern_layout(self):

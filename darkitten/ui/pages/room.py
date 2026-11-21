@@ -56,7 +56,6 @@ from ..widgets import (
     Card,
     ChibiCompanion,
     SegmentedControl,
-    Switch,
     badge,
     colors,
     hline,
@@ -248,16 +247,21 @@ class RoomPage(QWidget):
 
         offline_row = QHBoxLayout()
         offline_row.setSpacing(6)
-        self.allow_offline_switch = Switch()
-        self.allow_offline_switch.setChecked(True)
-        self.allow_offline_switch.setEnabled(False)
-        self.allow_offline_switch.setToolTip(
-            "局域网世界默认允许非正版玩家进入，无法在启动器里关闭。"
-        )
-        offline_row.addWidget(self.allow_offline_switch)
-        offline_label = QLabel("允许非正版玩家进入")
+        offline_row.addWidget(badge("固定开启", "orange"))
+        offline_label = QLabel("局域网世界允许非正版玩家进入")
         offline_label.setObjectName("Tiny")
+        offline_label.setToolTip(
+            "Minecraft 的局域网世界由游戏本身托管，启动器无法关闭离线玩家加入。"
+        )
         offline_row.addWidget(offline_label)
+        self.quick_server_btn = QPushButton("改用专用服务端")
+        self.quick_server_btn.setObjectName("Ghost")
+        self.quick_server_btn.setCursor(Qt.PointingHandCursor)
+        self.quick_server_btn.setToolTip(
+            "专用服务端可以严格开启正版验证，在“服务器 → 公网联机”里关闭非正版进入。"
+        )
+        self.quick_server_btn.clicked.connect(self._open_server_page)
+        offline_row.addWidget(self.quick_server_btn)
         action_row.addLayout(offline_row)
         action_row.addStretch(1)
         layout.addLayout(action_row)
@@ -268,8 +272,8 @@ class RoomPage(QWidget):
         layout.addWidget(self.quick_status)
 
         hint = QLabel(
-            "局域网世界始终允许离线玩家。需要严格正版验证时，请改用专用服务端，"
-            "在“服务器 → 公网联机”里关闭非正版进入。"
+            "局域网世界由 Minecraft 自己托管，启动器无法强制正版验证，所以这里不再放一个关不掉的开关。"
+            "需要严格正版验证时，点“改用专用服务端”，在“服务器 → 公网联机”里关闭非正版进入。"
         )
         hint.setObjectName("Tiny")
         hint.setWordWrap(True)
@@ -668,6 +672,13 @@ class RoomPage(QWidget):
 
     # ------------------------------------------------------------------
     # 状态与主题
+
+    def _open_server_page(self) -> None:
+        switch = getattr(self.main, "switch_page", None)
+        if callable(switch):
+            switch("server")
+            return
+        self.toast("请先在左侧打开“服务器”页", "info")
 
     def _switch_mode(self, mode: str) -> None:
         if not hasattr(self, "mode_stack"):
@@ -1203,6 +1214,7 @@ class RoomPage(QWidget):
             preferred_tunnel_id=self.main.config.sakura_tunnel_id,
             frpc_path=self.main.config.sakura_frpc_path,
             parent=self,
+            avoid_tunnel_id=self.main.config.sakura_server_tunnel_id,
         )
         self._room_worker = worker
         worker.progress.connect(

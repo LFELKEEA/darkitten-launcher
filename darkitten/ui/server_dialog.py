@@ -10,12 +10,15 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QPlainTextEdit,
     QProgressBar,
+    QPushButton,
     QSpinBox,
     QVBoxLayout,
     QWidget,
 )
 
 from ..java import JavaInfo, pick_java
+from ..mc_versions import release_versions
+from ..versions import resolve_version
 from ..servers import (
     EULA_URL,
     SERVER_NAMES,
@@ -27,20 +30,9 @@ from ..servers import (
 )
 from ..workers import LoaderVersionsWorker, ManifestWorker, ServerInstallWorker
 from .dialogs import StyledDialog
+from .version_picker import VersionPickerDialog
 from .widgets import SegmentedControl, Switch, colors
 
-COMMON_VERSIONS = [
-    "1.21.1",
-    "1.21",
-    "1.20.6",
-    "1.20.4",
-    "1.20.1",
-    "1.19.4",
-    "1.18.2",
-    "1.16.5",
-    "1.12.2",
-    "1.8.9",
-]
 LOADER_KINDS = {"fabric", "forge", "neoforge"}
 TYPE_HINTS = {
     "paper": "自动下载 Paper 最新稳定构建，适合大多数插件服；启动快、性能好。",
@@ -94,11 +86,26 @@ class ServerCreateDialog(StyledDialog):
         type_row.addStretch(1)
         form_layout.addLayout(type_row)
 
-        self.mc_combo = self._add_combo_row(form_layout, "游戏版本")
+        mc_row = QHBoxLayout()
+        mc_row.setSpacing(10)
+        mc_row.addWidget(self._row_label("游戏版本"))
+        self.mc_combo = QComboBox()
         self.mc_combo.setEditable(True)
         self.mc_combo.setInsertPolicy(QComboBox.NoInsert)
-        self.mc_combo.addItems(COMMON_VERSIONS)
-        self.mc_combo.setCurrentText("1.21.1")
+        self.mc_combo.setMaxVisibleItems(20)
+        self.mc_combo.setMinimumWidth(200)
+        mc_row.addWidget(self.mc_combo, 1)
+        self.mc_pick_btn = QPushButton("选择…")
+        self.mc_pick_btn.setObjectName("Ghost")
+        self.mc_pick_btn.setCursor(Qt.PointingHandCursor)
+        self.mc_pick_btn.setToolTip("打开完整版本清单，支持搜索和手动输入")
+        self.mc_pick_btn.clicked.connect(self._pick_mc_version)
+        mc_row.addWidget(self.mc_pick_btn)
+        form_layout.addLayout(mc_row)
+
+        self._mc_versions = release_versions()
+        self.mc_combo.addItems(self._mc_versions)
+        self.mc_combo.setCurrentText(self._default_mc())
         self.mc_combo.activated.connect(lambda _: self._on_mc_changed())
         self.mc_combo.lineEdit().editingFinished.connect(self._on_mc_changed)
 
@@ -165,6 +172,7 @@ class ServerCreateDialog(StyledDialog):
             self.name_edit,
             self.type_tabs,
             self.mc_combo,
+            self.mc_pick_btn,
             self.loader_widget,
             self.memory_spin,
             self.port_spin,
@@ -269,6 +277,45 @@ class ServerCreateDialog(StyledDialog):
 
     def _current_mc(self) -> str:
         return self.mc_combo.currentText().strip()
+
+    def _base_of(self, version_id: str) -> str:
+        try:
+            chain = resolve_version(self.main.config.game_path, version_id).chain
+            if chain:
+                return chain[0]
+        except Exception:
+            pass
+        return version_id
+
+    def _default_mc(self) -> str:
+        """优先使用当前选中的已安装版本，没有安装记录时用最新正式版。"""
+        selected_id = str(getattr(self.main, "selected_version", "") or "")
+        versions = getattr(self.main, "versions", None) or []
+        for item in versions:
+            if str(getattr(item, "id", "") or "") == selected_id:
+                base = self._base_of(selected_id)
+                if base:
+                    return base
+                break
+        return self._mc_versions[0] if self._mc_versions else ""
+
+    def _pick_mc_version(self) -> None:
+        installed: list[str] = []
+        for item in getattr(self.main, "versions", None) or []:
+            version_id = str(getattr(item, "id", "") or "")
+            if not version_id:
+                continue
+            base = self._base_of(version_id)
+            if base and base not in installed:
+                installed.append(base)
+        dialog = VersionPickerDialog(self, self._current_mc(), installed)
+        if not dialog.exec():
+            return
+        version = dialog.value().strip()
+        if not version or version == self._current_mc():
+            return
+        self.mc_combo.setEditText(version)
+        self._on_mc_changed()
 
     def _on_name_edited(self, _text: str) -> None:
         self._name_auto = False

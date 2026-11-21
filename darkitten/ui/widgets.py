@@ -33,6 +33,7 @@ from PySide6.QtWidgets import (
     QAbstractButton,
     QApplication,
     QButtonGroup,
+    QComboBox,
     QFrame,
     QGraphicsOpacityEffect,
     QHBoxLayout,
@@ -40,6 +41,7 @@ from PySide6.QtWidgets import (
     QPlainTextEdit,
     QPushButton,
     QSizePolicy,
+    QSpinBox,
     QVBoxLayout,
     QWidget,
 )
@@ -281,6 +283,109 @@ class Switch(QAbstractButton):
         p.setBrush(QColor("#FFFFFF"))
         p.drawEllipse(QRectF(knob_x, 4, 14, 14))
         p.end()
+
+
+class ChoiceComboBox(QComboBox):
+    """可自由输入的选择框。
+
+    输入框始终可编辑，右侧箭头是一个专门的展开按钮：左键点箭头打开
+    常用值清单，左键点条目即可填入。手动输入的内容不会写回清单，
+    滚轮也只滚动页面，不会误改选项。
+    """
+
+    ARROW_WIDTH = 32
+
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setObjectName("ChoiceCombo")
+        self.setEditable(True)
+        self.setInsertPolicy(QComboBox.NoInsert)
+        self.setMaxVisibleItems(18)
+        self.setCompleter(None)
+        self.setMouseTracking(True)
+        self._arrow_hover = False
+        edit = self.lineEdit()
+        if edit is not None:
+            edit.setPlaceholderText("选常用值，或直接输入自定义值")
+            edit.setCursor(Qt.IBeamCursor)
+            edit.setToolTip("可以直接输入；点右侧按钮展开常用值清单")
+            edit.installEventFilter(self)
+        self.setToolTip("可以直接输入；点右侧按钮展开常用值清单")
+
+    def _arrow_rect(self) -> QRectF:
+        return QRectF(
+            self.width() - self.ARROW_WIDTH,
+            1,
+            self.ARROW_WIDTH - 1,
+            self.height() - 2,
+        )
+
+    def eventFilter(self, obj, event) -> bool:
+        if (
+            obj is self.lineEdit()
+            and event.type() == QEvent.Enter
+            and self._arrow_hover
+        ):
+            self._arrow_hover = False
+            self.update()
+        return super().eventFilter(obj, event)
+
+    def mouseMoveEvent(self, event) -> None:
+        hover = self._arrow_rect().contains(event.position())
+        if hover != self._arrow_hover:
+            self._arrow_hover = hover
+            self.setCursor(
+                Qt.PointingHandCursor if hover else Qt.ArrowCursor
+            )
+            self.update()
+        super().mouseMoveEvent(event)
+
+    def leaveEvent(self, event) -> None:
+        if self._arrow_hover:
+            self._arrow_hover = False
+            self.setCursor(Qt.ArrowCursor)
+            self.update()
+        super().leaveEvent(event)
+
+    def paintEvent(self, event) -> None:
+        super().paintEvent(event)
+        c = colors()
+        rect = self._arrow_rect()
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing)
+        if self._arrow_hover:
+            painter.setPen(Qt.NoPen)
+            painter.setBrush(QColor(c["accent_soft"]))
+            painter.drawRoundedRect(
+                rect.adjusted(2, 3, -3, -3), 6, 6
+            )
+        painter.setPen(QPen(QColor(c["border_strong"]), 1))
+        painter.drawLine(
+            QPointF(rect.left() - 2, rect.top() + 6),
+            QPointF(rect.left() - 2, rect.bottom() - 6),
+        )
+        pen = QPen(QColor(c["text"] if self._arrow_hover else c["muted"]), 1.8)
+        pen.setCapStyle(Qt.RoundCap)
+        pen.setJoinStyle(Qt.RoundJoin)
+        painter.setPen(pen)
+        cx = rect.center().x() - 1
+        cy = rect.center().y()
+        path = QPainterPath()
+        path.moveTo(cx - 4, cy - 2)
+        path.lineTo(cx, cy + 2)
+        path.lineTo(cx + 4, cy - 2)
+        painter.drawPath(path)
+        painter.end()
+
+    def wheelEvent(self, event) -> None:
+        event.ignore()
+
+
+class NoWheelSpinBox(QSpinBox):
+    """滚轮只滚动页面，不改数值。"""
+
+    def wheelEvent(self, event) -> None:
+        event.ignore()
 
 
 class SegmentedControl(QWidget):

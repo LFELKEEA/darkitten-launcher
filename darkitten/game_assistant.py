@@ -1365,6 +1365,43 @@ COMMAND_TEMPLATES: tuple[CommandTemplate, ...] = (
 
 TEMPLATE_BY_ID = {item.id: item for item in COMMAND_TEMPLATES}
 
+# 模板结构：花括号里是该模板可编辑参数的键，其余文字是指令关键字和固定语法。
+# 界面按这份结构渲染“可改 / 不可改”两部分，生成后仍然可以整条手改。
+TEMPLATE_SKELETONS: dict[str, str] = {
+    "give": "/give {target} {item}{extra} {count}",
+    "tp": "/tp {target} {x} {y} {z}",
+    "setblock": "/setblock {x} {y} {z} {block} {mode}",
+    "fill": "/fill {x1} {y1} {z1} {x2} {y2} {z2} {block} {mode}",
+    "summon": "/summon {entity} {x} {y} {z} {nbt}",
+    "effect": "/effect give {target} {effect} {duration} {amplifier}",
+    "enchant": "/enchant {target} {enchantment} {level}",
+    "title": "/title {target} {position} {text}",
+    "tellraw": "/tellraw {target} {text}",
+    "playsound": "/playsound {sound} {source} {target} ~ ~ ~ {volume} {pitch}",
+    "particle": "/particle {particle} {x} {y} {z} {dx} {dy} {dz} {speed} {count}",
+    "execute": "/execute as {target} at @s if {condition} run {command}",
+    "scoreboard_add": "/scoreboard objectives add {objective} {criterion}",
+    "scoreboard_set": "/scoreboard players set {target} {objective} {value}",
+    "spawnpoint": "/spawnpoint {target} {x} {y} {z}",
+    "locate": "/locate {type} {id}",
+    "worldborder": "/worldborder set {diameter}",
+    "time": "/time set {value}",
+    "weather": "/weather {type} {duration}",
+    "gamerule": "/gamerule {rule} {value}",
+    "clear": "/clear {target} {item} {count}",
+    "xp": "/xp add {target} {amount} {unit}",
+    "damage": "/damage {target} {amount} {type}",
+}
+
+
+def template_skeleton(template: CommandTemplate) -> str:
+    """返回模板结构；没有登记时退回仅列出参数名的通用写法。"""
+    skeleton = TEMPLATE_SKELETONS.get(template.id)
+    if skeleton:
+        return skeleton
+    names = " ".join(f"{{{field.key}}}" for field in template.fields)
+    return f"/{template.id} {names}".strip()
+
 
 def default_template_values(template: CommandTemplate) -> dict[str, str]:
     return {field.key: field.default for field in template.fields}
@@ -1459,12 +1496,78 @@ def build_mcfunction(commands: Iterable[str], header: bool = True) -> str:
 
 _VERSION_RE = re.compile(r"(\d+)\.(\d+)")
 
+# 官方数据包版本号（来自 Mojang 的 pack.mcmeta）。26.x 换成新的年份版本号后
+# 不能再按 1.x 的区间推算，所以这里按版本号精确查表。
+PACK_FORMATS: dict[str, int] = {
+    "26.3": 121,
+    "26.2": 107,
+    "26.1.2": 101,
+    "26.1.1": 101,
+    "26.1": 101,
+    "1.21.11": 94,
+    "1.21.10": 88,
+    "1.21.9": 88,
+    "1.21.8": 81,
+    "1.21.7": 81,
+    "1.21.6": 80,
+    "1.21.5": 71,
+    "1.21.4": 61,
+    "1.21.3": 57,
+    "1.21.2": 57,
+    "1.21.1": 48,
+    "1.21": 48,
+    "1.20.6": 41,
+    "1.20.5": 41,
+    "1.20.4": 26,
+    "1.20.3": 26,
+    "1.20.2": 18,
+    "1.20.1": 15,
+    "1.20": 15,
+    "1.19.4": 12,
+    "1.19.3": 10,
+    "1.19.2": 10,
+    "1.19.1": 10,
+    "1.19": 10,
+    "1.18.2": 9,
+    "1.18.1": 8,
+    "1.18": 8,
+    "1.17.1": 7,
+    "1.17": 7,
+    "1.16.5": 6,
+    "1.16.4": 6,
+    "1.16.3": 6,
+    "1.16.2": 6,
+    "1.16.1": 5,
+    "1.16": 5,
+    "1.15.2": 5,
+    "1.15.1": 5,
+    "1.15": 5,
+    "1.14.4": 4,
+    "1.14.3": 4,
+    "1.14.2": 4,
+    "1.14.1": 4,
+    "1.14": 4,
+}
+
 
 def _version_tuple(version: str) -> tuple[int, int]:
     match = _VERSION_RE.search(version or "")
     if not match:
         return (1, 21)
     return (int(match.group(1)), int(match.group(2)))
+
+
+def _version_sort_key(version: str) -> tuple:
+    text = str(version or "").strip().lower()
+    parts = re.findall(r"\d+|[a-z]+", text)
+    return tuple(
+        (0, int(part), "") if part.isdigit() else (1, 0, part) for part in parts
+    )
+
+
+def _base_version(version: str) -> str:
+    match = re.match(r"\d+(?:\.\d+){0,2}", str(version or "").strip())
+    return match.group(0) if match else ""
 
 
 def datapack_folders(version: str = "1.21.4") -> tuple[str, str]:
@@ -1475,20 +1578,19 @@ def datapack_folders(version: str = "1.21.4") -> tuple[str, str]:
 
 
 def pack_format_for(version: str = "1.21.4") -> int:
-    major, minor = _version_tuple(version)
-    if major >= 1 and minor >= 21:
-        return 61
-    if (major, minor) >= (1, 20):
-        return 26 if minor >= 4 else 15
-    if (major, minor) >= (1, 19):
-        return 12 if minor >= 4 else 10
-    if (major, minor) >= (1, 18):
-        return 8
-    if (major, minor) >= (1, 17):
-        return 7
-    if (major, minor) >= (1, 16):
-        return 6
-    return 4
+    key = _base_version(version)
+    if key in PACK_FORMATS:
+        return PACK_FORMATS[key]
+    # 未知的新版本按“不高于它的最近版本”取格式号，至少不会退回 4。
+    target = _version_sort_key(key)
+    best_key: tuple | None = None
+    best_format = 4
+    for known, pack_format in PACK_FORMATS.items():
+        known_key = _version_sort_key(known)
+        if known_key <= target and (best_key is None or known_key > best_key):
+            best_key = known_key
+            best_format = pack_format
+    return best_format
 
 
 _NAMESPACE_RE = re.compile(r"^[a-z0-9_.-]+$")

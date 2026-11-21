@@ -349,6 +349,18 @@ QComboBox::drop-down {{
     border: none;
     width: 26px;
 }}
+QComboBox#ChoiceCombo {{
+    padding-right: 40px;
+}}
+QComboBox#ChoiceCombo::drop-down {{
+    border: none;
+    width: 32px;
+}}
+QComboBox#ChoiceCombo::down-arrow {{
+    image: none;
+    width: 0;
+    height: 0;
+}}
 QComboBox QAbstractItemView {{
     background: {c['card']};
     color: {c['text']};

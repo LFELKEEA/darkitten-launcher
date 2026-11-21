@@ -1,10 +1,19 @@
 from __future__ import annotations
 
 import html
+import re
 import threading
 from pathlib import Path
 
-from PySide6.QtCore import QObject, Qt, QTimer, QUrl, Signal
+from PySide6.QtCore import (
+    QObject,
+    QRunnable,
+    Qt,
+    QThreadPool,
+    QTimer,
+    QUrl,
+    Signal,
+)
 from PySide6.QtGui import QDesktopServices, QStandardItemModel
 from PySide6.QtWidgets import (
     QApplication,
@@ -32,12 +41,17 @@ from PySide6.QtWidgets import (
 
 from ... import chunkbase_registry as registry
 from ... import game_assistant as ga
+from ... import game_catalog
 from ... import game_ids
 from ...java import pick_java
+from ...mc_versions import release_versions
 from .. import icons
+from ..version_picker import VersionPickerDialog
 from ..widgets import (
     Card,
     ChibiCompanion,
+    ChoiceComboBox,
+    NoWheelSpinBox,
     SegmentedControl,
     badge,
     colors,
@@ -46,62 +60,7 @@ from ..widgets import (
     transparent_children,
 )
 
-MC_VERSIONS = (
-    "1.21.11",
-    "1.21.10",
-    "1.21.9",
-    "1.21.8",
-    "1.21.7",
-    "1.21.6",
-    "1.21.5",
-    "1.21.4",
-    "1.21.3",
-    "1.21.2",
-    "1.21.1",
-    "1.21",
-    "1.20.6",
-    "1.20.5",
-    "1.20.4",
-    "1.20.3",
-    "1.20.2",
-    "1.20.1",
-    "1.20",
-    "1.19.4",
-    "1.19.3",
-    "1.19.2",
-    "1.19.1",
-    "1.19",
-    "1.18.2",
-    "1.18.1",
-    "1.18",
-    "1.17.1",
-    "1.17",
-    "1.16.5",
-    "1.16.4",
-    "1.16.3",
-    "1.16.2",
-    "1.16.1",
-    "1.16",
-    "1.15.2",
-    "1.15.1",
-    "1.15",
-    "1.14.4",
-    "1.14.3",
-    "1.14.2",
-    "1.14.1",
-    "1.14",
-    "1.13.2",
-    "1.13.1",
-    "1.13",
-    "1.12.2",
-    "1.12.1",
-    "1.12",
-    "1.11.2",
-    "1.11",
-    "1.10.2",
-    "1.9.4",
-    "1.8.9",
-)
+MC_VERSIONS = tuple(release_versions())
 
 TAB_ORDER = ("seed", "commands", "enchant", "wiki")
 
@@ -241,19 +200,60 @@ class MCModRow(QFrame):
 # ---------------------------------------------------------------------------
 # ID 选择器（指令生成器）
 
+CATALOG_KINDS = {
+    "item",
+    "block",
+    "entity",
+    "effect",
+    "enchantment",
+    "particle",
+    "sound",
+    "structure",
+}
+
+
+class CatalogSignals(QObject):
+    done = Signal(object)
+    failed = Signal(str)
+
+
+class CatalogTask(QRunnable):
+    """后台拉取完整注册表，避免第一次打开选择窗口时卡住界面。"""
+
+    def __init__(self, version: str, force: bool = False) -> None:
+        super().__init__()
+        self.version = version
+        self.force = force
+        self.signals = CatalogSignals()
+
+    def run(self) -> None:
+        try:
+            result = game_catalog.fetch_catalog(self.version, force=self.force)
+        except Exception as error:  # 网络、镜像或数据格式问题
+            self.signals.failed.emit(str(error))
+            return
+        self.signals.done.emit(result)
+
 
 class EntryPickerDialog(QDialog):
     """带中文搜索与分类筛选的 ID 清单。"""
 
     def __init__(
-        self, kind: str, current: str = "", parent=None, title: str = ""
+        self,
+        kind: str,
+        current: str = "",
+        parent=None,
+        title: str = "",
+        version: str = "",
     ) -> None:
         super().__init__(parent)
         self.kind = kind
         self._entry: game_ids.Entry | None = None
+        self._version = str(version or "").strip() or game_catalog.default_version()
+        self._task: CatalogTask | None = None
         self.setWindowTitle(title or game_ids.picker_title(kind))
         self.setModal(True)
-        self.resize(720, 520)
+        self.resize(720, 540)
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(16, 14, 16, 14)
@@ -264,11 +264,20 @@ class EntryPickerDialog(QDialog):
         self.search.setPlaceholderText("搜索中文名、英文 ID 或说明，例如：钻石、sharpness")
         self.search.setClearButtonEnabled(True)
         self.category = QComboBox()
-        for name in game_ids.categories(kind):
-            self.category.addItem(name, name)
         head.addWidget(self.search, 1)
         head.addWidget(self.category)
+        self.refresh_btn = QPushButton("刷新清单")
+        self.refresh_btn.setObjectName("Ghost")
+        self.refresh_btn.setCursor(Qt.PointingHandCursor)
+        self.refresh_btn.setToolTip("从网站重新下载这个版本的完整注册表")
+        self.refresh_btn.clicked.connect(lambda: self._load_catalog(force=True))
+        head.addWidget(self.refresh_btn)
         layout.addLayout(head)
+
+        self.status = QLabel("")
+        self.status.setObjectName("Tiny")
+        self.status.setWordWrap(True)
+        layout.addWidget(self.status)
 
         body = QHBoxLayout()
         body.setSpacing(10)
@@ -308,8 +317,104 @@ class EntryPickerDialog(QDialog):
         self.category.currentIndexChanged.connect(self._refresh)
         self.list.currentItemChanged.connect(self._on_select)
         self.list.itemDoubleClicked.connect(lambda _item: self.accept())
+
+        cached = game_catalog.load_cached(self._version)
+        if cached is not None:
+            self._apply_catalog(cached, cached=True)
+        else:
+            self._rebuild_categories()
         self._refresh()
         self._preselect(current)
+        if self.kind in CATALOG_KINDS:
+            self._load_catalog(force=False)
+        else:
+            self.status.setText(f"当前使用内置清单，共 {len(game_ids.dataset(self.kind))} 项。")
+
+    def _load_catalog(self, force: bool = False) -> None:
+        if self.kind not in CATALOG_KINDS:
+            return
+        if self._task is not None:
+            return
+        if force:
+            self.status.setText(f"正在从网站重新拉取 {self._version} 的完整清单…")
+        self.refresh_btn.setEnabled(False)
+        task = CatalogTask(self._version, force=force)
+        task.signals.done.connect(self._on_catalog_done)
+        task.signals.failed.connect(self._on_catalog_failed)
+        self._task = task
+        QThreadPool.globalInstance().start(task)
+
+    def _on_catalog_done(self, result: object) -> None:
+        self._task = None
+        self.refresh_btn.setEnabled(True)
+        if not isinstance(result, game_catalog.CatalogResult):
+            return
+        selected = self.list.currentItem()
+        previous = ""
+        if selected is not None:
+            entry = selected.data(Qt.UserRole)
+            if entry is not None:
+                previous = str(entry.value or "")
+        self._apply_catalog(result, cached=result.source != "network")
+        self._refresh()
+        self._preselect(previous)
+
+    def _on_catalog_failed(self, message: str) -> None:
+        self._task = None
+        self.refresh_btn.setEnabled(True)
+        self.status.setText(
+            f"在线清单拉取失败：{message}。当前先用内置常用清单"
+            f"（共 {len(game_ids.dataset(self.kind))} 项），点“刷新清单”可以重试。"
+        )
+
+    def _apply_catalog(
+        self, result: game_catalog.CatalogResult, cached: bool = False
+    ) -> None:
+        game_ids.set_catalog(result.entries, result.version)
+        self._rebuild_categories()
+        labels = (
+            ("block", "方块"),
+            ("item", "物品"),
+            ("entity", "实体"),
+            ("effect", "效果"),
+            ("enchantment", "附魔"),
+            ("particle", "粒子"),
+            ("sound", "音效"),
+        )
+        parts = [
+            f"{label} {len(result.entries.get(kind) or ())}"
+            for kind, label in labels
+            if result.entries.get(kind)
+        ]
+        prefix = "已加载本机缓存" if cached else "已从网站拉取"
+        version_note = (
+            str(result.data_version or result.version)
+            if result.data_version and result.data_version != result.version
+            else str(result.version)
+        )
+        detail_note = (
+            f"（{result.version} 暂无独立数据，使用 {version_note}）"
+            if result.data_version and result.data_version != result.version
+            else f"（{version_note}）"
+        )
+        if parts:
+            self.status.setText(
+                f"{prefix}{detail_note}：" + " · ".join(parts) + "。搜索框可以直接搜中文名。"
+            )
+        else:
+            self.status.setText(
+                f"{prefix}{detail_note}没有拿到注册表，继续使用内置常用清单。"
+            )
+
+    def _rebuild_categories(self) -> None:
+        current = str(self.category.currentData() or "全部")
+        self.category.blockSignals(True)
+        self.category.clear()
+        for name in game_ids.categories(self.kind):
+            self.category.addItem(name, name)
+        index = self.category.findData(current)
+        self.category.setCurrentIndex(index if index >= 0 else 0)
+        self.category.blockSignals(False)
 
     def _refresh(self) -> None:
         entries = game_ids.search(
@@ -367,9 +472,16 @@ class EntryPickerDialog(QDialog):
 class IdPicker(QWidget):
     """输入框 + 选择按钮，值是命名空间 ID 或裸值。"""
 
-    def __init__(self, kind: str, value: str = "", parent=None) -> None:
+    def __init__(
+        self,
+        kind: str,
+        value: str = "",
+        parent: QWidget | None = None,
+        version_provider=None,
+    ) -> None:
         super().__init__(parent)
         self.kind = kind
+        self._version_provider = version_provider
         row = QHBoxLayout(self)
         row.setContentsMargins(0, 0, 0, 0)
         row.setSpacing(6)
@@ -384,7 +496,15 @@ class IdPicker(QWidget):
         row.addWidget(button)
 
     def _pick(self) -> None:
-        dialog = EntryPickerDialog(self.kind, self.edit.text(), self.window())
+        version = ""
+        if callable(self._version_provider):
+            try:
+                version = str(self._version_provider() or "")
+            except Exception:
+                version = ""
+        dialog = EntryPickerDialog(
+            self.kind, self.edit.text(), self.window(), version=version
+        )
         if dialog.exec():
             self.edit.setText(dialog.value())
 
@@ -996,7 +1116,7 @@ class AssistantPage(QWidget):
             self._version_source = source
             self._populate_seed_versions()
             if hasattr(self, "gen_version"):
-                self._populate_gen_versions(str(self.gen_version.currentData() or ""))
+                self._populate_gen_versions(self._gen_version_text())
             if self._registry_manual:
                 total = sum(len(items) for _name, items in groups)
                 self.main.toast(f"地图版本已更新，共 {total} 个", "success")
@@ -1513,7 +1633,7 @@ class AssistantPage(QWidget):
         header = self._card_header(
             body,
             "指令生成器",
-            "参数都给了选项或中文清单，不用记英文 ID；物品、方块、附魔、音效都能搜中文名。",
+            "点“选择…”会从网站拉取当前版本的完整注册表，方块、物品、实体、附魔、音效都能按中文名搜索；断网时退回内置常用清单。",
         )
         header.addWidget(badge("模板", "purple"))
 
@@ -1525,12 +1645,36 @@ class AssistantPage(QWidget):
         self.template_combo.currentIndexChanged.connect(self._render_template_fields)
         self.gen_version = QComboBox()
         self.gen_version.setMinimumWidth(110)
-        self._populate_gen_versions("1.21.9")
+        self.gen_version.setMaxVisibleItems(20)
+        self.gen_version.setEditable(True)
+        self.gen_version.setInsertPolicy(QComboBox.NoInsert)
+        self._populate_gen_versions(
+            release_versions()[0] if release_versions() else "1.21.11"
+        )
+        self.gen_version_pick_btn = QPushButton("选择…")
+        self.gen_version_pick_btn.setObjectName("Ghost")
+        self.gen_version_pick_btn.setCursor(Qt.PointingHandCursor)
+        self.gen_version_pick_btn.clicked.connect(self._pick_gen_version)
         top.addWidget(QLabel("模板"))
         top.addWidget(self.template_combo, 1)
         top.addWidget(QLabel("目标版本"))
         top.addWidget(self.gen_version)
+        top.addWidget(self.gen_version_pick_btn)
         body.addLayout(top)
+
+        hint = QLabel(
+            "模板只锁定指令关键字；方括号里的参数都能自由填写，"
+            "下拉选项只是常用值。生成后整条指令也可以直接编辑。"
+        )
+        hint.setObjectName("Tiny")
+        hint.setWordWrap(True)
+        body.addWidget(hint)
+
+        self.template_structure = QLabel("")
+        self.template_structure.setObjectName("Tiny")
+        self.template_structure.setWordWrap(True)
+        self.template_structure.setTextFormat(Qt.RichText)
+        body.addWidget(self.template_structure)
 
         self.template_form = QWidget()
         self.template_grid = QGridLayout(self.template_form)
@@ -1539,7 +1683,11 @@ class AssistantPage(QWidget):
         self.template_grid.setVerticalSpacing(8)
         body.addWidget(self.template_form)
 
-        self.gen_output = self._output(70, "生成的指令会出现在这里。")
+        self.gen_output = self._output(84, "生成的指令会出现在这里，也可以直接编辑。")
+        self.gen_output.setReadOnly(False)
+        self.gen_output.setToolTip(
+            "生成后可以继续手动修改；复制、保存函数和导出数据包都会使用这里的内容。"
+        )
         body.addWidget(self.gen_output)
         self.gen_issues = QLabel("")
         self.gen_issues.setObjectName("Tiny")
@@ -1569,7 +1717,7 @@ class AssistantPage(QWidget):
         """合并本地版本记录与内置列表，保证新版本不会漏。"""
         seen: set[str] = set()
         result: list[str] = []
-        for item in MC_VERSIONS:
+        for item in release_versions():
             if item not in seen:
                 seen.add(item)
                 result.append(item)
@@ -1594,16 +1742,46 @@ class AssistantPage(QWidget):
             for item in versions:
                 self.gen_version.addItem(item, item)
             index = self.gen_version.findData(str(current or ""))
-            if index < 0:
-                index = 0
-            self.gen_version.setCurrentIndex(index)
+            if index >= 0:
+                self.gen_version.setCurrentIndex(index)
+            elif str(current or "").strip():
+                self.gen_version.setEditText(str(current).strip())
+            else:
+                self.gen_version.setCurrentIndex(0)
         finally:
             self.gen_version.blockSignals(False)
         self._version_options = versions
 
+    def _gen_version_text(self) -> str:
+        if not hasattr(self, "gen_version"):
+            return ""
+        text = self.gen_version.currentText().strip()
+        index = self.gen_version.currentIndex()
+        if index >= 0 and text == self.gen_version.itemText(index):
+            data = self.gen_version.itemData(index)
+            if data:
+                return str(data)
+        return text
+
+    def _pick_gen_version(self) -> None:
+        installed = [
+            item
+            for _group, items in self._version_groups
+            for label, _platform in items
+            if str(label or "").strip()
+        ]
+        dialog = VersionPickerDialog(
+            self,
+            self.gen_version.currentText().strip(),
+            installed,
+            "选择目标版本",
+        )
+        if dialog.exec():
+            self.gen_version.setEditText(dialog.value())
+
     def _make_field_widget(self, field: ga.TemplateField) -> QWidget:
         if field.kind == "choice":
-            combo = QComboBox()
+            combo = ChoiceComboBox()
             for option in field.options:
                 label = option.label
                 if option.value and option.label != option.value:
@@ -1616,10 +1794,20 @@ class AssistantPage(QWidget):
             index = combo.findData(field.default)
             if index >= 0:
                 combo.setCurrentIndex(index)
-            combo.setToolTip(field.help)
+            else:
+                combo.setEditText(field.default)
+            if combo.lineEdit() is not None:
+                combo.lineEdit().setPlaceholderText(
+                    field.placeholder or "选常用值，或直接输入自定义值"
+                )
+            combo.setToolTip(field.help or "可以直接输入下拉清单里没有的值。")
             return combo
         if field.kind == "picker":
-            picker = IdPicker(field.picker, field.default)
+            picker = IdPicker(
+                field.picker,
+                field.default,
+                version_provider=self._gen_version_text,
+            )
             picker.edit.setPlaceholderText(field.placeholder or "点右边选择，或直接输入 ID")
             picker.setToolTip(field.help)
             return picker
@@ -1628,7 +1816,7 @@ class AssistantPage(QWidget):
             component.setToolTip(field.help)
             return component
         if field.kind == "int":
-            spin = QSpinBox()
+            spin = NoWheelSpinBox()
             spin.setRange(-2147483647, 2147483647)
             spin.setToolTip(field.help)
             try:
@@ -1642,12 +1830,37 @@ class AssistantPage(QWidget):
         edit.setToolTip(field.help)
         return edit
 
+    def _render_template_structure(self, template: ga.CommandTemplate) -> None:
+        if not hasattr(self, "template_structure"):
+            return
+        palette = colors()
+        labels = {field.key: field.label for field in template.fields}
+        pieces: list[str] = []
+        for piece in re.split(r"(\{[A-Za-z0-9_]+\})", ga.template_skeleton(template)):
+            if not piece:
+                continue
+            if piece.startswith("{") and piece.endswith("}"):
+                key = piece[1:-1]
+                label = labels.get(key, key)
+                pieces.append(
+                    f'<span style="color:{palette["accent"]};font-weight:600;">[{html.escape(label)}]</span>'
+                )
+            else:
+                pieces.append(f'<span style="color:{palette["muted"]};">{html.escape(piece)}</span>')
+        self.template_structure.setText(
+            f'<span style="color:{palette["muted"]};">模板结构：</span>'
+            + "".join(pieces)
+            + f'<br><span style="color:{palette["muted"]};">'
+            "灰色是固定语法，红色方括号里的参数都可以改；下拉列表只是常用值。</span>"
+        )
+
     def _render_template_fields(self) -> None:
         if not hasattr(self, "template_combo"):
             return
         template = ga.TEMPLATE_BY_ID.get(str(self.template_combo.currentData()))
         if template is None:
             return
+        self._render_template_structure(template)
         while self.template_grid.count():
             item = self.template_grid.takeAt(0)
             widget = item.widget()
@@ -1684,7 +1897,17 @@ class AssistantPage(QWidget):
             if widget is None:
                 continue
             if isinstance(widget, QComboBox):
-                values[field.key] = str(widget.currentData() or "")
+                data = widget.currentData()
+                text = widget.currentText().strip()
+                index = widget.currentIndex()
+                if (
+                    index >= 0
+                    and text == widget.itemText(index)
+                    and data not in (None, "")
+                ):
+                    values[field.key] = str(data)
+                else:
+                    values[field.key] = text
             elif isinstance(widget, QSpinBox):
                 values[field.key] = str(widget.value())
             else:
@@ -1737,7 +1960,7 @@ class AssistantPage(QWidget):
         if not any(line.strip() for line in commands):
             self.main.toast("先生成一条指令", "error")
             return
-        version = str(self.gen_version.currentData() or "1.21.4")
+        version = self._gen_version_text() or "1.21.4"
         dialog = DatapackDialog(version, self._version_options or MC_VERSIONS, self)
         if not dialog.exec():
             return
@@ -1864,7 +2087,7 @@ class AssistantPage(QWidget):
             self.main.toast("先写清楚要生成什么指令", "error")
             return
         config = ga.AIConfig.from_dict(self.settings.get("ai"))
-        version = str(self.gen_version.currentData() or "1.21.4")
+        version = self._gen_version_text() or "1.21.4"
         self.ai_output.setPlainText("正在请求 AI…")
         self.ai_generate_btn.setEnabled(False)
         worker = AIWorker(request, config, version, self.ai_context.text().strip(), self)
@@ -2023,7 +2246,7 @@ class AssistantPage(QWidget):
         if not commands:
             self.main.toast("先写至少一条指令", "error")
             return
-        version = str(self.gen_version.currentData() or "1.21.4")
+        version = self._gen_version_text() or "1.21.4"
         dialog = DatapackDialog(version, self._version_options or MC_VERSIONS, self)
         if not dialog.exec():
             return

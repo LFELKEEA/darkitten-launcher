@@ -2316,12 +2316,14 @@ class SakuraRoomWorker(QObject):
         parent=None,
         tunnel_name: str = ROOM_TUNNEL_NAME,
         make_room_code: bool = True,
+        avoid_tunnel_id: int = 0,
     ) -> None:
         super().__init__(parent)
         self._token = str(token or "").strip()
         self.local_port = int(local_port)
         self.node_id = int(node_id or 0)
         self.preferred_tunnel_id = int(preferred_tunnel_id or 0)
+        self.avoid_tunnel_id = int(avoid_tunnel_id or 0)
         self.frpc_path = str(frpc_path or "").strip()
         self.tunnel_name = str(tunnel_name or ROOM_TUNNEL_NAME).strip()
         self.make_room_code = bool(make_room_code)
@@ -2341,21 +2343,48 @@ class SakuraRoomWorker(QObject):
         if message and not self.cancel_event.is_set():
             self.log_line.emit(message)
 
+    @staticmethod
+    def _usable_tunnel(tunnel: SakuraTunnel) -> bool:
+        return str(tunnel.type or "").lower() == "tcp" and tunnel.status != 2
+
     def _pick_tunnel(
         self, tunnels: list[SakuraTunnel]
     ) -> tuple[SakuraTunnel | None, bool]:
+        """优先进入已有隧道，只有一条可用隧道都没有时才新建。"""
+        usable = [tunnel for tunnel in tunnels if self._usable_tunnel(tunnel)]
         if self.preferred_tunnel_id:
-            for tunnel in tunnels:
+            for tunnel in usable:
                 if tunnel.id == self.preferred_tunnel_id:
                     return tunnel, True
-        candidates = [
+
+        def rank(tunnel: SakuraTunnel) -> tuple[int, int]:
+            name = tunnel.name.lower()
+            hint = 0
+            if tunnel.local_port == self.local_port:
+                hint += 4
+            if any(
+                word in name
+                for word in ("darkitten", "minecraft", "我的世界", "服务器", "server")
+            ):
+                hint += 3
+            if tunnel.online:
+                hint += 1
+            return hint, tunnel.id
+
+        same_name = [
             tunnel
-            for tunnel in tunnels
-            if tunnel.name.startswith(self.tunnel_name) and tunnel.type == "tcp"
+            for tunnel in usable
+            if tunnel.name.startswith(self.tunnel_name)
         ]
-        if candidates:
-            return max(candidates, key=lambda item: item.id), True
-        return None, False
+        if same_name:
+            return max(same_name, key=rank), True
+        if not usable:
+            return None, False
+        # 另一功能（房间/服务端）已经占用的隧道尽量留给它，只有别无选择时才共用。
+        pool = [
+            tunnel for tunnel in usable if tunnel.id != self.avoid_tunnel_id
+        ] or usable
+        return max(pool, key=rank), True
 
     def _pick_node(
         self,
@@ -2399,7 +2428,7 @@ class SakuraRoomWorker(QObject):
             if reused and tunnel is not None:
                 if tunnel.node not in nodes:
                     raise Exception(
-                        f"现有 {self.tunnel_name} 隧道所在节点已不存在，"
+                        f"现有隧道 {tunnel.name}（#{tunnel.id}）所在节点已不存在，"
                         "请到樱花穿透面板迁移或删除该隧道后重试。"
                     )
                 node = nodes[tunnel.node]
@@ -2409,13 +2438,15 @@ class SakuraRoomWorker(QObject):
                 raise Exception(f"节点“{node.label}”当前离线，请换一个节点。")
 
             if tunnel is not None:
-                if tunnel.type != "tcp":
+                if str(tunnel.type or "").lower() != "tcp":
                     raise Exception(
-                        f"现有 {self.tunnel_name} 隧道不是 TCP 类型，请到面板改为 TCP。"
+                        f"现有隧道 {tunnel.name}（#{tunnel.id}）不是 TCP 类型，"
+                        "请到面板改为 TCP。"
                     )
                 if tunnel.status == 2:
                     raise Exception(
-                        f"现有 {self.tunnel_name} 隧道已被封禁，请到樱花穿透面板处理。"
+                        f"现有隧道 {tunnel.name}（#{tunnel.id}）已被封禁，"
+                        "请到樱花穿透面板处理。"
                     )
                 self._log(
                     f"复用隧道 {tunnel.name}（#{tunnel.id}）· 节点 {node.label}"
