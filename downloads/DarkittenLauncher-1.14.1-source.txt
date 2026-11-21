@@ -1,5 +1,5 @@
 ﻿Darkitten Launcher 1.14.1 完整源代码
-生成时间：2026-11-21 19:58:11
+生成时间：2026-11-21 20:04:20
 文本文件：168
 ================================================================================
 目录
@@ -56375,9 +56375,9 @@ class ServerPage(QWidget):
             server_info=info,
         )
         dialog.exec()
-        if dialog.result is not None:
+        if dialog.import_result is not None:
             self.refresh_servers(info.folder)
-            backup = getattr(dialog.result, "backup", None)
+            backup = getattr(dialog.import_result, "backup", None)
             suffix = f"，原世界已备份为 {backup.name}" if backup is not None else ""
             self.toast(f"存档已导入服务端{suffix}", "success")
 
@@ -68979,7 +68979,7 @@ class WorldImportDialog(StyledDialog):
         self.server_info = server_info
         self.dest_parent = Path(dest_parent) if dest_parent is not None else None
         self.source: WorldSource | None = None
-        self.result = None
+        self.import_result = None
         self._worker: WorldImportWorker | None = None
         self._busy = False
         self._initial_path = str(initial_path or "")
@@ -69189,7 +69189,7 @@ class WorldImportDialog(StyledDialog):
         if success:
             self.progress.setValue(100)
             self.progress_text.setText(message)
-            self.result = result
+            self.import_result = result
             parent = self.parentWidget()
             toast = getattr(parent, "toast", None)
             if callable(toast):
@@ -69640,8 +69640,8 @@ class WorldManagerDialog(StyledDialog):
             dest_parent=self.game_dir / "saves",
         )
         dialog.exec()
-        if dialog.result is not None:
-            self._toast(f"已导入存档「{dialog.result.source.name}」", "success")
+        if dialog.import_result is not None:
+            self._toast(f"已导入存档「{dialog.import_result.source.name}」", "success")
             self._reload()
 
     def _create_world(self) -> None:
@@ -91745,11 +91745,11 @@ body.lightbox-open { overflow: hidden; }
   "page_url": "https://lfelkeea.github.io/darkitten-launcher/",
   "source_url": "downloads/DarkittenLauncher-1.14.1-source.zip",
   "source_txt_url": "downloads/DarkittenLauncher-1.14.1-source.txt",
-  "sha256": "04fc008bc383c19c00a8487f5c47f8ae6202fd6e562cdf456fc32a2d5d775e69",
+  "sha256": "29228042457bae16bb0c78585a4012252e453cbef5080ad6e07fea0c00035433",
   "size": 1277868,
-  "source_sha256": "8219e3fa324940f24e330c877189a29478303e3237502e07bec2c30fba3ee430",
-  "source_size": 2544813,
-  "source_txt_sha256": "d6a57f5160e1291f6956cc624a165a8e3ea66c0c667bc2e03293d2136372a28e",
+  "source_sha256": "d156ff414f5b7f8afa09e90999a392a13dc1cc030744c8ed680b72dbc1a5f1f8",
+  "source_size": 2544812,
+  "source_txt_sha256": "a06439f56b7fa93e48e2720e2f40a5320b8accb51ca3b2c3cf161a009dbc4abf",
   "source_txt_size": 3598850,
   "pet": {
     "name": "LFELKEEA 桌宠",
