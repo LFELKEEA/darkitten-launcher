@@ -134,6 +134,20 @@ def _skip_name(name: str) -> bool:
     return name.lower() in _SKIP_NAMES
 
 
+def version_key(text: str) -> tuple[int, int, int]:
+    match = re.search(r"(\d+)\.(\d+)(?:\.(\d+))?", str(text or ""))
+    if not match:
+        return (0, 0, 0)
+    return (int(match.group(1)), int(match.group(2)), int(match.group(3) or 0))
+
+
+def is_newer_version(source_version: str, target_version: str) -> bool:
+    """来源版本高于目标版本时返回 True；Minecraft 不能降级打开存档。"""
+    if not source_version or not target_version:
+        return False
+    return version_key(source_version) > version_key(target_version)
+
+
 def safe_folder_name(text: str, fallback: str = "world") -> str:
     value = _ILLEGAL_NAME.sub("-", str(text or "")).strip().rstrip(". ")
     if not value or value.split(".")[0].upper() in _WINDOWS_RESERVED:

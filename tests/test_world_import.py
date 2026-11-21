@@ -22,6 +22,7 @@ from darkitten.world_import import (  # noqa: E402
     import_into_server,
     import_world,
     inspect_world_source,
+    is_newer_version,
 )
 
 
@@ -97,6 +98,16 @@ class ServerSeedTests(unittest.TestCase):
                 servers.update_server_properties(info)
                 text = (info.path / "server.properties").read_text(encoding="utf-8")
                 self.assertIn("level-seed=123456789", text)
+
+
+class VersionCompareTests(unittest.TestCase):
+    def test_newer_source_versions_are_detected(self) -> None:
+        self.assertTrue(is_newer_version("1.21.1", "1.20.1"))
+        self.assertTrue(is_newer_version("26.1", "1.21.11"))
+        self.assertFalse(is_newer_version("1.20.1", "1.21.1"))
+        self.assertFalse(is_newer_version("1.20.1", "1.20.1"))
+        self.assertFalse(is_newer_version("", "1.20.1"))
+        self.assertFalse(is_newer_version("1.20.1", ""))
 
 
 class WorldImportTests(unittest.TestCase):

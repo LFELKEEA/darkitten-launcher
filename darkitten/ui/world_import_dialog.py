@@ -17,7 +17,12 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from ..world_import import WorldImportError, WorldSource, inspect_world_source
+from ..world_import import (
+    WorldImportError,
+    WorldSource,
+    inspect_world_source,
+    is_newer_version,
+)
 from ..workers import WorldImportWorker
 from .dialogs import NoticeDialog, StyledDialog
 from .widgets import colors
@@ -37,10 +42,12 @@ class WorldImportDialog(StyledDialog):
         initial_path: str | Path | None = None,
         server_info=None,
         dest_parent: str | Path | None = None,
+        target_version: str = "",
     ) -> None:
         super().__init__(parent, title, "globe", width=620)
         self.server_info = server_info
         self.dest_parent = Path(dest_parent) if dest_parent is not None else None
+        self.target_version = str(target_version or "").strip()
         self.source: WorldSource | None = None
         self.import_result = None
         self._worker: WorldImportWorker | None = None
@@ -92,6 +99,12 @@ class WorldImportDialog(StyledDialog):
         self.info_label.setWordWrap(True)
         self.info_label.setVisible(False)
         source_box.addWidget(self.info_label)
+        self.version_warning = QLabel("")
+        self.version_warning.setObjectName("Tiny")
+        self.version_warning.setWordWrap(True)
+        self.version_warning.setStyleSheet(f"color: {colors()['orange']};")
+        self.version_warning.setVisible(False)
+        source_box.addWidget(self.version_warning)
         self.body.addWidget(source_card)
 
         name_row = QHBoxLayout()
@@ -172,6 +185,14 @@ class WorldImportDialog(StyledDialog):
             f"{source.files} 个文件 · {source.size_text}"
         )
         self.info_label.setVisible(True)
+        if is_newer_version(source.version_name, self.target_version):
+            self.version_warning.setText(
+                f"来源版本 {source.version_name} 高于目标版本 {self.target_version}："
+                "Minecraft 不能降级打开世界，导入后可能无法加载。"
+            )
+            self.version_warning.setVisible(True)
+        else:
+            self.version_warning.setVisible(False)
         self.name_edit.setText(source.folder_name or "world")
         self._update_name_hint()
         self.import_btn.setEnabled(True)

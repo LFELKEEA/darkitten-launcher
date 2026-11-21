@@ -412,6 +412,7 @@ class WorldManagerDialog(StyledDialog):
             default_name="",
             name_label="导入后的文件夹名",
             dest_parent=self.game_dir / "saves",
+            target_version=self.version_id,
         )
         dialog.exec()
         if dialog.import_result is not None:

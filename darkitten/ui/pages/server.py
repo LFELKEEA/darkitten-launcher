@@ -1902,6 +1902,7 @@ class ServerPage(QWidget):
             ),
             default_name=level_name,
             server_info=info,
+            target_version=info.mc_version,
         )
         dialog.exec()
         if dialog.import_result is not None:

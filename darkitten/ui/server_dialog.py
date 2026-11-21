@@ -37,7 +37,12 @@ from ..workers import (
     ServerInstallWorker,
     WorldImportWorker,
 )
-from ..world_import import WorldImportError, WorldSource, inspect_world_source
+from ..world_import import (
+    WorldImportError,
+    WorldSource,
+    inspect_world_source,
+    is_newer_version,
+)
 from .dialogs import NoticeDialog, StyledDialog
 from .version_picker import VersionPickerDialog
 from .widgets import SegmentedControl, Switch, colors
@@ -404,19 +409,33 @@ class ServerCreateDialog(StyledDialog):
             return
         self._import_source = source
         self.world_edit.setText(str(source.path))
-        self.world_hint.setText(
-            f"将导入「{source.name}」 · {source.version_text} · "
-            f"种子 {source.seed_text} · 维度：{source.dimension_text} · "
-            f"{source.player_text} · {source.size_text}。"
-            "所有维度、玩家数据和物品栏都会原样保留，不会重新生成世界。"
-        )
-        self.world_hint.setStyleSheet(f"color: {colors()['green']};")
         self.world_clear_btn.setVisible(True)
         self.seed_edit.setEnabled(False)
         self.seed_hint.setText(
             "已选择导入存档，种子只用于生成新世界，因此填写种子不再生效。"
         )
         self.seed_hint.setStyleSheet(f"color: {colors()['muted']};")
+        self._show_world_source()
+
+    def _show_world_source(self) -> None:
+        source = self._import_source
+        if source is None:
+            return
+        detail = (
+            f"将导入「{source.name}」 · {source.version_text} · "
+            f"种子 {source.seed_text} · 维度：{source.dimension_text} · "
+            f"{source.player_text} · {source.size_text}。"
+            "所有维度、玩家数据和物品栏都会原样保留，不会重新生成世界。"
+        )
+        if is_newer_version(source.version_name, self._current_mc()):
+            detail += (
+                f" 注意：来源版本 {source.version_name} 高于目标版本 "
+                f"{self._current_mc()}，Minecraft 不能降级打开世界，可能无法加载。"
+            )
+            self.world_hint.setStyleSheet(f"color: {colors()['orange']};")
+        else:
+            self.world_hint.setStyleSheet(f"color: {colors()['green']};")
+        self.world_hint.setText(detail)
 
     def _clear_world_source(self) -> None:
         self._import_source = None
@@ -457,6 +476,8 @@ class ServerCreateDialog(StyledDialog):
         self._refresh_loader_versions()
         self._refresh_java()
         self._update_port_note()
+        if self._import_source is not None:
+            self._show_world_source()
         self._update_action()
 
     def _refresh_loader_versions(self) -> None:
