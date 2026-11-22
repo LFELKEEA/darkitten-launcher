@@ -4,7 +4,7 @@
   "released": "2026-11-22",
   "kind": "online",
   "policy": "online-first",
-  "download_url": "https://github.com/LFELKEEA/darkitten-mod-agent/releases/download/mod-agent-v3.7.0/DarkittenModAgent-3.7.0.zip",
+  "download_url": "downloads/DarkittenModAgent-3.7.0.zip",
   "page_url": "https://lfelkeea.github.io/darkitten-launcher/",
   "bootstrap_url": "https://lfelkeea.github.io/darkitten-launcher/mod_agent_bootstrap.json",
   "sha256": "ba64a650f2bb9fae430aef336a976726cd8847a6160f1bc46fb8d0ce586b901b",
