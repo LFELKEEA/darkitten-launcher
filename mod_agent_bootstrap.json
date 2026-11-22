@@ -1,6 +1,6 @@
 {
   "name": "Darkitten Mod Agent 在线版",
-  "version": "3.7.0",
+  "version": "3.8.0",
   "policy": "online-first",
   "site": "https://lfelkeea.github.io/darkitten-launcher/",
   "update_manifest": "https://lfelkeea.github.io/darkitten-launcher/mod_agent_release.json",
