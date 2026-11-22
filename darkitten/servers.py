@@ -1796,6 +1796,35 @@ def toggle_addon(addon: AddonFile) -> Path:
     return dest
 
 
+def delete_addon(addon: AddonFile) -> tuple[bool, str]:
+    """把插件/Mod 文件移入回收站，并清理对应的下载元数据。"""
+    path = Path(addon.path)
+    if not path.is_file():
+        return False, "文件不存在"
+    ok, message = send_to_recycle_bin(path)
+    if not ok:
+        return False, message
+    try:
+        from .mods import mod_meta_icon_path, mod_meta_json_path
+
+        names = [path.name]
+        if path.name.lower().endswith(".disabled"):
+            names.append(path.name[: -len(".disabled")])
+        for name in names:
+            for meta in (
+                mod_meta_json_path(path.parent, name),
+                mod_meta_icon_path(path.parent, name),
+            ):
+                try:
+                    if meta.is_file():
+                        meta.unlink()
+                except OSError:
+                    pass
+    except Exception:  # noqa: BLE001 - 元数据清理失败不影响卸载
+        pass
+    return True, message
+
+
 # ---------------------------------------------------------------------------
 # 启动
 

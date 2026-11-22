@@ -45,6 +45,7 @@ from ...servers import (
     ServerProcess,
     addons_dir,
     check_port,
+    delete_addon,
     list_addons,
     required_java_major,
     save_server,
@@ -338,6 +339,7 @@ class ServerRow(QFrame):
 class AddonRow(QFrame):
     toggled = Signal(object, bool)
     details_requested = Signal(object)
+    delete_requested = Signal(object)
 
     def __init__(
         self, addon: AddonFile, is_plugin: bool, parent: QWidget | None = None
@@ -377,6 +379,12 @@ class AddonRow(QFrame):
         info_btn = icon_button("message", "查看介绍", colors()["accent"], 28, 14)
         info_btn.clicked.connect(lambda _=False: self.details_requested.emit(self.addon))
         layout.addWidget(info_btn)
+
+        delete_btn = icon_button("trash", "卸载并移入回收站", colors()["muted"], 28, 14)
+        delete_btn.clicked.connect(
+            lambda _=False: self.delete_requested.emit(self.addon)
+        )
+        layout.addWidget(delete_btn)
 
         self.switch = Switch()
         self.switch.setChecked(addon.enabled)
@@ -1693,6 +1701,9 @@ class ServerPage(QWidget):
             row.details_requested.connect(
                 lambda item, i=info: self._show_addon_info(i, item)
             )
+            row.delete_requested.connect(
+                lambda item, i=info: self._delete_addon(i, item)
+            )
             self.addon_layout.insertWidget(self.addon_layout.count() - 1, row)
         self.addon_layout.activate()
         self.addon_holder.setMinimumHeight(self.addon_layout.sizeHint().height())
@@ -1733,6 +1744,43 @@ class ServerPage(QWidget):
         state = "启用" if checked else "禁用"
         self.toast(f"{addon.name} 已{state}", "success")
         if info.folder in self._processes:
+            self.toast("需要重启服务端后生效", "info")
+        self.refresh_addons()
+
+    def _delete_addon(self, info: ServerInfo, addon: AddonFile) -> None:
+        running = info.folder in self._processes
+        dialog = ConfirmDialog(
+            self,
+            f"卸载{info.addon_label}",
+            f"确定卸载 {addon.name} 吗？",
+            primary_text="移入回收站",
+            secondary_text="取消",
+            icon_name="trash",
+            icon_color=colors()["red"],
+            details=(
+                f"文件会移动到回收站，下载记录和图标也会一并清理：\n"
+                f"{addon.path}"
+                + (
+                    "\n\n服务端正在运行，卸载后需要重启才能生效。"
+                    if running
+                    else ""
+                )
+            ),
+        )
+        if not dialog.exec():
+            return
+        ok, message = delete_addon(addon)
+        if not ok:
+            NoticeDialog(
+                self,
+                "卸载失败",
+                f"无法移动{info.addon_label}文件：{message}",
+                button_text="知道了",
+                icon_name="warning",
+            ).exec()
+            return
+        self.toast(f"{addon.name} 已移入回收站", "success")
+        if running:
             self.toast("需要重启服务端后生效", "info")
         self.refresh_addons()
 
