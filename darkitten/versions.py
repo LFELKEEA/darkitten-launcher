@@ -137,6 +137,21 @@ class ResolvedVersion:
     def client_jar(self) -> str:
         return self.jar_id
 
+    @property
+    def game_version(self) -> str:
+        """实际 Minecraft 版本号，跳过 Fabric/Forge 等加载器父节点。
+
+        ``jar_id`` 在加载器实例里可能指向 ``fabric-loader-0.19.5-1.21.11``，
+        不能直接拿来和 1.20 比较，否则 quickPlay 参数会被误判为不支持。
+        """
+        for item in reversed(self.chain or []):
+            text = str(item or "").strip()
+            if re.fullmatch(r"\d+(?:\.\d+)+", text):
+                return text
+            if re.fullmatch(r"\d{2}w\d{2}[a-z]", text):
+                return "1.20"
+        return self.jar_id or self.id
+
 
 # ---------------------------------------------------------------------------
 # Rules

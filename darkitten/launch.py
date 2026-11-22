@@ -425,11 +425,11 @@ def prepare_launch(
 
         server_host, server_port = parse_server_address(server_address)
         command.extend(
-            _server_launch_args(server_host, server_port, resolved.jar_id)
+            _server_launch_args(server_host, server_port, resolved.game_version)
         )
     elif str(singleplayer_world or "").strip():
         command.extend(
-            _singleplayer_launch_args(singleplayer_world, resolved.jar_id)
+            _singleplayer_launch_args(singleplayer_world, resolved.game_version)
         )
 
     run_dir.mkdir(parents=True, exist_ok=True)

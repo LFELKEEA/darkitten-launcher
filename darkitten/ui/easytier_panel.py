@@ -486,8 +486,13 @@ class EasyTierPanel(QWidget):
     # 房主流程
 
     def detect_port(self) -> None:
-        process = self.main.game_process
-        pid = process.pid if process and self.main.game_running else 0
+        process = None
+        version_id = str(self.version_combo.currentData() or "")
+        if version_id:
+            session = self.main.find_game_session(version_id)
+            process = session.process if session else None
+        process = process or self.main.game_process
+        pid = process.pid if process and process.pid else 0
         if not pid:
             self._set_status(
                 self.host_status,

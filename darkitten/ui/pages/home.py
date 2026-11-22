@@ -156,6 +156,7 @@ class HomePage(QWidget):
         self.main = main
         self._selected = ""
         self._closing = False
+        self._game_count = 0
         self._view = "games"
         self._game_versions: list[VersionSummary] = []
         self._version_rows: dict[str, VersionRow] = {}
@@ -752,7 +753,12 @@ class HomePage(QWidget):
             text, icon_name, color, obj = "取消启动", "stop", colors()["red"], "Danger"
             enabled = True
         elif self.main.game_running:
-            text, icon_name, color, obj = "关闭游戏", "stop", colors()["red"], "Danger"
+            label = (
+                f"关闭全部游戏（{self._game_count}）"
+                if self._game_count > 1
+                else "关闭游戏"
+            )
+            text, icon_name, color, obj = label, "stop", colors()["red"], "Danger"
             enabled = True
         else:
             text, icon_name, color, obj = "启动游戏", "play", "#3A0F1C", "Launch"
@@ -768,11 +774,11 @@ class HomePage(QWidget):
             self._closing = False
         self._refresh_status()
 
-    def set_game_closing(self) -> None:
-        self._closing = True
+    def set_game_closing(self, closing: bool = True) -> None:
+        self._closing = closing
         self._refresh_status()
 
-    def set_game_running(self, running: bool) -> None:
-        if not running:
-            self._closing = False
+    def set_game_running(self, running: bool, count: int = 1) -> None:
+        self._game_count = count if running else 0
+        self._closing = False
         self._refresh_status()

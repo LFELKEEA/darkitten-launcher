@@ -97,6 +97,7 @@ class RoomPage(QWidget):
         self._auto_create_pending = False
         self._auto_room_flow = False
         self._quick_world_id = ""
+        self._quick_session_key = ""
         self._lan_timer = QTimer(self)
         self._lan_timer.setInterval(2500)
         self._lan_timer.timeout.connect(self._poll_lan_port)
@@ -991,9 +992,6 @@ class RoomPage(QWidget):
         self._sync_controls()
 
     def quick_start(self) -> None:
-        if self.main.game_running:
-            self.toast("游戏已经在运行，请在游戏里对局域网开放", "info")
-            return
         if self.main.launch_active:
             self.toast("游戏正在启动，请稍候", "info")
             return
@@ -1014,6 +1012,23 @@ class RoomPage(QWidget):
             )
             return
 
+        existing = self.main.find_game_session(version_id)
+        if existing is not None:
+            # 这个版本已经在运行，直接复用它等待对局域网开放，不再开第二个进程。
+            self._quick_session_key = existing.key
+            self._quick_world_id = world_id
+            self._auto_room_flow = True
+            self._lan_port = 0
+            self._set_quick_status(
+                "这个版本已经在运行。请在游戏里按 Esc → 对局域网开放，"
+                "启动器会自动检测端口并建房。",
+                "busy",
+            )
+            self._set_badge(self.quick_badge, "等待端口", "blue")
+            self._lan_timer.start()
+            self._sync_controls()
+            return
+
         self._quick_world_id = world_id
         self._auto_room_flow = True
         self._lan_port = 0
@@ -1025,8 +1040,8 @@ class RoomPage(QWidget):
         self._set_badge(self.quick_badge, "启动中", "blue")
         if version_id != self.main.selected_version:
             self.main.home_page.select_version(version_id)
-        self.main.launch_selected(quick_world=world_id)
-        if not self.main.launch_active and not self.main.game_running:
+        self._quick_session_key = self.main.launch_selected(quick_world=world_id)
+        if not self._quick_session_key:
             self._auto_room_flow = False
             self._set_quick_status("启动没有完成，请查看启动器提示。", "error")
             self._set_badge(self.quick_badge, "待命", "gray")
@@ -1041,11 +1056,26 @@ class RoomPage(QWidget):
         if self._room_payload is not None or self._tunnel_process is not None:
             self._lan_timer.stop()
             return
-        if not self.main.game_running:
-            return
+        if self._quick_session_key:
+            process = self.main.session_process(self._quick_session_key)
+            if process is None:
+                if not self.main.launch_active:
+                    # 自己启动的那个游戏已经退出，停止自动建房。
+                    self._quick_session_key = ""
+                    self._lan_timer.stop()
+                    if self._auto_room_flow:
+                        self._auto_room_flow = False
+                        self._set_badge(self.quick_badge, "待命", "gray")
+                        self._set_quick_status(
+                            "启动的游戏已经退出，一键联机已停止。", "muted"
+                        )
+                return
+        else:
+            if not self.main.game_running:
+                return
+            process = self.main.game_process
         if self._lan_worker is not None:
             return
-        process = self.main.game_process
         pid = int(getattr(process, "pid", 0) or 0) if process else 0
         if not pid:
             return
@@ -1125,7 +1155,10 @@ class RoomPage(QWidget):
     # 主机流程
 
     def detect_port(self) -> None:
-        process = self.main.game_process
+        process = None
+        if self._quick_session_key:
+            process = self.main.session_process(self._quick_session_key)
+        process = process or self.main.game_process
         pid = process.pid if process and self.main.game_running else 0
         if not pid:
             self._set_status(
@@ -1537,7 +1570,9 @@ class RoomPage(QWidget):
 
     def join_friend_room(self, room_code: str, version_id: str = "") -> None:
         """从好友簿进入房间：填好房间号和版本，直接走客人启动流程。"""
-        if self.main.game_running:
+        if self.main.game_running and (
+            not version_id or self.main.find_game_session(version_id)
+        ):
             self._copy_text(room_code, "好友房间地址")
             return
         text = str(room_code or "").strip()
@@ -1801,20 +1836,21 @@ class RoomPage(QWidget):
             )
             return
         address = self._decoded_address
-        if self.main.game_running:
-            self._copy_text(address, "服务器地址")
-            self._set_status(
-                self.guest_status,
-                "游戏已经在运行，地址已复制。请在多人游戏中添加服务器。",
-                "warning",
-            )
-            return
         if self.main.install_active:
             self.toast("正在安装游戏文件，请稍候", "info")
             return
         version_id = str(self.version_combo.currentData() or "")
         if not version_id:
             self.toast("请先安装一个游戏版本", "info")
+            return
+        existing = self.main.find_game_session(version_id)
+        if existing is not None:
+            self._copy_text(address, "服务器地址")
+            self._set_status(
+                self.guest_status,
+                "这个版本已经在运行，地址已复制。请在多人游戏中添加服务器。",
+                "warning",
+            )
             return
         if version_id != self.main.selected_version:
             self.main.home_page.select_version(version_id)
@@ -1823,8 +1859,8 @@ class RoomPage(QWidget):
             f"正在启动 {version_id} 并连接 {address}…",
             "busy",
         )
-        self.main.launch_selected(connect_address=address)
-        if not self.main.game_running and not self.main.launch_active:
+        key = self.main.launch_selected(connect_address=address)
+        if not key:
             self._set_status(
                 self.guest_status,
                 "启动没有完成，请查看启动器提示或运行日志。",
@@ -1895,7 +1931,7 @@ class RoomPage(QWidget):
                 quick_ready
                 and not self._busy
                 and not room_active
-                and not self.main.game_running
+                and not self._auto_room_flow
                 and not self.main.launch_active
             )
             idle = not room_active and not self._busy

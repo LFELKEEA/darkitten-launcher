@@ -6,6 +6,7 @@ import sys
 import time
 import urllib.parse
 from ctypes import wintypes
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -108,6 +109,22 @@ from .widgets import (
     refresh_themed_icons,
     transparent_children,
 )
+
+@dataclass
+class GameSession:
+    """一次游戏进程；启动器可以同时持有多份，实现多开。"""
+
+    key: str
+    version: str
+    profile_id: str
+    instance_id: str
+    process: GameProcess | None = None
+    pid: int = 0
+    started_at: float = 0.0
+    log_file: object | None = None
+    log_path: str = ""
+    closing: bool = False
+
 
 PAGE_INDEX = {
     "home": 0,
@@ -294,6 +311,11 @@ class MainWindow(QWidget):
         self._launch_quick_world = ""
         self._launch_auto_retry = True
         self._launch_profile_id = ""
+        self._launch_instance_id = ""
+        self._launch_version = ""
+        self._launch_session_key = ""
+        self._session_seq = 0
+        self.game_sessions: dict[str, GameSession] = {}
         self._running_version = ""
         self._running_profile_id = ""
         self._game_started_at = 0.0
@@ -301,7 +323,6 @@ class MainWindow(QWidget):
         self.game_process: GameProcess | None = None
         self.game_running = False
         self._delete_worker: DeleteWorker | None = None
-        self._game_log_file = None
         self.current_page = "home"
         self._update_check_worker: UpdateCheckWorker | None = None
         self._update_busy = False
@@ -1199,11 +1220,13 @@ class MainWindow(QWidget):
             self.config.window_width = self.width()
             self.config.window_height = self.height()
         self.config.save()
-        if self._game_log_file:
-            try:
-                self._game_log_file.close()
-            except Exception:
-                pass
+        for session in self.game_sessions.values():
+            if session.log_file is not None:
+                try:
+                    session.log_file.close()
+                except Exception:
+                    pass
+                session.log_file = None
         if self._force_quit:
             self._teardown_tray()
             # 窗口可能本来就隐藏着，不能依赖“最后一个窗口关闭”来结束进程。
@@ -1374,6 +1397,55 @@ class MainWindow(QWidget):
         if summary and summary.loader:
             return f" · {summary.loader}"
         return " · 原版"
+
+    # ------------------------------------------------------------------
+    # 多游戏会话
+
+    def game_session(self, key: str) -> GameSession | None:
+        return self.game_sessions.get(str(key or ""))
+
+    def session_process(self, key: str) -> GameProcess | None:
+        session = self.game_session(key)
+        return session.process if session else None
+
+    def find_game_session(self, version_id: str) -> GameSession | None:
+        """按显示版本、启动配置或实例 ID 查找正在运行的游戏。"""
+        target = str(version_id or "")
+        if not target:
+            return None
+        for session in self.game_sessions.values():
+            if target in (
+                session.version,
+                session.profile_id,
+                session.instance_id,
+            ):
+                return session
+        return None
+
+    def _latest_session(self) -> GameSession | None:
+        latest: GameSession | None = None
+        for session in self.game_sessions.values():
+            # 尚未拿到 PID 时 started_at 都是 0，按插入顺序让后启动的优先。
+            if latest is None or session.started_at >= latest.started_at:
+                latest = session
+        return latest
+
+    def _sync_game_state(self) -> None:
+        self.game_running = bool(self.game_sessions)
+        latest = self._latest_session()
+        if latest is not None:
+            self.game_process = latest.process
+            self._running_version = latest.version
+            self._running_profile_id = latest.profile_id
+            self._game_started_at = latest.started_at
+        else:
+            self.game_process = None
+            self._running_version = ""
+            self._running_profile_id = ""
+            self._game_started_at = 0.0
+        self._launch_closing = any(
+            item.closing for item in self.game_sessions.values()
+        )
 
     def _repair_loader_bindings(self) -> None:
         profiles = {
@@ -1759,11 +1831,18 @@ class MainWindow(QWidget):
             )
             self.action_cancel_btn.setEnabled(not self._launch_cancel_requested)
             self.action_cancel_btn.setVisible(True)
-        elif self.game_running:
-            self.action_cancel_btn.setText(
-                "正在关闭…" if self._launch_closing else "关闭游戏"
+        elif self.game_sessions:
+            closing = any(
+                item.closing for item in self.game_sessions.values()
             )
-            self.action_cancel_btn.setEnabled(not self._launch_closing)
+            if closing:
+                text = "正在关闭…"
+            elif len(self.game_sessions) > 1:
+                text = f"关闭全部游戏（{len(self.game_sessions)}）"
+            else:
+                text = "关闭游戏"
+            self.action_cancel_btn.setText(text)
+            self.action_cancel_btn.setEnabled(not closing)
             self.action_cancel_btn.setVisible(True)
         else:
             self.action_cancel_btn.setVisible(False)
@@ -1779,7 +1858,7 @@ class MainWindow(QWidget):
             self.cancel_install()
         elif self.launch_active:
             self.cancel_launch()
-        elif self.game_running:
+        elif self.game_sessions:
             self.close_game()
 
     def complete_selected(self) -> None:
@@ -2756,28 +2835,33 @@ class MainWindow(QWidget):
         auto_retry: bool = True,
         connect_address: str = "",
         quick_world: str = "",
-    ) -> None:
-        if self.game_running:
-            self.toast("游戏已经在运行了", "info")
-            return
+    ) -> str:
+        """启动一个游戏实例，返回会话键；未启动时返回空字符串。
+
+        允许多个实例同时运行，但同一时刻只处理一次启动流程，
+        避免两条启动线程同时写入配置。
+        """
         if self.launch_active:
             self.toast("游戏正在启动，请稍候", "info")
-            return
+            return ""
         if self.install_active:
             self.toast("文件仍在安装中，请稍候", "info")
-            return
+            return ""
         if not self.selected_version:
             self.toast("请先安装一个游戏版本", "info")
-            return
+            return ""
 
         self.launch_active = True
         self._launch_cancel_requested = False
-        self._launch_closing = False
         self._launch_connect_address = connect_address
         self._launch_quick_world = quick_world
         self._launch_auto_retry = auto_retry
+        self._launch_version = self.selected_version
         profile_id, instance_id = self.launch_profile(self.selected_version)
         self._launch_profile_id = profile_id
+        self._launch_instance_id = instance_id
+        self._session_seq += 1
+        self._launch_session_key = f"game-{self._session_seq}"
         worker = LaunchWorker(
             self.config.game_path,
             profile_id,
@@ -2806,6 +2890,7 @@ class MainWindow(QWidget):
         )
         self.loading_overlay.show_loading(self.selected_version)
         worker.start()
+        return self._launch_session_key
 
     def _on_launch_status(self, message: str) -> None:
         if self.launch_active:
@@ -2845,17 +2930,30 @@ class MainWindow(QWidget):
         for warning in plan.warnings:
             self.log(warning)
 
-        self.config.last_version = self.selected_version
+        version = self._launch_version or self.selected_version
+        profile_id = self._launch_profile_id or version
+        instance_id = self._launch_instance_id or version
+        key = self._launch_session_key or f"game-{self._session_seq}"
+        self.config.last_version = version
         self.config.save()
-        self._running_version = self.selected_version
-        self._running_profile_id = self._launch_profile_id
-        self.game_running = True
-        self.home_page.set_game_running(True)
+        log_file, log_path = self._open_game_log(key)
+        process = GameProcess(plan, self)
+        self.game_sessions[key] = GameSession(
+            key=key,
+            version=version,
+            profile_id=profile_id,
+            instance_id=instance_id,
+            process=process,
+            log_file=log_file,
+            log_path=log_path,
+        )
+        self._sync_game_state()
+        self.home_page.set_game_running(True, len(self.game_sessions))
         self.set_status("正在启动游戏…", "busy")
         self._update_action_button()
         self.log(
-            f"启动 {self.selected_version}"
-            f"{self._launch_mode_note(self._running_profile_id, self.selected_version)}"
+            f"启动 {version}"
+            f"{self._launch_mode_note(profile_id, instance_id)}"
             + f" · Java {plan.java.version or plan.java.major}"
             f" · 内存 {self.config.memory_mb} MB"
             + (f" · 联机 {self._launch_connect_address}" if self._launch_connect_address else "")
@@ -2868,13 +2966,13 @@ class MainWindow(QWidget):
         except Exception:
             pass
 
-        self._open_game_log()
-
-        process = GameProcess(plan, self)
-        self.game_process = process
-        process.started_ok.connect(self._game_started)
-        process.output.connect(self._game_output)
-        process.game_finished.connect(self._game_finished)
+        process.started_ok.connect(
+            lambda pid, k=key: self._game_started(k, pid)
+        )
+        process.output.connect(lambda line, k=key: self._game_output(k, line))
+        process.game_finished.connect(
+            lambda code, k=key: self._game_finished(k, code)
+        )
         process.start()
 
     def _on_launch_missing(self, missing) -> None:
@@ -2930,28 +3028,41 @@ class MainWindow(QWidget):
         if self.launch_active:
             self.cancel_launch()
             return
-        if not self.game_running or not self.game_process:
+        sessions = list(self.game_sessions.values())
+        if not sessions:
             self.toast("游戏没有在运行", "info")
             return
-        if self._launch_closing:
+        if any(item.closing for item in sessions):
             return
+        multiple = len(sessions) > 1
+        details = "\n".join(
+            f"· {item.version}"
+            + (f"（PID {item.pid}）" if item.pid else "（正在启动）")
+            for item in sessions
+        )
         dialog = ConfirmDialog(
             self,
-            "关闭游戏",
+            "关闭全部游戏" if multiple else "关闭游戏",
             "将请求游戏窗口正常关闭；如果游戏没有响应，会在等待后强制结束进程。",
-            primary_text="关闭游戏",
+            primary_text="全部关闭" if multiple else "关闭游戏",
             secondary_text="取消",
             icon_name="stop",
             icon_color=colors()["red"],
-            details=f"当前版本：{self._running_version or self.selected_version}",
+            details=f"正在运行 {len(sessions)} 个游戏：\n{details}",
         )
         if not dialog.exec():
             return
-        self._launch_closing = True
         self.home_page.set_game_closing()
-        self.set_status("正在关闭游戏…", "busy")
+        self.set_status(
+            f"正在关闭 {len(sessions)} 个游戏…" if multiple else "正在关闭游戏…",
+            "busy",
+        )
+        for session in sessions:
+            session.closing = True
+            if session.process is not None:
+                session.process.stop(graceful=True)
+        self._sync_game_state()
         self._update_action_button()
-        self.game_process.stop(graceful=True)
 
     def _handle_missing_files(
         self,
@@ -3018,81 +3129,110 @@ class MainWindow(QWidget):
                 self, "无法启动游戏", message, button_text="知道了", icon_name="warning"
             ).exec()
 
-    def _open_game_log(self) -> None:
+    def _open_game_log(self, key: str = ""):
+        """为本次游戏单独打开一份日志，返回（文件对象，路径）。"""
         try:
             LOG_DIR.mkdir(parents=True, exist_ok=True)
             stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-            path = LOG_DIR / f"game-{stamp}.log"
-            self._game_log_file = path.open("w", encoding="utf-8")
+            suffix = f"-{key}" if key else ""
+            path = LOG_DIR / f"game-{stamp}{suffix}.log"
+            handle = path.open("w", encoding="utf-8")
             self._current_game_log = str(path)
+            return handle, str(path)
         except Exception:
-            self._game_log_file = None
+            return None, ""
 
-    def _game_started(self, pid: int) -> None:
-        self._game_started_at = time.monotonic()
+    def _game_started(self, key: str, pid: int) -> None:
+        session = self.game_session(key)
+        if session is None:
+            return
+        session.pid = pid
+        session.started_at = time.monotonic()
         try:
-            mark_repair_launched(self.config.mods_path(self._running_version))
+            mark_repair_launched(self.config.mods_path(session.instance_id))
         except Exception:
             pass
         if hasattr(self, "mods_page"):
             self.mods_page.refresh_mods()
-        self.set_status(f"游戏运行中 · PID {pid}", "success")
-        self.toast("游戏已启动", "success")
+        self._sync_game_state()
+        self.set_status(
+            f"游戏运行中 · {session.version} · PID {pid}", "success"
+        )
+        self.toast(f"{session.version} 已启动", "success")
         self.game_state_changed.emit(True)
-        self.home_page.set_game_running(True)
+        self.home_page.set_game_running(True, len(self.game_sessions))
         self._update_action_button()
         self.loading_overlay.finish("世界已加载，去玩吧喵。", 700)
-        self.log(f"游戏进程已启动（PID {pid}）")
+        self.log(f"游戏进程已启动（{session.version} · PID {pid}）")
 
-    def _game_output(self, line: str) -> None:
-        self.log_panel.append(line)
-        if self._game_log_file:
+    def _game_output(self, key: str, line: str) -> None:
+        session = self.game_session(key)
+        prefix = f"[{session.version}] " if session and len(self.game_sessions) > 1 else ""
+        self.log_panel.append(prefix + line)
+        if session is not None and session.log_file is not None:
             try:
-                self._game_log_file.write(line + "\n")
-                self._game_log_file.flush()
+                session.log_file.write(line + "\n")
+                session.log_file.flush()
             except Exception:
                 pass
 
-    def _game_finished(self, code: int) -> None:
-        was_closing = self._launch_closing
+    def _game_finished(self, key: str, code: int) -> None:
+        session = self.game_sessions.pop(key, None)
+        if session is None:
+            return
+        was_closing = session.closing
         runtime = 0.0
-        if self._game_started_at > 0:
-            runtime = max(0.0, time.monotonic() - self._game_started_at)
+        if session.started_at > 0:
+            runtime = max(0.0, time.monotonic() - session.started_at)
             try:
                 mark_repair_finished(
-                    self.config.mods_path(self._running_version), code, runtime
+                    self.config.mods_path(session.instance_id), code, runtime
                 )
             except Exception:
                 pass
-        self._game_started_at = 0.0
         self._restore_safe_mode_mods()
-        self.game_running = False
-        self._launch_closing = False
-        self._running_version = ""
-        self.game_process = None
-        self.home_page.set_game_running(False)
-        self.game_state_changed.emit(False)
-        self._update_action_button()
-        if was_closing:
-            self.set_status("游戏已关闭", "success")
-            self.log("游戏已按请求关闭")
-            self.toast("游戏已关闭", "info")
-        else:
-            self.set_status(
-                f"游戏已退出（代码 {code}）" if code else "游戏已正常退出",
-                "success" if code == 0 else "error",
-            )
-            self.log(f"游戏进程结束，退出代码 {code}")
-            if code == 0:
-                self.toast("游戏已退出", "info")
-            else:
-                self.toast(f"游戏异常退出（代码 {code}），请查看日志", "error")
-                self.toggle_log_if_closed()
-        if self._game_log_file:
+        if session.log_file is not None:
             try:
-                self._game_log_file.close()
+                session.log_file.close()
             except Exception:
                 pass
-            self._game_log_file = None
+            session.log_file = None
+        self._sync_game_state()
+        if any(item.closing for item in self.game_sessions.values()):
+            self.home_page.set_game_closing()
+        else:
+            self.home_page.set_game_running(
+                self.game_running, len(self.game_sessions)
+            )
+        self.game_state_changed.emit(self.game_running)
+        self._update_action_button()
+        others = len(self.game_sessions)
+        if was_closing:
+            self.set_status(
+                f"{session.version} 已关闭"
+                + (f"，还有 {others} 个游戏在运行" if others else ""),
+                "success",
+            )
+            self.log(f"{session.version} 已按请求关闭")
+            self.toast(f"{session.version} 已关闭", "info")
+        else:
+            self.set_status(
+                f"{session.version} 已退出（代码 {code}）"
+                if code
+                else f"{session.version} 已正常退出",
+                "success" if code == 0 else "error",
+            )
+            self.log(
+                f"{session.version} 游戏进程结束，退出代码 {code}"
+                + (f"，仍有 {others} 个游戏在运行" if others else "")
+            )
+            if code == 0:
+                self.toast(f"{session.version} 已退出", "info")
+            else:
+                self.toast(
+                    f"{session.version} 异常退出（代码 {code}），请查看日志",
+                    "error",
+                )
+                self.toggle_log_if_closed()
         if hasattr(self, "mods_page"):
             self.mods_page.refresh_mods()
