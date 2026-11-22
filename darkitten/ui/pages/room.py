@@ -39,6 +39,7 @@ from ...sakura import (
     preferred_lan_port,
     remove_tunnel_config,
 )
+from ...mods import list_mods
 from ...room_sync import RoomManifest, RoomSyncError, decode_manifest
 from ...social import INVITE_PREFIX, SocialError, parse_invite
 from ...workers import (
@@ -49,7 +50,7 @@ from ...workers import (
 )
 from ...worlds import scan_worlds
 from .. import icons
-from ..dialogs import ConfirmDialog
+from ..dialogs import ConfirmDialog, NoticeDialog
 from ..easytier_panel import EasyTierPanel
 from ..mod_sync_dialog import ModSyncDialog
 from ..widgets import (
@@ -97,6 +98,7 @@ class RoomPage(QWidget):
         self._auto_create_pending = False
         self._auto_room_flow = False
         self._quick_world_id = ""
+        self._lan_warning_shown = False
         self._quick_session_key = ""
         self._lan_timer = QTimer(self)
         self._lan_timer.setInterval(2500)
@@ -245,27 +247,46 @@ class RoomPage(QWidget):
         self.quick_start_btn.setIcon(icons.icon("bolt", "#FFFFFF", 16))
         self.quick_start_btn.clicked.connect(self.quick_start)
         action_row.addWidget(self.quick_start_btn)
-
-        offline_row = QHBoxLayout()
-        offline_row.setSpacing(6)
-        offline_row.addWidget(badge("固定开启", "orange"))
-        offline_label = QLabel("局域网世界允许非正版玩家进入")
-        offline_label.setObjectName("Tiny")
-        offline_label.setToolTip(
-            "Minecraft 的局域网世界由游戏本身托管，启动器无法关闭离线玩家加入。"
-        )
-        offline_row.addWidget(offline_label)
         self.quick_server_btn = QPushButton("改用专用服务端")
         self.quick_server_btn.setObjectName("Ghost")
         self.quick_server_btn.setCursor(Qt.PointingHandCursor)
         self.quick_server_btn.setToolTip(
-            "专用服务端可以严格开启正版验证，在“服务器 → 公网联机”里关闭非正版进入。"
+            "专用服务端可以关闭正版验证，在“服务器 → 公网联机”里设置。"
         )
         self.quick_server_btn.clicked.connect(self._open_server_page)
-        offline_row.addWidget(self.quick_server_btn)
-        action_row.addLayout(offline_row)
+        action_row.addWidget(self.quick_server_btn)
         action_row.addStretch(1)
         layout.addLayout(action_row)
+
+        lan_row = QHBoxLayout()
+        lan_row.setSpacing(6)
+        lan_row.addWidget(badge("需要模组", "orange"))
+        lan_label = QLabel("官方局域网默认只允许正版玩家进入")
+        lan_label.setObjectName("Tiny")
+        lan_label.setWordWrap(True)
+        lan_label.setToolTip(
+            "Minecraft 官方的“对局域网开放”默认开启正版验证，"
+            "离线/非正版玩家会被拒绝。需要房主安装联机模组并关闭正版验证。"
+        )
+        lan_row.addWidget(lan_label, 1)
+        self.quick_mod_btn = QPushButton("安装联机模组")
+        self.quick_mod_btn.setObjectName("Soft")
+        self.quick_mod_btn.setCursor(Qt.PointingHandCursor)
+        self.quick_mod_btn.clicked.connect(lambda: self._install_lan_mod())
+        lan_row.addWidget(self.quick_mod_btn)
+        self.quick_mod_help_btn = QPushButton("安装步骤")
+        self.quick_mod_help_btn.setObjectName("Ghost")
+        self.quick_mod_help_btn.setCursor(Qt.PointingHandCursor)
+        self.quick_mod_help_btn.clicked.connect(self._show_lan_mod_help)
+        lan_row.addWidget(self.quick_mod_help_btn)
+        self.quick_mod_page_btn = QPushButton("模组页面")
+        self.quick_mod_page_btn.setObjectName("Ghost")
+        self.quick_mod_page_btn.setCursor(Qt.PointingHandCursor)
+        self.quick_mod_page_btn.clicked.connect(
+            lambda: self._open_url("https://modrinth.com/mod/mcwifipnp")
+        )
+        lan_row.addWidget(self.quick_mod_page_btn)
+        layout.addLayout(lan_row)
 
         self.quick_status = QLabel("选择版本与存档后，一键启动并建房。")
         self.quick_status.setObjectName("Tiny")
@@ -273,8 +294,10 @@ class RoomPage(QWidget):
         layout.addWidget(self.quick_status)
 
         hint = QLabel(
-            "局域网世界由 Minecraft 自己托管，启动器无法强制正版验证，所以这里不再放一个关不掉的开关。"
-            "需要严格正版验证时，点“改用专用服务端”，在“服务器 → 公网联机”里关闭非正版进入。"
+            "官方“对局域网开放”默认开启正版验证，只允许正版账户加入。"
+            "如果朋友使用离线/非正版客户端，房主需要先安装 LAN World Plug-n-Play"
+            "（mcwifipnp）等自定义局域网模组，并在开放局域网时把“正版验证”设为关闭；"
+            "也可以点“改用专用服务端”，在服务端的公网联机页关闭正版验证。"
         )
         hint.setObjectName("Tiny")
         hint.setWordWrap(True)
@@ -991,6 +1014,104 @@ class RoomPage(QWidget):
         self.quick_save_combo.blockSignals(False)
         self._sync_controls()
 
+    LAN_AUTH_MOD_KEYS = (
+        "mcwifipnp",
+        "customlan",
+        "custom-lan",
+        "offlinelan",
+        "easylan",
+        "lanserverproperties",
+        "lan-server-properties",
+    )
+
+    def _lan_auth_mod_installed(self, version_id: str) -> bool:
+        if not version_id:
+            return False
+        try:
+            mods = list_mods(Path(self.main.config.mods_path(version_id)))
+        except Exception:
+            return False
+        for mod in mods:
+            name = mod.filename.lower().replace("_", "-")
+            if any(key in name for key in self.LAN_AUTH_MOD_KEYS):
+                return True
+        return False
+
+    def ensure_lan_auth_mod(self, version_id: str) -> bool:
+        """提醒房主安装能关闭正版验证的联机模组。
+
+        返回 False 表示用户选择先去安装，调用方应停止本次启动。
+        """
+        if self._lan_warning_shown or self._lan_auth_mod_installed(version_id):
+            return True
+        dialog = ConfirmDialog(
+            self,
+            "官方局域网默认只允许正版玩家",
+            "Minecraft 官方的“对局域网开放”默认开启正版验证，"
+            "离线/非正版朋友会被拒绝进入。",
+            primary_text="安装联机模组",
+            secondary_text="仍然继续",
+            icon_name="users",
+            icon_color=colors()["orange"],
+            details=(
+                "推荐安装 LAN World Plug-n-Play（mcwifipnp）："
+                "开放局域网时把“正版验证”设为关闭，就能让离线玩家加入。\n"
+                "也可以点“改用专用服务端”，在服务端的公网联机页关闭正版验证。"
+            ),
+        )
+        self._lan_warning_shown = True
+        if dialog.exec():
+            self._install_lan_mod(version_id)
+            return False
+        return True
+
+    def _install_lan_mod(self, version_id: str | None = None) -> None:
+        from ..mod_dialog import ModBrowserDialog
+
+        version_id = str(version_id or self.quick_version_combo.currentData() or "")
+        if version_id and version_id != self.main.selected_version:
+            self.main.home_page.select_version(version_id)
+        hit = {
+            "project_id": "mcwifipnp",
+            "slug": "mcwifipnp",
+            "title": "LAN World Plug-n-Play (mcwifipnp)",
+            "source": "modrinth",
+            "source_label": "Modrinth",
+            "content_type": "mod",
+            "description": (
+                "在“对局域网开放”界面里开关正版验证、端口、"
+                "最大玩家数和 PVP，支持 Fabric / Forge / NeoForge。"
+            ),
+            "project_url": "https://modrinth.com/mod/mcwifipnp",
+            "categories": [],
+            "downloads": 0,
+            "icon_url": "",
+        }
+        ModBrowserDialog(self.main, hit).exec()
+        refresh = getattr(self.main, "_refresh_download_chip", None)
+        if callable(refresh):
+            refresh()
+
+    def _show_lan_mod_help(self) -> None:
+        NoticeDialog(
+            self,
+            "非正版玩家怎么进局域网",
+            "Minecraft 官方的“对局域网开放”默认开启正版验证，"
+            "只允许正版账户加入。\n\n"
+            "1. 点“安装联机模组”，在打开的页面里选择当前游戏版本，"
+            "下载并安装 LAN World Plug-n-Play（mcwifipnp）。\n"
+            "2. 启动游戏进入存档，按 Esc → 对局域网开放。\n"
+            "3. 在开放局域网的界面里，把“正版验证（Online Mode）”"
+            "设为“禁用”，再点“开放局域网”。\n"
+            "4. 回到启动器，点“检测游戏端口”，或等待一键联机自动建房。\n\n"
+            "也可以安装 OfflineLAN（仅 Fabric）或 Custom LAN（Fabric/Quilt，"
+            "部分版本）。如果不想装模组，可以点“改用专用服务端”，"
+            "在服务端的“公网联机”页关闭正版验证。\n\n"
+            "注意：关闭正版验证后，任何知道地址的人都能尝试加入，"
+            "请只把房间号发给认识的朋友。",
+            icon_name="users",
+        ).exec()
+
     def quick_start(self) -> None:
         if self.main.launch_active:
             self.toast("游戏正在启动，请稍候", "info")
@@ -1010,6 +1131,8 @@ class RoomPage(QWidget):
                 "一键联机需要樱花穿透访问密钥，请先在下方“开房间”里填写。",
                 "error",
             )
+            return
+        if not self.ensure_lan_auth_mod(version_id):
             return
 
         existing = self.main.find_game_session(version_id)
@@ -1938,6 +2061,10 @@ class RoomPage(QWidget):
             self.quick_version_combo.setEnabled(idle)
             self.quick_save_combo.setEnabled(idle)
             self.quick_refresh_btn.setEnabled(idle)
+            if hasattr(self, "quick_mod_btn"):
+                self.quick_mod_btn.setEnabled(not self._busy)
+                self.quick_mod_help_btn.setEnabled(not self._busy)
+                self.quick_mod_page_btn.setEnabled(not self._busy)
 
     def toast(self, text: str, kind: str = "info") -> None:
         self.main.toast(text, kind)

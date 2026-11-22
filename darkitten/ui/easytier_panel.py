@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 import threading
+from pathlib import Path
 
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtWidgets import (
@@ -28,6 +29,7 @@ from ..easytier import (
 )
 from ..sakura import detect_game_lan_ports, preferred_lan_port
 from ..workers import EasyTierHostWorker, EasyTierJoinWorker
+from ..worlds import scan_worlds
 from . import icons
 from .widgets import Card, badge, colors, hline, icon_button, repolish, Switch
 
@@ -57,6 +59,12 @@ class EasyTierPanel(QWidget):
         self._guest_status_kind = "muted"
         self._pending_version = ""
         self._closing = False
+        self._host_session_key = ""
+        self._auto_host_flow = False
+        self._host_world_id = ""
+        self._lan_timer = QTimer(self)
+        self._lan_timer.setInterval(2000)
+        self._lan_timer.timeout.connect(self._poll_host_lan)
         self._build()
         self._sync_versions()
         self.main.versions_changed.connect(self._sync_versions)
@@ -110,6 +118,65 @@ class EasyTierPanel(QWidget):
         sub.setObjectName("Tiny")
         sub.setWordWrap(True)
         layout.addWidget(sub)
+
+        quick_caption = QLabel("一键联机 · 选择存档自动建房")
+        quick_caption.setStyleSheet("font-weight: 600;")
+        layout.addWidget(quick_caption)
+
+        quick_pick = QHBoxLayout()
+        quick_pick.setSpacing(8)
+        self.host_version_combo = QComboBox()
+        self.host_version_combo.setMinimumWidth(150)
+        self.host_version_combo.setToolTip("要启动并开房的游戏版本")
+        self.host_version_combo.currentIndexChanged.connect(
+            self._sync_host_saves
+        )
+        quick_pick.addWidget(self.host_version_combo, 2)
+        self.host_save_combo = QComboBox()
+        self.host_save_combo.setMinimumWidth(170)
+        self.host_save_combo.setToolTip("启动后直接进入的单人存档")
+        quick_pick.addWidget(self.host_save_combo, 3)
+        layout.addLayout(quick_pick)
+
+        self.host_quick_btn = QPushButton("启动存档并创建房间")
+        self.host_quick_btn.setObjectName("Primary")
+        self.host_quick_btn.setCursor(Qt.PointingHandCursor)
+        self.host_quick_btn.setIcon(icons.icon("play", "#FFFFFF", 16))
+        self.host_quick_btn.clicked.connect(self.host_quick_start)
+        layout.addWidget(self.host_quick_btn)
+
+        quick_hint = QLabel(
+            "启动器会直接进入所选存档；进游戏后按 Esc → 对局域网开放，"
+            "检测到端口就自动创建 P2P 房间。"
+        )
+        quick_hint.setObjectName("Tiny")
+        quick_hint.setWordWrap(True)
+        layout.addWidget(quick_hint)
+
+        lan_warn = QLabel(
+            "注意：官方“对局域网开放”默认开启正版验证，离线/非正版朋友会被拒绝。"
+            "房主需要先安装联机模组，并在开放局域网时把“正版验证”设为关闭。"
+        )
+        lan_warn.setObjectName("Tiny")
+        lan_warn.setWordWrap(True)
+        layout.addWidget(lan_warn)
+
+        lan_row = QHBoxLayout()
+        lan_row.setSpacing(6)
+        lan_row.addWidget(badge("需要模组", "orange"))
+        self.lan_mod_btn = QPushButton("安装联机模组")
+        self.lan_mod_btn.setObjectName("Soft")
+        self.lan_mod_btn.setCursor(Qt.PointingHandCursor)
+        self.lan_mod_btn.clicked.connect(self.install_lan_mod)
+        lan_row.addWidget(self.lan_mod_btn)
+        self.lan_help_btn = QPushButton("安装步骤")
+        self.lan_help_btn.setObjectName("Ghost")
+        self.lan_help_btn.setCursor(Qt.PointingHandCursor)
+        self.lan_help_btn.clicked.connect(self.show_lan_mod_help)
+        lan_row.addWidget(self.lan_help_btn)
+        lan_row.addStretch(1)
+        layout.addLayout(lan_row)
+        layout.addWidget(hline())
 
         port_row = QHBoxLayout()
         port_row.setSpacing(8)
@@ -365,9 +432,9 @@ class EasyTierPanel(QWidget):
         steps = QHBoxLayout()
         steps.setSpacing(10)
         step_data = [
-            ("1", "房主开放世界", "进入单人游戏，按 Esc → 对局域网开放，记下端口。"),
-            ("2", "创建 P2P 房间", "填写端口并创建，把生成的 U/ 房间号发给朋友。"),
-            ("3", "朋友输入房间号", "选择相同版本后加入，启动器会自动组网并进入游戏。"),
+            ("1", "选择存档启动", "选择版本和存档，一键启动并直接进入世界。"),
+            ("2", "对局域网开放", "游戏里按 Esc → 对局域网开放，启动器自动检测端口。"),
+            ("3", "自动创建房间", "检测到端口后自动建房，把房间号发给朋友即可。"),
         ]
         for number, step_title, step_desc in step_data:
             box = QFrame()
@@ -471,6 +538,74 @@ class EasyTierPanel(QWidget):
         else:
             self.version_combo.addItem("未安装游戏版本", "")
         self.version_combo.blockSignals(False)
+        self._sync_host_versions()
+        self._sync_controls()
+
+    def _sync_host_versions(self) -> None:
+        if not hasattr(self, "host_version_combo"):
+            return
+        versions = list(self.main.game_version_summaries())
+        current = (
+            self.host_version_combo.currentData()
+            if self.host_version_combo.count()
+            else ""
+        )
+        preferred = str(current or self.main.selected_version or "")
+        self.host_version_combo.blockSignals(True)
+        self.host_version_combo.clear()
+        for summary in versions:
+            kind = summary.loader or summary.type_name or ""
+            display = self.main.config.version_name(summary.id) or summary.id
+            label = f"{display} · {kind}" if kind else display
+            self.host_version_combo.addItem(label, summary.id)
+            if display != summary.id:
+                index = self.host_version_combo.count() - 1
+                self.host_version_combo.setItemData(
+                    index, f"内部版本：{summary.id}", Qt.ToolTipRole
+                )
+        if versions:
+            index = self.host_version_combo.findData(preferred)
+            if index < 0:
+                index = 0
+            self.host_version_combo.setCurrentIndex(index)
+        else:
+            self.host_version_combo.addItem("未安装游戏版本", "")
+        self.host_version_combo.blockSignals(False)
+        self._sync_host_saves()
+
+    def _sync_host_saves(self) -> None:
+        if not hasattr(self, "host_save_combo"):
+            return
+        version_id = str(self.host_version_combo.currentData() or "")
+        current = self._host_world_id or self.host_save_combo.currentData()
+        worlds = []
+        if version_id:
+            try:
+                worlds = scan_worlds(
+                    Path(self.main.config.version_game_path(version_id))
+                )
+            except OSError:
+                worlds = []
+        self.host_save_combo.blockSignals(True)
+        self.host_save_combo.clear()
+        if not worlds:
+            self.host_save_combo.addItem(
+                "这个版本还没有存档" if version_id else "请先安装游戏版本", ""
+            )
+            self._host_world_id = ""
+        else:
+            for world in worlds:
+                label = (
+                    f"{world.name} · {world.mode_text} · "
+                    f"{world.last_played_text}"
+                )
+                self.host_save_combo.addItem(label, world.folder.name)
+            index = self.host_save_combo.findData(current)
+            self.host_save_combo.setCurrentIndex(index if index >= 0 else 0)
+            self._host_world_id = str(
+                self.host_save_combo.currentData() or ""
+            )
+        self.host_save_combo.blockSignals(False)
         self._sync_controls()
 
     def _sync_selection(self, version_id: str) -> None:
@@ -485,10 +620,160 @@ class EasyTierPanel(QWidget):
     # ------------------------------------------------------------------
     # 房主流程
 
+    def _lan_auth_check(self, version_id: str) -> bool:
+        """官方局域网默认只允许正版，启动前提醒安装联机模组。"""
+        room_page = getattr(self.main, "room_page", None)
+        check = getattr(room_page, "ensure_lan_auth_mod", None)
+        if callable(check):
+            return bool(check(version_id))
+        return True
+
+    def install_lan_mod(self) -> None:
+        version_id = str(self.host_version_combo.currentData() or "")
+        room_page = getattr(self.main, "room_page", None)
+        install = getattr(room_page, "_install_lan_mod", None)
+        if callable(install):
+            install(version_id)
+            return
+        self.toast("请在“联机”页打开模组下载后选择 mcwifipnp。", "info")
+
+    def show_lan_mod_help(self) -> None:
+        room_page = getattr(self.main, "room_page", None)
+        help_fn = getattr(room_page, "_show_lan_mod_help", None)
+        if callable(help_fn):
+            help_fn()
+            return
+        self.toast(
+            "安装 LAN World Plug-n-Play 后，开放局域网时关闭“正版验证”。",
+            "info",
+        )
+
+    def host_quick_start(self) -> None:
+        if self._busy:
+            return
+        if self._host_session is not None or self._host_worker is not None:
+            self.toast("P2P 房间已经开启，请先关闭当前房间。", "info")
+            return
+        if self._auto_host_flow:
+            self.toast("正在等待游戏局域网端口，请稍候。", "info")
+            return
+        if self.main.launch_active:
+            self.toast("游戏正在启动，请稍候。", "info")
+            return
+        if self.main.install_active:
+            self.toast("正在安装游戏文件，请稍候。", "info")
+            return
+        version_id = str(self.host_version_combo.currentData() or "")
+        world_id = str(self.host_save_combo.currentData() or "")
+        if not version_id or not world_id:
+            self._set_status(
+                self.host_status, "请先选择游戏版本和存档。", "error"
+            )
+            return
+        if not self._lan_auth_check(version_id):
+            return
+
+        existing = self.main.find_game_session(version_id)
+        if existing is not None:
+            # 这个版本已经在运行，直接等它在游戏里开放局域网。
+            self._host_session_key = existing.key
+            self._host_world_id = world_id
+            self._auto_host_flow = True
+            self._set_badge(self.host_badge, "等待端口", "blue")
+            self._set_status(
+                self.host_status,
+                "这个版本已经在运行。请在游戏里按 Esc → 对局域网开放，"
+                "启动器检测到端口后会自动创建 P2P 房间。",
+                "busy",
+            )
+            self._lan_timer.start()
+            self._sync_controls()
+            return
+
+        self._host_world_id = world_id
+        self._auto_host_flow = True
+        self._set_badge(self.host_badge, "启动中", "blue")
+        self._set_status(
+            self.host_status,
+            f"正在启动 {version_id} 并进入存档…",
+            "busy",
+        )
+        if version_id != self.main.selected_version:
+            self.main.home_page.select_version(version_id)
+        self._host_session_key = self.main.launch_selected(
+            quick_world=world_id
+        )
+        if not self._host_session_key:
+            self._auto_host_flow = False
+            self._set_badge(self.host_badge, "未开启", "gray")
+            self._set_status(
+                self.host_status,
+                "启动没有完成，请查看启动器提示。",
+                "error",
+            )
+            self._sync_controls()
+            return
+        self._lan_timer.start()
+        self._sync_controls()
+
+    def _poll_host_lan(self) -> None:
+        if self._closing:
+            self._lan_timer.stop()
+            return
+        if self._host_session is not None or self._host_worker is not None:
+            self._lan_timer.stop()
+            return
+        key = self._host_session_key
+        if key:
+            process = self.main.session_process(key)
+            if process is None:
+                if not self.main.launch_active:
+                    # 自己启动的游戏已经退出，停止等待。
+                    self._host_session_key = ""
+                    self._lan_timer.stop()
+                    if self._auto_host_flow:
+                        self._auto_host_flow = False
+                        self._set_badge(self.host_badge, "未开启", "gray")
+                        self._set_status(
+                            self.host_status,
+                            "启动的游戏已经退出，一键联机已停止。",
+                            "muted",
+                        )
+                        self._sync_controls()
+                return
+        else:
+            if not self.main.game_running:
+                return
+            version_id = str(self.host_version_combo.currentData() or "")
+            session = (
+                self.main.find_game_session(version_id)
+                if version_id
+                else None
+            )
+            process = session.process if session else self.main.game_process
+        pid = int(getattr(process, "pid", 0) or 0) if process else 0
+        if not pid:
+            return
+        ports = detect_game_lan_ports(pid)
+        if not ports:
+            return
+        port = preferred_lan_port(ports)
+        self.port_spin.setValue(port)
+        self._lan_timer.stop()
+        self._set_badge(self.host_badge, "建房中", "blue")
+        self._set_status(
+            self.host_status,
+            f"已检测到局域网端口 {port}，正在创建 P2P 房间…",
+            "busy",
+        )
+        self.create_room(auto=True)
+
     def detect_port(self) -> None:
         process = None
-        version_id = str(self.version_combo.currentData() or "")
-        if version_id:
+        if self._host_session_key:
+            process = self.main.session_process(self._host_session_key)
+        version_id = str(self.host_version_combo.currentData() or "")
+        if process is None and version_id:
             session = self.main.find_game_session(version_id)
             process = session.process if session else None
         process = process or self.main.game_process
@@ -516,12 +801,25 @@ class EasyTierPanel(QWidget):
             text += f"（其他监听端口：{', '.join(others[:4])}）"
         self._set_status(self.host_status, text, "success")
 
-    def create_room(self) -> None:
+    def create_room(self, checked: bool = False, auto: bool = False) -> None:
         if self._busy:
             return
         if self._host_session is not None:
             self.toast("P2P 房间已经开启，请先关闭当前房间。", "info")
             return
+        if not auto:
+            # 手动点“创建房间”时不再继续自动等待端口。
+            self._lan_timer.stop()
+            self._auto_host_flow = False
+            if not self._host_session_key:
+                version_id = str(self.host_version_combo.currentData() or "")
+                session = (
+                    self.main.find_game_session(version_id)
+                    if version_id
+                    else None
+                )
+                if session is not None:
+                    self._host_session_key = session.key
         port = int(self.port_spin.value())
         config = self.main.config
         config.easytier_last_port = port
@@ -603,7 +901,9 @@ class EasyTierPanel(QWidget):
             return
         self._host_worker = None
         self._busy = False
+        self._auto_host_flow = False
         if error or session is None:
+            self._host_session_key = ""
             self.progress.setVisible(False)
             self._set_badge(self.host_badge, "未开启", "gray")
             self._set_status(
@@ -639,6 +939,8 @@ class EasyTierPanel(QWidget):
             return
         self._host_worker = None
         self._busy = False
+        self._auto_host_flow = False
+        self._host_session_key = ""
         self.progress.setVisible(False)
         self._set_badge(self.host_badge, "未开启", "gray")
         self._set_status(self.host_status, error or "创建 P2P 房间失败。", "error")
@@ -650,6 +952,8 @@ class EasyTierPanel(QWidget):
             return
         self._host_worker = None
         self._busy = False
+        self._auto_host_flow = False
+        self._host_session_key = ""
         self.progress.setVisible(False)
         self._set_badge(self.host_badge, "未开启", "gray")
         self._set_status(self.host_status, "已取消创建房间。", "muted")
@@ -659,6 +963,15 @@ class EasyTierPanel(QWidget):
         session = self._host_session
         if session is None:
             self._host_timer.stop()
+            return
+        key = self._host_session_key
+        if (
+            key
+            and self.main.session_process(key) is None
+            and not self.main.launch_active
+        ):
+            self._append_log("游戏已退出，正在关闭 P2P 房间。")
+            self.close_room(message="游戏已退出，P2P 房间已关闭。")
             return
         if session.lost:
             self._host_timer.stop()
@@ -702,6 +1015,9 @@ class EasyTierPanel(QWidget):
         self._host_log_worker = None
         self._dispose_session(session)
         self._host_timer.stop()
+        self._lan_timer.stop()
+        self._auto_host_flow = False
+        self._host_session_key = ""
         self._busy = False
         self.progress.setVisible(False)
         self.result_box.setVisible(False)
@@ -1002,6 +1318,30 @@ class EasyTierPanel(QWidget):
         self.detect_btn.setEnabled(
             not room_active and not self._busy and self.main.game_running
         )
+        if hasattr(self, "host_quick_btn"):
+            auto_host = self._auto_host_flow
+            quick_ready = bool(
+                self.host_version_combo.currentData()
+                and self.host_save_combo.currentData()
+            )
+            self.host_quick_btn.setEnabled(
+                quick_ready
+                and not self._busy
+                and not room_active
+                and not auto_host
+                and not self.main.launch_active
+            )
+            self.host_quick_btn.setText(
+                "正在等待游戏端口…" if auto_host else "启动存档并创建房间"
+            )
+            pick_enabled = (
+                not room_active and not self._busy and not auto_host
+            )
+            self.host_version_combo.setEnabled(pick_enabled)
+            self.host_save_combo.setEnabled(pick_enabled)
+        if hasattr(self, "lan_mod_btn"):
+            self.lan_mod_btn.setEnabled(not self._busy)
+            self.lan_help_btn.setEnabled(not self._busy)
         has_version = bool(self.version_combo.currentData())
         self.join_btn.setEnabled(has_version and not self._busy and not guest_active)
         self.join_btn.setText(
@@ -1013,6 +1353,7 @@ class EasyTierPanel(QWidget):
 
     def on_show(self) -> None:
         self._sync_versions()
+        self._sync_host_saves()
 
     def toast(self, text: str, kind: str = "info") -> None:
         self.main.toast(text, kind)
@@ -1021,6 +1362,9 @@ class EasyTierPanel(QWidget):
         self._closing = True
         self._host_timer.stop()
         self._guest_timer.stop()
+        self._lan_timer.stop()
+        self._auto_host_flow = False
+        self._host_session_key = ""
         host_worker = self._host_worker
         if host_worker is not None:
             host_worker.cancel()
