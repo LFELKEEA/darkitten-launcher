@@ -32,6 +32,10 @@ EXCLUDED_NAMES = {
     "social.json",
     "assistant.json",
     "frpc.exe",
+    # 本机运行时数据：OC 的 API Key、记忆与审判战进度不能进发布包。
+    "judgement.json",
+    "oc_ai.json",
+    "oc_memory.json",
 }
 EXCLUDED_PARTS = {
     "__pycache__",

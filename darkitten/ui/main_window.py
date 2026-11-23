@@ -14,6 +14,7 @@ from shiboken6 import isValid
 from PySide6.QtCore import QEvent, QPoint, QSize, Qt, QTimer, QUrl, Signal
 from PySide6.QtGui import (
     QCloseEvent,
+    QCursor,
     QDesktopServices,
     QKeySequence,
     QMouseEvent,
@@ -2110,6 +2111,76 @@ class MainWindow(QWidget):
         from .mod_agent_dialog import ModAgentDialog
 
         ModAgentDialog(self).exec()
+
+    # ------------------------------------------------------------------
+    # OC：右键菜单、审判战与对话
+
+    def open_oc_menu(self, global_pos=None) -> None:
+        from .. import judgement
+
+        state = judgement.load_state()
+        reward = judgement.active_persona(state)
+        menu = QMenu(self)
+        title = menu.addAction("LFELKEEA")
+        title.setEnabled(False)
+        if reward:
+            status = menu.addAction(judgement.REWARDS[reward]["name"])
+            status.setEnabled(False)
+        menu.addSeparator()
+        battle = menu.addAction("进入审判战")
+        battle.triggered.connect(self.open_judgement_dialog)
+        chat = menu.addAction("和她说话")
+        chat.setEnabled(judgement.has_any(state))
+        chat.triggered.connect(self.open_oc_chat)
+        if not judgement.has_any(state):
+            chat.setToolTip("先在困难模式的审判战里带回一件信物")
+        menu.addSeparator()
+        config = menu.addAction("AI 接口设置")
+        config.triggered.connect(self.open_oc_config)
+        menu.exec(global_pos if global_pos is not None else QCursor.pos())
+
+    def open_judgement_dialog(self) -> None:
+        from .oc_dialog import JudgementDialog
+
+        dialog = getattr(self, "_judgement_dialog", None)
+        if dialog is not None:
+            try:
+                if dialog.isVisible():
+                    dialog.raise_()
+                    dialog.activateWindow()
+                    return
+            except RuntimeError:
+                pass
+        dialog = JudgementDialog(self, self)
+        dialog.setAttribute(Qt.WA_DeleteOnClose, False)
+        self._judgement_dialog = dialog
+        dialog.show()
+        dialog.raise_()
+
+    def open_oc_chat(self) -> None:
+        from .. import judgement
+        from .oc_dialog import OCChatDialog
+
+        state = judgement.load_state()
+        if not judgement.has_any(state):
+            notice = NoticeDialog(
+                self,
+                "她还没有醒来",
+                "在困难模式的审判战里通关屠杀线或饶恕线，带回一件信物之后，"
+                "她才会在启动器里和你说话。",
+                "去审判战",
+                "heart",
+                secondary_text="以后再说",
+            )
+            if notice.exec() and notice.action_clicked:
+                self.open_judgement_dialog()
+            return
+        OCChatDialog(self, self).exec()
+
+    def open_oc_config(self) -> None:
+        from .oc_dialog import OCConfigDialog
+
+        OCConfigDialog(self).exec()
 
     # ------------------------------------------------------------------
     # 快捷命令 / 开发者反馈提醒

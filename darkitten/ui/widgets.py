@@ -19,6 +19,7 @@ from PySide6.QtCore import (
 )
 from PySide6.QtGui import (
     QColor,
+    QCursor,
     QFont,
     QFontMetrics,
     QPainter,
@@ -503,8 +504,31 @@ class GrassLogo(QWidget):
         p.end()
 
 
+OC_MENU_HOLD_SECONDS = 0.55
+
+
+def _open_oc_menu(widget: QWidget) -> None:
+    window = widget.window()
+    opener = getattr(window, "open_oc_menu", None)
+    if callable(opener):
+        try:
+            opener(QCursor.pos())
+        except RuntimeError:
+            pass
+
+
+def _open_oc_chat(widget: QWidget) -> None:
+    window = widget.window()
+    opener = getattr(window, "open_oc_chat", None)
+    if callable(opener):
+        try:
+            opener()
+        except RuntimeError:
+            pass
+
+
 class ChibiCompanion(QWidget):
-    """页头里的 Q 版 OC 头像：悬停发光，点击弹跳、掉爱心并说台词。"""
+    """页头里的 Q 版 OC 头像：左键戳一戳，右键对话，右键长按打开菜单。"""
 
     clicked = Signal(str)
 
@@ -588,10 +612,17 @@ class ChibiCompanion(QWidget):
         self._context = context
         self.setFixedSize(size, size)
         self.setCursor(Qt.PointingHandCursor)
-        self.setToolTip("戳一下恶魔猫猫")
+        self.setToolTip("左键戳一戳 · 右键对话 · 右键长按菜单")
         self._pixmap = icons.chibi_face_pixmap(size * 3)
         self._hover = False
         self._press = False
+        self._hold = 0.0
+        self._hold_started = 0.0
+        self._hold_active = False
+        self._hold_fired = False
+        self._hold_timer = QTimer(self)
+        self._hold_timer.setInterval(16)
+        self._hold_timer.timeout.connect(self._hold_tick)
         self._click_at = -10.0
         self._phrase = ""
         self._particles: list[dict[str, float | str]] = []
@@ -611,16 +642,22 @@ class ChibiCompanion(QWidget):
 
     def leaveEvent(self, event) -> None:
         self._hover = False
+        self._cancel_hold()
         self.update()
         super().leaveEvent(event)
 
     def hideEvent(self, event) -> None:
+        self._cancel_hold()
         self._hide_bubble()
         super().hideEvent(event)
 
     def mousePressEvent(self, event) -> None:
         if event.button() == Qt.LeftButton:
             self._press = True
+            event.accept()
+            return
+        if event.button() == Qt.RightButton:
+            self._begin_hold()
             event.accept()
             return
         super().mousePressEvent(event)
@@ -632,7 +669,50 @@ class ChibiCompanion(QWidget):
                 self._poke()
                 event.accept()
                 return
+        if event.button() == Qt.RightButton:
+            was_active = self._hold_active
+            fired = self._hold_fired
+            self._cancel_hold()
+            if was_active and not fired:
+                _open_oc_chat(self)
+            event.accept()
+            return
         super().mouseReleaseEvent(event)
+
+    def contextMenuEvent(self, event) -> None:
+        event.accept()
+
+    def _begin_hold(self) -> None:
+        self._hold_active = True
+        self._hold_fired = False
+        self._hold_started = time.monotonic()
+        self._hold = 0.0
+        self._hold_timer.start()
+        self.update()
+
+    def _cancel_hold(self) -> None:
+        if not self._hold_active and self._hold <= 0.0:
+            return
+        self._hold_active = False
+        self._hold_fired = False
+        self._hold = 0.0
+        self._hold_timer.stop()
+        self.update()
+
+    def _hold_tick(self) -> None:
+        if not self._hold_active:
+            self._hold_timer.stop()
+            return
+        elapsed = time.monotonic() - self._hold_started
+        self._hold = min(1.0, elapsed / OC_MENU_HOLD_SECONDS)
+        self.update()
+        if self._hold >= 1.0 and not self._hold_fired:
+            self._hold_fired = True
+            self._hold_active = False
+            self._hold_timer.stop()
+            self._hold = 0.0
+            self.update()
+            _open_oc_menu(self)
 
     def _poke(self) -> None:
         now = time.monotonic()
@@ -793,6 +873,23 @@ class ChibiCompanion(QWidget):
         )
         p.restore()
 
+        if self._hold > 0.0:
+            ring_radius = radius * 1.16
+            p.setBrush(Qt.NoBrush)
+            p.setPen(QPen(QColor(226, 58, 94, 70), 4.0))
+            p.drawEllipse(QPointF(cx, cy), ring_radius, ring_radius)
+            p.setPen(QPen(QColor(226, 58, 94, 235), 3.0))
+            p.drawArc(
+                QRectF(
+                    cx - ring_radius,
+                    cy - ring_radius,
+                    ring_radius * 2,
+                    ring_radius * 2,
+                ),
+                90 * 16,
+                int(-360 * 16 * self._hold),
+            )
+
         for particle in self._particles:
             life = float(particle["life"])
             span = float(particle["max"])
@@ -863,10 +960,17 @@ class HeroArt(QWidget):
         self.setMinimumWidth(300)
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self.setCursor(Qt.PointingHandCursor)
-        self.setToolTip("戳一下恶魔猫猫")
+        self.setToolTip("左键戳一戳 · 右键对话 · 右键长按菜单")
         self._pixmap = icons.chibi_pixmap(640)
         self._press = False
         self._hover = False
+        self._hold = 0.0
+        self._hold_started = 0.0
+        self._hold_active = False
+        self._hold_fired = False
+        self._hold_timer = QTimer(self)
+        self._hold_timer.setInterval(16)
+        self._hold_timer.timeout.connect(self._hold_tick)
         self._click_at = -10.0
         self._phrase = ""
         self._particles: list[dict[str, float | str]] = []
@@ -896,6 +1000,7 @@ class HeroArt(QWidget):
 
     def leaveEvent(self, event) -> None:
         self._hover = False
+        self._cancel_hold()
         self.update()
         super().leaveEvent(event)
 
@@ -904,6 +1009,10 @@ class HeroArt(QWidget):
             event.position()
         ):
             self._press = True
+            event.accept()
+            return
+        if event.button() == Qt.RightButton and self._hit(event.position()):
+            self._begin_hold()
             event.accept()
             return
         super().mousePressEvent(event)
@@ -915,7 +1024,50 @@ class HeroArt(QWidget):
                 self._poke()
                 event.accept()
                 return
+        if event.button() == Qt.RightButton:
+            was_active = self._hold_active
+            fired = self._hold_fired
+            self._cancel_hold()
+            if was_active and not fired:
+                _open_oc_chat(self)
+            event.accept()
+            return
         super().mouseReleaseEvent(event)
+
+    def contextMenuEvent(self, event) -> None:
+        event.accept()
+
+    def _begin_hold(self) -> None:
+        self._hold_active = True
+        self._hold_fired = False
+        self._hold_started = time.monotonic()
+        self._hold = 0.0
+        self._hold_timer.start()
+        self.update()
+
+    def _cancel_hold(self) -> None:
+        if not self._hold_active and self._hold <= 0.0:
+            return
+        self._hold_active = False
+        self._hold_fired = False
+        self._hold = 0.0
+        self._hold_timer.stop()
+        self.update()
+
+    def _hold_tick(self) -> None:
+        if not self._hold_active:
+            self._hold_timer.stop()
+            return
+        elapsed = time.monotonic() - self._hold_started
+        self._hold = min(1.0, elapsed / OC_MENU_HOLD_SECONDS)
+        self.update()
+        if self._hold >= 1.0 and not self._hold_fired:
+            self._hold_fired = True
+            self._hold_active = False
+            self._hold_timer.stop()
+            self._hold = 0.0
+            self.update()
+            _open_oc_menu(self)
 
     def _poke(self) -> None:
         now = time.monotonic()
@@ -1127,6 +1279,23 @@ class HeroArt(QWidget):
             )
         )
         p.restore()
+
+        if self._hold > 0.0:
+            ring_radius = radius * 1.18
+            p.setBrush(Qt.NoBrush)
+            p.setPen(QPen(QColor(226, 58, 94, 75), 5.0))
+            p.drawEllipse(QPointF(cx, cy), ring_radius, ring_radius)
+            p.setPen(QPen(QColor(226, 58, 94, 235), 3.4))
+            p.drawArc(
+                QRectF(
+                    cx - ring_radius,
+                    cy - ring_radius,
+                    ring_radius * 2,
+                    ring_radius * 2,
+                ),
+                90 * 16,
+                int(-360 * 16 * self._hold),
+            )
 
         # 粒子
         for particle in self._particles:
