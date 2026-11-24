@@ -64,6 +64,8 @@ class ServerAddonDialog(StyledDialog):
         self.main = main
         self.server = server
         self._initial = dict(initial or {})
+        initial_source = str(self._initial.get("source") or "").strip().lower()
+        self._source = "curseforge" if initial_source == "curseforge" else "modrinth"
         self._search_worker: ServerAddonSearchWorker | None = None
         self._project_worker: ModProjectWorker | None = None
         self._versions_worker: ServerAddonVersionsWorker | None = None
@@ -148,6 +150,12 @@ class ServerAddonDialog(StyledDialog):
 
         search_row = QHBoxLayout()
         search_row.setSpacing(8)
+        self.source_tabs = SegmentedControl()
+        self.source_tabs.add_item("Modrinth", "modrinth")
+        self.source_tabs.add_item("CurseForge", "curseforge")
+        self.source_tabs.set_value(self._source)
+        self.source_tabs.changed.connect(self._set_source)
+        search_row.addWidget(self.source_tabs)
         self.search = QLineEdit()
         self.search.setPlaceholderText(
             f"搜索服务端{server.addon_label}名称、作者或关键词，留空浏览热门项目…"
@@ -492,6 +500,34 @@ class ServerAddonDialog(StyledDialog):
             return self._destination_dir()
         return addons_dir(self.server)
 
+    def _source_label(self) -> str:
+        return "CurseForge" if self._source == "curseforge" else "Modrinth"
+
+    def _set_source(self, source: str) -> None:
+        source = str(source or "modrinth").strip().lower()
+        if source not in ("modrinth", "curseforge"):
+            source = "modrinth"
+        if source == self._source:
+            return
+        if self._download_worker is not None:
+            self.source_tabs.set_value(self._source)
+            self.main.toast("请先等待当前下载结束，再切换来源", "info")
+            return
+        self._source = source
+        self.source_tabs.set_value(source)
+        self._hits = []
+        self._rows = []
+        self._total = 0
+        self._page = 0
+        self._selected_project = ""
+        self._project = None
+        self._hit = None
+        self._dep_projects = {}
+        self._dep_projects_pending = set()
+        self._nav_stack = []
+        self._clear_detail()
+        self._search(0)
+
     # ------------------------------------------------------------------
     def _search(self, page: int = 0) -> None:
         if self._polling:
@@ -510,6 +546,7 @@ class ServerAddonDialog(StyledDialog):
             offset,
             PAGE_SIZE,
             self,
+            source=self._source,
         )
         self._search_worker = worker
         worker.ready.connect(
@@ -550,7 +587,7 @@ class ServerAddonDialog(StyledDialog):
         self._rows.clear()
 
         if loading:
-            hint = QLabel("正在搜索 Modrinth…")
+            hint = QLabel(f"正在搜索 {self._source_label()}…")
             hint.setObjectName("Tiny")
             hint.setAlignment(Qt.AlignCenter)
             self.results_layout.insertWidget(0, hint)
@@ -568,7 +605,12 @@ class ServerAddonDialog(StyledDialog):
             self.results_layout.insertWidget(0, hint)
         else:
             for hit in self._hits:
-                row = ModResultRow(hit, self.server.kind)
+                row = ModResultRow(
+                    hit,
+                    self.server.kind,
+                    source_label=self._source_label(),
+                    content_type="plugin" if self.server.is_plugin_server else "mod",
+                )
                 row.clicked.connect(
                     lambda project_id, h=hit: self._select_project(project_id, h)
                 )
@@ -627,7 +669,7 @@ class ServerAddonDialog(StyledDialog):
         same = self._project is not None and str(self._project.get("id") or "") == project_id
         if not same:
             self._project = None
-            worker = ModProjectWorker(project_id, self)
+            worker = ModProjectWorker(project_id, self, source=self._source)
             self._project_worker = worker
             worker.ready.connect(self._project_ready)
             worker.start()
@@ -640,7 +682,7 @@ class ServerAddonDialog(StyledDialog):
             meta_parts.append(f"作者：{author}")
         if categories:
             meta_parts.append(f"分类：{', '.join(categories[:3])}")
-        self.detail_author.setText(" · ".join(meta_parts) or "Modrinth")
+        self.detail_author.setText(" · ".join(meta_parts) or self._source_label())
         self.detail_desc.setText(str(hit.get("description") or ""))
         self.downloads_badge.setText(f"{_human_number(hit.get('downloads'))} 下载")
         self.followers_badge.setText("0 关注")
@@ -665,7 +707,11 @@ class ServerAddonDialog(StyledDialog):
         self._set_detail_icon(str(hit.get("icon_url") or ""))
 
         versions_worker = ServerAddonVersionsWorker(
-            project_id, self.server.kind, self.server.mc_version, self
+            project_id,
+            self.server.kind,
+            self.server.mc_version,
+            self,
+            source=self._source,
         )
         self._versions_worker = versions_worker
         versions_worker.ready.connect(
@@ -825,7 +871,7 @@ class ServerAddonDialog(StyledDialog):
         if not ids:
             return
         self._dep_projects_pending.update(ids)
-        worker = ModProjectsWorker(ids, self)
+        worker = ModProjectsWorker(ids, self, source=self._source)
         self._dep_projects_worker = worker
         worker.ready.connect(
             lambda data, error, w=worker: self._dep_projects_ready(w, data, error)
@@ -1029,19 +1075,20 @@ class ServerAddonDialog(StyledDialog):
         merged = {**hit, **{key: value for key, value in project.items() if value}}
         asset = primary_file(version) or {}
         hashes = asset.get("hashes") if isinstance(asset.get("hashes"), dict) else {}
+        content_type = "plugin" if self.server.is_plugin_server else "mod"
         return {
             "title": str(merged.get("title") or merged.get("slug") or ""),
             "project_id": str(
                 merged.get("project_id") or merged.get("id") or self._selected_project
             ),
             "slug": str(merged.get("slug") or ""),
-            "source": "modrinth",
-            "source_label": "Modrinth",
-            "content_type": "mod",
+            "source": self._source,
+            "source_label": self._source_label(),
+            "content_type": content_type,
             "description": str(merged.get("description") or ""),
             "description_zh": project_zh_intro(
                 merged,
-                content_type="mod",
+                content_type=content_type,
                 loader=self.server.kind,
                 game_version=self.server.mc_version,
             ),
@@ -1078,6 +1125,7 @@ class ServerAddonDialog(StyledDialog):
             target,
             threads=self.main.config.download_threads,
             parent=self.main,
+            source=self._source,
             metadata=self._download_metadata(version),
         )
         self._download_worker = worker

@@ -58,7 +58,9 @@ from .curseforge import (
     fetch_mod_versions as fetch_curseforge_mod_versions,
     fetch_project as fetch_curseforge_project,
     fetch_projects as fetch_curseforge_projects,
+    fetch_server_addon_versions as fetch_curseforge_server_addon_versions,
     search_mods as search_curseforge_mods,
+    search_server_addons as search_curseforge_server_addons,
 )
 from .servers import ServerInfo, install_server
 from .server_pack import (
@@ -2063,6 +2065,7 @@ class ServerAddonSearchWorker(QObject):
         offset: int = 0,
         limit: int = 20,
         parent=None,
+        source: str = "modrinth",
     ) -> None:
         super().__init__(parent)
         self.query = query
@@ -2070,19 +2073,29 @@ class ServerAddonSearchWorker(QObject):
         self.game_version = game_version
         self.offset = offset
         self.limit = limit
+        self.source = str(source or "modrinth").strip().lower()
 
     def start(self) -> None:
         threading.Thread(target=self._run, daemon=True).start()
 
     def _run(self) -> None:
         try:
-            data = search_server_addons(
-                self.query,
-                server_type=self.server_type,
-                game_version=self.game_version,
-                limit=self.limit,
-                offset=self.offset,
-            )
+            if self.source == "curseforge":
+                data = search_curseforge_server_addons(
+                    self.query,
+                    server_type=self.server_type,
+                    game_version=self.game_version,
+                    limit=self.limit,
+                    offset=self.offset,
+                )
+            else:
+                data = search_server_addons(
+                    self.query,
+                    server_type=self.server_type,
+                    game_version=self.game_version,
+                    limit=self.limit,
+                    offset=self.offset,
+                )
         except Exception as exc:
             self.ready.emit(None, str(exc), self.offset)
         else:
@@ -2098,20 +2111,27 @@ class ServerAddonVersionsWorker(QObject):
         server_type: str,
         game_version: str,
         parent=None,
+        source: str = "modrinth",
     ) -> None:
         super().__init__(parent)
         self.project_id = project_id
         self.server_type = server_type
         self.game_version = game_version
+        self.source = str(source or "modrinth").strip().lower()
 
     def start(self) -> None:
         threading.Thread(target=self._run, daemon=True).start()
 
     def _run(self) -> None:
         try:
-            data = fetch_server_addon_versions(
-                self.project_id, self.server_type, self.game_version
-            )
+            if self.source == "curseforge":
+                data = fetch_curseforge_server_addon_versions(
+                    self.project_id, self.server_type, self.game_version
+                )
+            else:
+                data = fetch_server_addon_versions(
+                    self.project_id, self.server_type, self.game_version
+                )
         except Exception as exc:
             self.ready.emit([], str(exc))
         else:

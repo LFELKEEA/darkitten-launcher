@@ -1688,7 +1688,7 @@ class ServerPage(QWidget):
         if not addons:
             self.addon_empty.setText(
                 f"还没有{info.addon_label}。点击右上角“下载{info.addon_label}”"
-                f"从 Modrinth 获取适配 {info.mc_version} 的项目。"
+                f"从 Modrinth 或 CurseForge 获取适配 {info.mc_version} 的项目。"
             )
             self.addon_empty.setVisible(True)
             return

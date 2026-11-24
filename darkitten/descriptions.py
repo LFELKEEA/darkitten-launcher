@@ -5,6 +5,7 @@ from typing import Any
 
 CONTENT_KIND = {
     "mod": "Mod",
+    "plugin": "插件",
     "modpack": "整合包",
     "resourcepack": "材质包",
     "shader": "光影包",
@@ -411,6 +412,10 @@ def project_zh_intro(
         parts.append(f"{title} 是一款 Minecraft 光影包")
         if categories:
             parts.append(f"，画面风格以{('、'.join(categories))}为主")
+    elif content_type == "plugin":
+        parts.append(f"{title} 是一个 Minecraft 服务器插件")
+        if categories:
+            parts.append(f"，功能偏向{('、'.join(categories))}")
     elif content_type == "modpack":
         parts.append(f"{title} 是一个 Minecraft 整合包")
         if loaders:

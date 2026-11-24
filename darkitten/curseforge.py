@@ -10,12 +10,15 @@ MCIM 镜像访问 CurseForge API；如果设置了环境变量 CURSEFORGE_API_KE
 
 from __future__ import annotations
 
+import gzip
 import json
 import os
 import re
 import threading
+import time
 import urllib.error
 import urllib.parse
+import zlib
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any, Callable
@@ -28,14 +31,17 @@ MCIM_CDN_HOST = "mod.mcimirror.top"
 FORGE_CDN_HOSTS = ("mediafilez.forgecdn.net", "media.forgecdn.net")
 GAME_ID = 432
 CLASS_ID_MODS = 6
+CLASS_ID_PLUGINS = 5
 CLASS_IDS = {
     "mod": CLASS_ID_MODS,
+    "plugin": CLASS_ID_PLUGINS,
     "modpack": 4471,
     "resourcepack": 12,
     "shader": 6552,
 }
 CONTENT_PATHS = {
     CLASS_ID_MODS: "mc-mods",
+    CLASS_ID_PLUGINS: "bukkit-plugins",
     4471: "modpacks",
     12: "texture-packs",
     6552: "shaders",
@@ -107,8 +113,58 @@ def _api_sources() -> list[tuple[str, dict[str, str]]]:
     return sources
 
 
+_CACHE_LOCK = threading.Lock()
+_CACHE: dict[str, tuple[float, Any]] = {}
+_CACHE_TTL = {"search": 180.0, "detail": 600.0}
+_CACHE_MAX = 240
+
+
+def clear_cache() -> None:
+    with _CACHE_LOCK:
+        _CACHE.clear()
+
+
+def _cache_get(url: str, ttl: float) -> Any:
+    with _CACHE_LOCK:
+        entry = _CACHE.get(url)
+        if entry is None:
+            return None
+        stamped, value = entry
+        if time.monotonic() - stamped > ttl:
+            _CACHE.pop(url, None)
+            return None
+        return value
+
+
+def _cache_put(url: str, value: Any) -> None:
+    with _CACHE_LOCK:
+        if len(_CACHE) >= _CACHE_MAX:
+            # 简单淘汰最旧的一条，避免无限增长。
+            oldest = min(_CACHE.items(), key=lambda item: item[1][0])[0]
+            _CACHE.pop(oldest, None)
+        _CACHE[url] = (time.monotonic(), value)
+
+
+def _decode_body(raw: bytes, encoding: str) -> bytes:
+    encoding = str(encoding or "").strip().lower()
+    try:
+        if "gzip" in encoding:
+            return gzip.decompress(raw)
+        if "deflate" in encoding:
+            try:
+                return zlib.decompress(raw)
+            except zlib.error:
+                return zlib.decompress(raw, -zlib.MAX_WBITS)
+    except (OSError, EOFError, zlib.error):
+        pass
+    return raw
+
+
 def _request_json(
-    path: str, params: dict[str, Any] | None = None, timeout: int = 35
+    path: str,
+    params: dict[str, Any] | None = None,
+    timeout: int = 20,
+    cache_ttl: float = 0.0,
 ) -> Any:
     query = urllib.parse.urlencode(
         {
@@ -118,19 +174,31 @@ def _request_json(
         }
     )
     suffix = f"?{query}" if query else ""
+    cache_key = f"{path}{suffix}"
+    if cache_ttl:
+        cached = _cache_get(cache_key, cache_ttl)
+        if cached is not None:
+            return cached
     errors: list[str] = []
     for base, headers in _api_sources():
         url = f"{base}{path}{suffix}"
         request_headers = {
             "Accept": "application/json",
+            # MCIM 镜像的带宽有限，gzip 能把搜索结果从十几秒压到两秒左右。
+            "Accept-Encoding": "gzip, deflate",
             "User-Agent": "DarkittenLauncher CurseForge/1.9",
         }
         request_headers.update(headers)
         for attempt in range(2):
             try:
                 with http_open(url, timeout=timeout, headers=request_headers) as resp:
-                    raw = resp.read()
-                return json.loads(raw.decode("utf-8"))
+                    raw = _decode_body(
+                        resp.read(), resp.headers.get("Content-Encoding", "")
+                    )
+                data = json.loads(raw.decode("utf-8"))
+                if cache_ttl:
+                    _cache_put(cache_key, data)
+                return data
             except urllib.error.HTTPError as exc:
                 detail = ""
                 try:
@@ -437,7 +505,7 @@ def search_mods(
     loader_type = _loader_type(loader) if kind == "mod" else None
     if loader_type is not None:
         params["modLoaderType"] = loader_type
-    payload = _request_json("/mods/search", params)
+    payload = _request_json("/mods/search", params, cache_ttl=_CACHE_TTL["search"])
     data = _extract_data(payload)
     if not isinstance(data, list):
         raise CurseForgeError("CurseForge 搜索结果格式不正确")
@@ -457,12 +525,44 @@ def search_mods(
     }
 
 
+def search_server_addons(
+    query: str,
+    *,
+    server_type: str,
+    game_version: str = "",
+    limit: int = 20,
+    offset: int = 0,
+) -> dict[str, Any]:
+    """按服务端类型搜索 CurseForge 上的插件或 Mod。"""
+    server = str(server_type or "").strip().lower()
+    if server in ("paper", "spigot"):
+        # Paper / Spigot 都运行 Bukkit 插件，对应 CurseForge 的 Bukkit Plugins。
+        return search_mods(
+            query,
+            game_version=game_version,
+            limit=limit,
+            offset=offset,
+            content_type="plugin",
+        )
+    if server in ("fabric", "forge", "neoforge"):
+        return search_mods(
+            query,
+            loader=server,
+            game_version=game_version,
+            limit=limit,
+            offset=offset,
+            content_type="mod",
+        )
+    raise CurseForgeError("未知的服务端类型")
+
+
 def fetch_project(project_id: str) -> dict[str, Any]:
     project_id = str(project_id or "").strip()
     if not project_id:
         raise CurseForgeError("缺少 CurseForge 项目 ID")
     payload = _request_json(
-        f"/mods/{urllib.parse.quote(project_id, safe='')}"
+        f"/mods/{urllib.parse.quote(project_id, safe='')}",
+        cache_ttl=_CACHE_TTL["detail"],
     )
     data = _extract_data(payload)
     if not isinstance(data, dict) or not data.get("id"):
@@ -534,7 +634,9 @@ def fetch_mod_versions(
     if loader_type is not None:
         params["modLoaderType"] = loader_type
     payload = _request_json(
-        f"/mods/{urllib.parse.quote(project_id, safe='')}/files", params
+        f"/mods/{urllib.parse.quote(project_id, safe='')}/files",
+        params,
+        cache_ttl=_CACHE_TTL["detail"],
     )
     data = _extract_data(payload)
     if not isinstance(data, list):
@@ -559,6 +661,25 @@ def fetch_mod_versions(
         seen.add(file_id)
         versions.append(version)
     return versions
+
+
+def fetch_server_addon_versions(
+    project_id: str,
+    server_type: str,
+    game_version: str = "",
+) -> list[dict[str, Any]]:
+    """按服务端类型读取可安装的文件列表。"""
+    server = str(server_type or "").strip().lower()
+    if server in ("paper", "spigot"):
+        # 插件没有加载器字段，只按游戏版本筛选。
+        return fetch_mod_versions(
+            project_id, "", game_version, content_type="plugin"
+        )
+    if server in ("fabric", "forge", "neoforge"):
+        return fetch_mod_versions(
+            project_id, server, game_version, content_type="mod"
+        )
+    raise CurseForgeError("未知的服务端类型")
 
 
 def candidate_download_urls(url: str) -> list[str]:
