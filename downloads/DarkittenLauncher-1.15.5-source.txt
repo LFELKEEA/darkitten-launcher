@@ -1,5 +1,5 @@
 ﻿Darkitten Launcher 1.15.5 完整源代码
-生成时间：2026-11-24 23:29:30
+生成时间：2026-11-24 23:38:46
 文本文件：181
 ================================================================================
 目录
@@ -70636,6 +70636,10 @@ class ServerAddonDialog(StyledDialog):
             return
         self._source = source
         self.source_tabs.set_value(source)
+        # 丢弃旧来源的搜索结果：旧 worker 的回调会因为不再是当前 worker 而被忽略。
+        self._search_worker = None
+        self._polling = False
+        self.search_btn.setEnabled(True)
         self._hits = []
         self._rows = []
         self._total = 0
@@ -104188,23 +104192,25 @@ body.lightbox-open { overflow: hidden; }
 # FILE: website/public/update.json
 ################################################################################
 {
-  "version": "1.15.4",
+  "version": "1.15.5",
   "released": "2026-11-24",
   "notes": [
-    "修复「导入存档」对话框内容被卡片右边缘裁掉的问题：启动器选择下拉框、刷新按钮和手动选择按钮现在会按窗口宽度自适应，长存档名自动省略。",
-    "手动选择按钮文案精简为「文件夹」「压缩包」，工具提示保留完整说明。",
-    "版本号更新到 1.15.4。"
+    "服务端下载 Mod / 插件新增 CurseForge 来源，可在搜索框左侧切换 Modrinth 与 CurseForge；搜索、项目详情、文件列表和前置依赖都会跟随当前来源。",
+    "Spigot、Paper 服务端可直接从 CurseForge 的 Bukkit 插件分类搜索并安装插件，文件会放进 plugins 文件夹；Fabric / Forge / NeoForge 仍按对应加载器筛选。",
+    "CurseForge 请求改用 gzip 压缩并加入短期缓存，首次搜索从十几秒降到 1-2 秒，翻页和重复搜索几乎瞬时返回。",
+    "服务端空列表提示同步改为「从 Modrinth 或 CurseForge 获取」。",
+    "版本号更新到 1.15.5。"
   ],
-  "download_url": "downloads/DKL-1.15.4-update.zip",
+  "download_url": "downloads/DKL-1.15.5-update.zip",
   "page_url": "https://lfelkeea.github.io/darkitten-launcher/",
-  "source_url": "downloads/DarkittenLauncher-1.15.4-source.zip",
-  "source_txt_url": "downloads/DarkittenLauncher-1.15.4-source.txt",
-  "sha256": "654e12096411482b9ab30047ac90e59fff03e63d02bb39a5570d534b35ab1bc7",
-  "size": 1573137,
-  "source_sha256": "21b661701b5206999c70e3384d6032727297f58267123930fd54841a30424606",
-  "source_size": 2853732,
-  "source_txt_sha256": "771d71528f6dea0533f9a5b8656c2e314417918e265bec65193d6c199adc5d8b",
-  "source_txt_size": 4308624,
+  "source_url": "downloads/DarkittenLauncher-1.15.5-source.zip",
+  "source_txt_url": "downloads/DarkittenLauncher-1.15.5-source.txt",
+  "sha256": "abdfc92897d2f5592222fec2a5e4fc1a2842225a18bd4e87a65eebafb5589fa4",
+  "size": 1574584,
+  "source_sha256": "9da5a541c8917ab9423443468d487c9571eece80205e6460885cf6facdac274b",
+  "source_size": 2857408,
+  "source_txt_sha256": "d1aea4aad69ceb03a127fbd45edc65f60ebc6248657eed44d6be3e0a7b8ba75b",
+  "source_txt_size": 4324181,
   "pet": {
     "name": "LFELKEEA 桌宠",
     "version": "1.4.6",
