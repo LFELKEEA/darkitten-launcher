@@ -15,6 +15,7 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QProgressBar,
     QPushButton,
+    QSizePolicy,
     QVBoxLayout,
     QWidget,
 )
@@ -50,7 +51,7 @@ class WorldImportDialog(StyledDialog):
         dest_parent: str | Path | None = None,
         target_version: str = "",
     ) -> None:
-        super().__init__(parent, title, "globe", width=620)
+        super().__init__(parent, title, "globe", width=660)
         self.server_info = server_info
         self.dest_parent = Path(dest_parent) if dest_parent is not None else None
         self.target_version = str(target_version or "").strip()
@@ -87,20 +88,24 @@ class WorldImportDialog(StyledDialog):
         local_row = QHBoxLayout()
         local_row.setSpacing(6)
         local_title = QLabel("启动器选择")
-        local_title.setFixedWidth(108)
+        local_title.setFixedWidth(96)
         local_title.setStyleSheet("font-weight: 700; font-size: 12px;")
         local_row.addWidget(local_title)
         self.local_combo = QComboBox()
-        self.local_combo.setMinimumContentsLength(24)
+        # 下拉框只保留一个较小的最小宽度，长条目按可用空间省略，避免把卡片撑出边界。
+        self.local_combo.setMinimumContentsLength(14)
         self.local_combo.setSizeAdjustPolicy(
             QComboBox.AdjustToMinimumContentsLengthWithIcon
         )
+        self.local_combo.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Fixed)
+        self.local_combo.setMinimumWidth(180)
         self.local_combo.setMaxVisibleItems(18)
         self.local_combo.currentIndexChanged.connect(self._on_local_changed)
         local_row.addWidget(self.local_combo, 1)
         self.refresh_local_btn = QPushButton("刷新")
         self.refresh_local_btn.setObjectName("Soft")
         self.refresh_local_btn.setCursor(Qt.PointingHandCursor)
+        self.refresh_local_btn.setFixedWidth(56)
         self.refresh_local_btn.clicked.connect(self._reload_local_options)
         local_row.addWidget(self.refresh_local_btn)
         source_box.addLayout(local_row)
@@ -111,12 +116,12 @@ class WorldImportDialog(StyledDialog):
         self.source_edit.setReadOnly(True)
         self.source_edit.setPlaceholderText("尚未选择存档")
         pick_row.addWidget(self.source_edit, 1)
-        self.folder_btn = QPushButton("选择文件夹")
+        self.folder_btn = QPushButton("文件夹")
         self.folder_btn.setObjectName("Soft")
         self.folder_btn.setCursor(Qt.PointingHandCursor)
         self.folder_btn.clicked.connect(self._pick_folder)
         pick_row.addWidget(self.folder_btn)
-        self.zip_btn = QPushButton("选择压缩包")
+        self.zip_btn = QPushButton("压缩包")
         self.zip_btn.setObjectName("Soft")
         self.zip_btn.setCursor(Qt.PointingHandCursor)
         self.zip_btn.clicked.connect(self._pick_zip)
