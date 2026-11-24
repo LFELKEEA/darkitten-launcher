@@ -7,6 +7,7 @@ from pathlib import Path
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QCheckBox,
+    QComboBox,
     QFileDialog,
     QFrame,
     QHBoxLayout,
@@ -26,6 +27,7 @@ from ..world_import import (
     available_dimensions,
     inspect_world_source,
     is_newer_version,
+    scan_local_world_options,
 )
 from ..workers import WorldImportWorker
 from .dialogs import NoticeDialog, StyledDialog
@@ -57,6 +59,8 @@ class WorldImportDialog(StyledDialog):
         self._worker: WorldImportWorker | None = None
         self._busy = False
         self._initial_path = str(initial_path or "")
+        owner = getattr(parent, "main", parent)
+        self.config = getattr(owner, "config", None)
 
         intro = QLabel(target_text)
         intro.setObjectName("DialogText")
@@ -79,6 +83,27 @@ class WorldImportDialog(StyledDialog):
         source_hint.setObjectName("Tiny")
         source_head.addWidget(source_hint, 1)
         source_box.addLayout(source_head)
+
+        local_row = QHBoxLayout()
+        local_row.setSpacing(6)
+        local_title = QLabel("启动器选择")
+        local_title.setFixedWidth(108)
+        local_title.setStyleSheet("font-weight: 700; font-size: 12px;")
+        local_row.addWidget(local_title)
+        self.local_combo = QComboBox()
+        self.local_combo.setMinimumContentsLength(24)
+        self.local_combo.setSizeAdjustPolicy(
+            QComboBox.AdjustToMinimumContentsLengthWithIcon
+        )
+        self.local_combo.setMaxVisibleItems(18)
+        self.local_combo.currentIndexChanged.connect(self._on_local_changed)
+        local_row.addWidget(self.local_combo, 1)
+        self.refresh_local_btn = QPushButton("刷新")
+        self.refresh_local_btn.setObjectName("Soft")
+        self.refresh_local_btn.setCursor(Qt.PointingHandCursor)
+        self.refresh_local_btn.clicked.connect(self._reload_local_options)
+        local_row.addWidget(self.refresh_local_btn)
+        source_box.addLayout(local_row)
 
         pick_row = QHBoxLayout()
         pick_row.setSpacing(6)
@@ -148,8 +173,8 @@ class WorldImportDialog(StyledDialog):
         dimension_row.addStretch(1)
         dimension_layout.addLayout(dimension_row)
         self.dimension_hint = QLabel(
-            "全部选中会完整替换目标世界；只选部分维度时，未选中的维度、"
-            "level.dat、玩家数据和服务端配置保持原样。"
+            "全部选中会替换主世界、下界和末地，level.dat、玩家数据和服务端配置"
+            "仍然保留；只选部分维度时，未选中的维度同样保持原样。"
         )
         self.dimension_hint.setObjectName("Tiny")
         self.dimension_hint.setWordWrap(True)
@@ -192,6 +217,7 @@ class WorldImportDialog(StyledDialog):
         self.import_btn.setEnabled(False)
         self.import_btn.setMinimumWidth(100)
 
+        self._reload_local_options()
         if self._initial_path:
             self.set_source(self._initial_path)
 
@@ -223,10 +249,12 @@ class WorldImportDialog(StyledDialog):
             self.version_warning.setVisible(True)
         else:
             self.version_warning.setVisible(False)
-        self.name_edit.setText(source.folder_name or "world")
+        if self.server_info is None:
+            self.name_edit.setText(source.folder_name or "world")
         self.name_hint.setStyleSheet("")
         self._update_dimensions()
         self._update_name_hint()
+        self._sync_local_selection(source.path)
         if self.server_info is not None and not self._selected_dimensions():
             self.import_btn.setEnabled(False)
         else:
@@ -288,8 +316,9 @@ class WorldImportDialog(StyledDialog):
         labels = "、".join(DIMENSION_NAMES[key] for key in selected)
         if all_selected:
             self.note.setText(
-                "将完整替换目标世界：主世界、下界、末地、玩家数据和公共数据"
-                "都会从来源复制过去，原世界会先整体备份。"
+                "将替换目标世界的主世界、下界和末地，自定义维度也会一起导入；"
+                "level.dat、玩家数据和服务端配置保持原样，"
+                "目标已有维度会先备份为 .bak-时间。"
             )
         else:
             self.note.setText(
@@ -319,11 +348,74 @@ class WorldImportDialog(StyledDialog):
         if path:
             self.set_source(path)
 
+    # ------------------------------------------------------------------
+    def _reload_local_options(self, _checked: bool = False) -> None:
+        if not hasattr(self, "local_combo"):
+            return
+        current = self.local_combo.currentData()
+        options = []
+        if self.config is not None:
+            try:
+                options = scan_local_world_options(
+                    self.config.game_path,
+                    version_names=getattr(self.config, "version_names", {}) or {},
+                    exclude_server=getattr(self.server_info, "folder", "") or "",
+                )
+            except Exception:
+                options = []
+        self.local_combo.blockSignals(True)
+        self.local_combo.clear()
+        self.local_combo.addItem(
+            "从启动器里的存档中选择…" if options
+            else "没有找到启动器里的存档，可手动选择",
+            "",
+        )
+        for option in options:
+            self.local_combo.addItem(option.label, str(option.path))
+            index = self.local_combo.count() - 1
+            self.local_combo.setItemData(index, option.detail, Qt.ToolTipRole)
+        if current:
+            for index in range(1, self.local_combo.count()):
+                if self.local_combo.itemData(index) == current:
+                    self.local_combo.setCurrentIndex(index)
+                    break
+        self.local_combo.blockSignals(False)
+        self.local_combo.setEnabled(bool(options) and not self._busy)
+
+    def _on_local_changed(self, _index: int = 0) -> None:
+        if self._busy:
+            return
+        path = self.local_combo.currentData()
+        if path:
+            self.set_source(str(path))
+
+    def _sync_local_selection(self, path: str | Path) -> None:
+        if not hasattr(self, "local_combo"):
+            return
+        try:
+            target = Path(path).resolve()
+        except OSError:
+            target = Path(path)
+        self.local_combo.blockSignals(True)
+        self.local_combo.setCurrentIndex(0)
+        for index in range(1, self.local_combo.count()):
+            data = self.local_combo.itemData(index)
+            if not data:
+                continue
+            try:
+                same = Path(str(data)).resolve() == target
+            except OSError:
+                same = False
+            if same:
+                self.local_combo.setCurrentIndex(index)
+                break
+        self.local_combo.blockSignals(False)
+
     def _update_name_hint(self) -> None:
         if self.server_info is not None:
             self.name_hint.setText(
                 "这是服务端主世界的文件夹名，会同步写入 server.properties 的 "
-                "level-name。建议保持 world。"
+                "level-name。保持当前值会合并到已有世界；改成新名字会创建新世界。"
             )
         else:
             self.name_hint.setText(
@@ -350,8 +442,9 @@ class WorldImportDialog(StyledDialog):
                 self.note.setText("至少选择一个要导入的维度。")
                 self.note.setStyleSheet(f"color: {colors()['red']};")
                 return
-            if set(selected) != set(DIMENSION_KEYS):
-                dimensions = selected
+            # 全选也走按维度导入：Paper/Spigot 服务端会把下界、末地放到
+            # world_nether、world_the_end，并且 level.dat、玩家数据保持原样。
+            dimensions = selected
         self._set_busy(True)
         self.progress.setValue(0)
         self.progress_text.setText("准备导入…")
@@ -403,6 +496,12 @@ class WorldImportDialog(StyledDialog):
         self._busy = busy
         self.folder_btn.setEnabled(not busy)
         self.zip_btn.setEnabled(not busy)
+        self.refresh_local_btn.setEnabled(not busy)
+        has_local = any(
+            self.local_combo.itemData(index)
+            for index in range(self.local_combo.count())
+        )
+        self.local_combo.setEnabled(not busy and has_local)
         self.name_edit.setEnabled(not busy)
         for box in self.dimension_boxes.values():
             box.setEnabled(not busy and box.property("available") is not False)

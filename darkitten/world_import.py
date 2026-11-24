@@ -97,6 +97,9 @@ class WorldSource:
     total_bytes: int = 0
     dimensions: list[str] = field(default_factory=list)
     players: int = 0
+    # Paper/Spigot 的下界、末地放在 world_nether、world_the_end 里。
+    # 每项是 (实际目录, 映射到存档内的相对前缀)。
+    extra_sources: list[tuple[Path, tuple[str, ...]]] = field(default_factory=list)
 
     @property
     def size_text(self) -> str:
@@ -253,6 +256,155 @@ def available_dimensions(info: WorldSource) -> list[str]:
     ]
 
 
+@dataclass
+class LocalWorldOption:
+    """启动器里可以直接选择的存档来源。"""
+
+    path: Path
+    category: str
+    source_label: str
+    world_name: str
+    version_name: str = ""
+    dimensions: list[str] = field(default_factory=list)
+    last_played: int = 0
+
+    @property
+    def label(self) -> str:
+        prefix = "游戏存档" if self.category == "game" else "服务端"
+        text = f"{prefix} · {self.source_label} · {self.world_name}"
+        if self.dimensions:
+            text += f"（{'/'.join(self.dimensions)}）"
+        return text
+
+    @property
+    def detail(self) -> str:
+        parts = [str(self.path)]
+        if self.version_name:
+            parts.append(self.version_name)
+        if self.dimensions:
+            parts.append("、".join(self.dimensions))
+        return " · ".join(parts)
+
+
+def world_dimension_labels(folder: Path) -> list[str]:
+    """快速看目录判断一个世界有哪些维度，不遍历文件。"""
+    labels: list[str] = []
+    if (folder / "region").is_dir() or (
+        folder / "dimensions" / "minecraft" / "overworld"
+    ).is_dir():
+        labels.append("主世界")
+    if (
+        (folder / "DIM-1").is_dir()
+        or (folder / "dimensions" / "minecraft" / "the_nether").is_dir()
+        or (folder.parent / f"{folder.name}_nether").is_dir()
+    ):
+        labels.append("下界")
+    if (
+        (folder / "DIM1").is_dir()
+        or (folder / "dimensions" / "minecraft" / "the_end").is_dir()
+        or (folder.parent / f"{folder.name}_the_end").is_dir()
+    ):
+        labels.append("末地")
+    return labels
+
+
+def scan_local_world_options(
+    game_path: Path | str,
+    *,
+    version_names: dict[str, str] | None = None,
+    exclude_server: str = "",
+) -> list[LocalWorldOption]:
+    """扫描启动器已下载版本的 saves，以及其他服务端的世界。"""
+    from .server_config import read_server_properties
+    from .servers import scan_servers
+    from .versions import scan_versions
+    from .worlds import load_world, scan_worlds
+
+    root = Path(game_path)
+    names = version_names or {}
+    options: list[LocalWorldOption] = []
+    seen: set[str] = set()
+
+    def add(
+        category: str,
+        source_label: str,
+        folder: Path,
+        name: str = "",
+        version_name: str = "",
+        last_played: int = 0,
+    ) -> None:
+        if not (folder / "level.dat").is_file():
+            return
+        try:
+            key = str(folder.resolve())
+        except OSError:
+            key = str(folder)
+        if key in seen:
+            return
+        seen.add(key)
+        try:
+            info, _ = load_world(folder)
+            name = name or info.name
+            version_name = version_name or info.version_name
+            last_played = last_played or info.last_played
+        except Exception:
+            name = name or folder.name
+        options.append(
+            LocalWorldOption(
+                path=folder,
+                category=category,
+                source_label=source_label,
+                world_name=name,
+                version_name=version_name,
+                dimensions=world_dimension_labels(folder),
+                last_played=last_played,
+            )
+        )
+
+    # 未开启版本隔离时的共享 saves，以及每个版本自己的工作目录。
+    for world in scan_worlds(root):
+        add(
+            "game",
+            "共享游戏目录",
+            world.folder,
+            world.name,
+            world.version_name,
+            world.last_played,
+        )
+    for summary in scan_versions(root):
+        version_dir = root / "versions" / summary.id
+        label = names.get(summary.id) or summary.id
+        for world in scan_worlds(version_dir):
+            add(
+                "game",
+                label,
+                world.folder,
+                world.name,
+                world.version_name,
+                world.last_played,
+            )
+
+    for info in scan_servers():
+        if exclude_server and info.folder == exclude_server:
+            continue
+        properties = read_server_properties(info.path / "server.properties")
+        level = safe_folder_name(properties.get("level-name") or "world")
+        folder = info.path / level
+        if not (folder / "level.dat").is_file():
+            continue
+        source_label = f"{info.name}（{info.type_name} {info.mc_version}）"
+        add("server", source_label, folder)
+
+    options.sort(
+        key=lambda item: (
+            0 if item.category == "game" else 1,
+            -int(item.last_played or 0),
+            item.label,
+        )
+    )
+    return options
+
+
 def _source_dimension_entry(
     relative: Path,
 ) -> tuple[str, tuple[str, ...]] | None:
@@ -352,8 +504,49 @@ def _source_entries(
             for relative, info in _zip_entries(zf, source.root):
                 yield relative, max(0, int(info.file_size)), info.filename
     else:
-        for relative, path, size in _folder_entries(source.path):
+        for relative, path, size in _source_folder_entries(
+            source.path, source.extra_sources
+        ):
             yield relative, size, path
+
+
+def _split_dimension_sources(
+    root: Path,
+) -> list[tuple[Path, tuple[str, ...]]]:
+    """找出 Paper/Spigot 放在 world_nether、world_the_end 的下界和末地。"""
+    result: list[tuple[Path, tuple[str, ...]]] = []
+    for suffix, inner in (("_nether", "DIM-1"), ("_the_end", "DIM1")):
+        sibling = root.parent / f"{root.name}{suffix}"
+        if not sibling.is_dir():
+            continue
+        nested = sibling / inner
+        actual = nested if nested.is_dir() else sibling
+        if not any(
+            (actual / name).is_dir() for name in ("region", "entities", "poi")
+        ):
+            continue
+        result.append((actual, (inner,)))
+    return result
+
+
+def _source_folder_entries(
+    root: Path,
+    extra_sources: list[tuple[Path, tuple[str, ...]]],
+) -> Iterator[tuple[Path, Path, int]]:
+    for relative, path, size in _folder_entries(root):
+        yield relative, path, size
+    for actual, prefix in extra_sources:
+        for relative, path, size in _folder_entries(actual):
+            if not relative.parts:
+                continue
+            if relative.parts[0].lower() in {
+                "level.dat",
+                "session.lock",
+                "paper-world.yml",
+                "paper-world-defaults.yml",
+            }:
+                continue
+            yield Path(*prefix, *relative.parts), path, size
 
 
 def _backup_paths(
@@ -416,6 +609,7 @@ def _copy_selected_dimensions(
     roots: dict[str, Path],
     selected: list[str],
     include_common: bool,
+    include_custom: bool,
     progress: ProgressCallback,
     cancel_event: threading.Event | None,
 ) -> tuple[int, int, int]:
@@ -436,6 +630,11 @@ def _copy_selected_dimensions(
                 continue
             planned.append((key, inner, size, ref))
             total += size
+        elif relative.parts and relative.parts[0] == "dimensions":
+            # 自定义维度：三个维度全选时一并带走。
+            if include_custom:
+                planned.append(("custom", relative.parts, size, ref))
+                total += size
         elif include_common and _is_common_relative(relative):
             planned.append(("common", relative.parts, size, ref))
             total += size
@@ -518,19 +717,7 @@ def import_world_dimensions(
 
     world = Path(target_world)
     name = safe_folder_name(level_name or world.name)
-
-    if set(selected) == set(DIMENSION_KEYS):
-        # 三个维度都导入时按完整存档处理，自定义维度、数据包等也一并保留。
-        world.parent.mkdir(parents=True, exist_ok=True)
-        result = import_world(
-            info,
-            world.parent,
-            folder_name=name,
-            progress_cb=progress,
-            cancel_event=cancel_event,
-        )
-        result.dimensions = list(selected)
-        return result
+    include_custom = set(selected) == set(DIMENSION_KEYS)
 
     if not info.is_zip:
         source_root = info.path.resolve()
@@ -568,6 +755,13 @@ def import_world_dimensions(
         backup_paths.extend(
             _target_backup_paths(world, name, layout, key, source_heads)
         )
+    if include_custom:
+        # 自定义维度整体放在 dimensions/<命名空间> 下，minecraft 子目录属于原版三维度，已单独处理。
+        custom_root = world / "dimensions"
+        if custom_root.is_dir():
+            for child in sorted(custom_root.iterdir()):
+                if child.is_dir() and child.name != "minecraft":
+                    backup_paths.append(child)
     # Remove duplicates while preserving order.
     backup_paths = list(dict.fromkeys(backup_paths))
 
@@ -587,6 +781,7 @@ def import_world_dimensions(
             roots,
             selected,
             include_common=new_world,
+            include_custom=include_custom,
             progress=progress,
             cancel_event=cancel_event,
         )
@@ -771,7 +966,8 @@ def inspect_world_source(path: Path | str) -> WorldSource:
         files = 0
         total = 0
         relatives: list[Path] = []
-        for relative, _file, size in _folder_entries(root):
+        extra_sources = _split_dimension_sources(root)
+        for relative, _file, size in _source_folder_entries(root, extra_sources):
             files += 1
             total += size
             relatives.append(relative)
@@ -788,6 +984,7 @@ def inspect_world_source(path: Path | str) -> WorldSource:
             total_bytes=total,
             dimensions=_dimensions_of(relatives),
             players=_players_of(relatives),
+            extra_sources=extra_sources,
         )
 
     if not zipfile.is_zipfile(source_path):
@@ -868,7 +1065,9 @@ def _copy_folder(
     copied = 0
     last_report = 0.0
     total = max(1, source.total_bytes)
-    for relative, path, size in _folder_entries(source.path):
+    for relative, path, size in _source_folder_entries(
+        source.path, source.extra_sources
+    ):
         _check_cancel(cancel_event)
         target = dest / relative
         target.parent.mkdir(parents=True, exist_ok=True)

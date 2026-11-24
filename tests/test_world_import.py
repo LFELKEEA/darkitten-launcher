@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import shutil
 import sys
 import tempfile
@@ -26,6 +27,8 @@ from darkitten.world_import import (  # noqa: E402
     import_world_dimensions,
     inspect_world_source,
     is_newer_version,
+    scan_local_world_options,
+    world_dimension_labels,
 )
 
 
@@ -508,11 +511,26 @@ class DimensionImportTests(unittest.TestCase):
             leftovers = [p.name for p in target.iterdir() if ".bak-" in p.name]
             self.assertEqual(leftovers, [])
 
-    def test_all_three_dimensions_falls_back_to_full_import(self) -> None:
+    def test_all_three_dimensions_replaces_world_but_keeps_player_data(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             source = _make_world(Path(tmp) / "src", name="来源世界")
             target = self._target(Path(tmp))
+            level_digest = _digest(target / "level.dat")
             (target / "region" / "r.0.0.mca").write_bytes(b"old-overworld")
+            (target / "DIM-1" / "region" / "r.0.0.mca").write_bytes(b"old-nether")
+            (target / "DIM1" / "region" / "r.0.0.mca").write_bytes(b"old-end")
+            (target / "playerdata" / "abc.dat").write_bytes(b"target-player")
+            (target / "dimensions" / "oldpack" / "custom" / "region").mkdir(
+                parents=True
+            )
+            (
+                target
+                / "dimensions"
+                / "oldpack"
+                / "custom"
+                / "region"
+                / "r.0.0.mca"
+            ).write_bytes(b"old-custom")
 
             result = import_world_dimensions(
                 source,
@@ -523,13 +541,78 @@ class DimensionImportTests(unittest.TestCase):
                 server_kind="fabric",
             )
 
-            self.assertIsNotNone(result.backup)
             self.assertEqual(result.dimension_text, "主世界、下界、末地")
+            self.assertEqual(
+                (target / "region" / "r.0.0.mca").read_bytes(), b"overworld-chunks"
+            )
+            self.assertEqual(
+                (target / "DIM-1" / "region" / "r.0.0.mca").read_bytes(),
+                b"nether-chunks",
+            )
+            self.assertEqual(
+                (target / "DIM1" / "region" / "r.0.0.mca").read_bytes(),
+                b"end-chunks",
+            )
+            # level.dat 与玩家数据不被来源覆盖。
+            self.assertEqual(_digest(target / "level.dat"), level_digest)
+            self.assertEqual(
+                (target / "playerdata" / "abc.dat").read_bytes(), b"target-player"
+            )
+            # 自定义维度随三个维度全选一起导入，旧的自定义维度先备份。
             self.assertEqual(
                 (target / "dimensions" / "mypack" / "custom" / "region" / "r.0.0.mca")
                 .read_bytes(),
                 b"custom-chunks",
             )
+            backups = [p.name for p in (target / "dimensions").iterdir()]
+            self.assertTrue(any(name.startswith("oldpack.bak-") for name in backups))
+            self.assertTrue(
+                any(".bak-" in path.name for path in result.backups),
+                result.backups,
+            )
+
+    def test_all_three_dimensions_into_paper_target_uses_split_layout(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            source = _make_world(Path(tmp) / "src", name="来源世界")
+            target = self._target(Path(tmp))
+            shutil.rmtree(target / "DIM-1", ignore_errors=True)
+            shutil.rmtree(target / "DIM1", ignore_errors=True)
+            (target / "region" / "r.0.0.mca").write_bytes(b"old-overworld")
+
+            import_world_dimensions(
+                source,
+                target,
+                dimensions=["overworld", "nether", "end"],
+                level_name=target.name,
+                target_version="1.20.1",
+                server_kind="paper",
+            )
+
+            self.assertEqual(
+                (target / "region" / "r.0.0.mca").read_bytes(), b"overworld-chunks"
+            )
+            self.assertEqual(
+                (
+                    target.parent
+                    / f"{target.name}_nether"
+                    / "DIM-1"
+                    / "region"
+                    / "r.0.0.mca"
+                ).read_bytes(),
+                b"nether-chunks",
+            )
+            self.assertEqual(
+                (
+                    target.parent
+                    / f"{target.name}_the_end"
+                    / "DIM1"
+                    / "region"
+                    / "r.0.0.mca"
+                ).read_bytes(),
+                b"end-chunks",
+            )
+            self.assertFalse((target / "DIM-1").exists())
+            self.assertFalse((target / "DIM1").exists())
 
     def test_dimension_import_into_paper_server_sets_level_name(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -564,6 +647,118 @@ class DimensionImportTests(unittest.TestCase):
                 )
                 text = (info.path / "server.properties").read_text(encoding="utf-8")
                 self.assertIn("level-name=world", text)
+
+
+class LocalWorldScanTests(unittest.TestCase):
+    def _write_version(self, root: Path, version_id: str) -> Path:
+        version_dir = root / "versions" / version_id
+        version_dir.mkdir(parents=True, exist_ok=True)
+        payload = {
+            "id": version_id,
+            "type": "release",
+            "mainClass": "net.minecraft.client.main.Main",
+        }
+        (version_dir / f"{version_id}.json").write_text(
+            json.dumps(payload), encoding="utf-8"
+        )
+        return version_dir
+
+    def test_scan_finds_version_shared_and_server_worlds(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "game"
+            version_dir = self._write_version(root, "1.20.1")
+            _make_world(version_dir, name="版本世界")
+            _make_world(root, name="共享世界")
+
+            servers_dir = Path(tmp) / "servers"
+            server_dir = servers_dir / "s1"
+            server_dir.mkdir(parents=True)
+            (server_dir / "server.json").write_text(
+                json.dumps(
+                    {
+                        "folder": "s1",
+                        "name": "我的服",
+                        "kind": "paper",
+                        "mc_version": "1.20.1",
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+            (server_dir / "server.properties").write_text(
+                "level-name=world\n", encoding="utf-8"
+            )
+            seed = _make_world(Path(tmp) / "seed", name="服务端世界")
+            shutil.move(str(seed), str(server_dir / "world"))
+
+            with mock.patch.object(servers, "SERVERS_DIR", servers_dir):
+                options = scan_local_world_options(
+                    root, version_names={"1.20.1": "我的 1.20.1"}
+                )
+                excluded = scan_local_world_options(
+                    root,
+                    version_names={"1.20.1": "我的 1.20.1"},
+                    exclude_server="s1",
+                )
+
+            labels = [item.label for item in options]
+            self.assertTrue(any("版本世界" in label for label in labels))
+            self.assertTrue(any("共享世界" in label for label in labels))
+            self.assertTrue(any("我的 1.20.1" in label for label in labels))
+            self.assertTrue(
+                any("服务端" in label and "服务端世界" in label for label in labels)
+            )
+            self.assertFalse(any("服务端世界" in item.label for item in excluded))
+            server_item = next(item for item in options if item.category == "server")
+            self.assertEqual(server_item.path, server_dir / "world")
+            self.assertEqual(
+                set(server_item.dimensions), {"主世界", "下界", "末地"}
+            )
+
+    def test_paper_source_siblings_are_detected_and_imported(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            source = _make_world(Path(tmp) / "src", name="Paper世界")
+            nether_sibling = source.parent / f"{source.name}_nether"
+            end_sibling = source.parent / f"{source.name}_the_end"
+            nether_sibling.mkdir()
+            end_sibling.mkdir()
+            shutil.move(str(source / "DIM-1"), str(nether_sibling / "DIM-1"))
+            shutil.move(str(source / "DIM1"), str(end_sibling / "DIM1"))
+
+            info = inspect_world_source(source)
+            self.assertIn("主世界", info.dimensions)
+            self.assertIn("下界", info.dimensions)
+            self.assertIn("末地", info.dimensions)
+            self.assertEqual(
+                world_dimension_labels(source), ["主世界", "下界", "末地"]
+            )
+
+            target = Path(tmp) / "saves" / "导入"
+            import_world_dimensions(
+                info,
+                target,
+                dimensions=["nether", "end"],
+                level_name="导入",
+                target_version="1.20.1",
+                server_kind="fabric",
+            )
+            self.assertEqual(
+                (target / "DIM-1" / "region" / "r.0.0.mca").read_bytes(),
+                b"nether-chunks",
+            )
+            self.assertEqual(
+                (target / "DIM1" / "region" / "r.0.0.mca").read_bytes(),
+                b"end-chunks",
+            )
+
+    def test_dimension_labels_detect_namespaced_layout(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            world = Path(tmp) / "world"
+            for name in ("overworld", "the_nether", "the_end"):
+                (world / "dimensions" / "minecraft" / name).mkdir(parents=True)
+            self.assertEqual(
+                world_dimension_labels(world), ["主世界", "下界", "末地"]
+            )
 
 
 if __name__ == "__main__":
