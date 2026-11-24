@@ -1,4 +1,4 @@
-"""导入其他游戏版本的完整存档（所有维度、玩家数据与物品栏）。"""
+"""导入其他游戏版本的存档，可选只导入主世界、下界或末地。"""
 
 from __future__ import annotations
 
@@ -6,6 +6,7 @@ from pathlib import Path
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
+    QCheckBox,
     QFileDialog,
     QFrame,
     QHBoxLayout,
@@ -18,8 +19,11 @@ from PySide6.QtWidgets import (
 )
 
 from ..world_import import (
+    DIMENSION_KEYS,
+    DIMENSION_NAMES,
     WorldImportError,
     WorldSource,
+    available_dimensions,
     inspect_world_source,
     is_newer_version,
 )
@@ -36,7 +40,7 @@ class WorldImportDialog(StyledDialog):
         parent,
         *,
         target_text: str,
-        title: str = "导入完整存档",
+        title: str = "导入存档",
         default_name: str = "world",
         name_label: str = "世界文件夹名称",
         initial_path: str | Path | None = None,
@@ -124,17 +128,43 @@ class WorldImportDialog(StyledDialog):
         self.name_hint.setWordWrap(True)
         self.body.addWidget(self.name_hint)
 
-        self.note = QLabel(
-            "会把整个世界文件夹原样复制过去：主世界、下界、末地、自定义维度、"
-            "playerdata、stats、advancements 和 data 都会保留，不修改玩家数据、"
-            "物品栏或进度，跨版本升级交给 Minecraft 首次打开世界时完成。"
+        self.dimension_box = QWidget()
+        dimension_layout = QVBoxLayout(self.dimension_box)
+        dimension_layout.setContentsMargins(0, 0, 0, 0)
+        dimension_layout.setSpacing(4)
+        dimension_row = QHBoxLayout()
+        dimension_row.setSpacing(12)
+        dimension_title = QLabel("导入维度")
+        dimension_title.setStyleSheet("font-weight: 700; font-size: 12px;")
+        dimension_row.addWidget(dimension_title)
+        self.dimension_boxes: dict[str, QCheckBox] = {}
+        for key in DIMENSION_KEYS:
+            box = QCheckBox(DIMENSION_NAMES[key])
+            box.setChecked(True)
+            box.setEnabled(False)
+            box.toggled.connect(self._on_dimension_changed)
+            self.dimension_boxes[key] = box
+            dimension_row.addWidget(box)
+        dimension_row.addStretch(1)
+        dimension_layout.addLayout(dimension_row)
+        self.dimension_hint = QLabel(
+            "全部选中会完整替换目标世界；只选部分维度时，未选中的维度、"
+            "level.dat、玩家数据和服务端配置保持原样。"
         )
+        self.dimension_hint.setObjectName("Tiny")
+        self.dimension_hint.setWordWrap(True)
+        dimension_layout.addWidget(self.dimension_hint)
+        self.dimension_box.setVisible(self.server_info is not None)
+        self.body.addWidget(self.dimension_box)
+
+        self.note = QLabel("")
         self.note.setObjectName("Tiny")
         self.note.setWordWrap(True)
         self.body.addWidget(self.note)
+        self._update_dimension_note()
 
         self.backup_note = QLabel(
-            "目标位置已有同名世界时，会先重命名为「名字.bak-时间」备份，不会删除。"
+            "目标位置已有同名世界或同名维度时，会先重命名为「名字.bak-时间」备份，不会删除。"
         )
         self.backup_note.setObjectName("Tiny")
         self.backup_note.setWordWrap(True)
@@ -194,8 +224,79 @@ class WorldImportDialog(StyledDialog):
         else:
             self.version_warning.setVisible(False)
         self.name_edit.setText(source.folder_name or "world")
+        self.name_hint.setStyleSheet("")
+        self._update_dimensions()
         self._update_name_hint()
-        self.import_btn.setEnabled(True)
+        if self.server_info is not None and not self._selected_dimensions():
+            self.import_btn.setEnabled(False)
+        else:
+            self.import_btn.setEnabled(True)
+
+    def _update_dimensions(self) -> None:
+        if self.server_info is None:
+            return
+        available = set(available_dimensions(self.source)) if self.source else set()
+        for key, box in self.dimension_boxes.items():
+            exists = key in available
+            box.setProperty("available", exists)
+            box.blockSignals(True)
+            box.setEnabled(exists and not self._busy)
+            box.setChecked(exists)
+            box.blockSignals(False)
+        self._update_dimension_note()
+
+    def _selected_dimensions(self) -> list[str]:
+        return [
+            key for key in DIMENSION_KEYS
+            if self.dimension_boxes[key].isChecked()
+            and self.dimension_boxes[key].isEnabled()
+        ]
+
+    def _on_dimension_changed(self) -> None:
+        self._update_dimension_note()
+        self._update_name_hint()
+        if self.server_info is not None and not self._busy:
+            self.import_btn.setEnabled(bool(self._selected_dimensions()))
+
+    def _update_dimension_note(self) -> None:
+        if not hasattr(self, "note"):
+            return
+        self.note.setStyleSheet("")
+        if self.server_info is None:
+            self.note.setText(
+                "会把整个世界文件夹原样复制过去：主世界、下界、末地、自定义维度、"
+                "playerdata、stats、advancements 和 data 都会保留，不修改玩家数据、"
+                "物品栏或进度，跨版本升级交给 Minecraft 首次打开世界时完成。"
+            )
+            return
+        if self.source is None:
+            self.note.setText("选择存档后会自动识别可导入的主世界、下界和末地数据。")
+            return
+        selected = self._selected_dimensions()
+        if not selected:
+            if any(
+                box.property("available") is not False
+                for box in self.dimension_boxes.values()
+            ):
+                self.note.setText("至少选择一个要导入的维度。")
+            else:
+                self.note.setText(
+                    "来源存档里没有识别到主世界、下界或末地数据，不能按维度导入。"
+                )
+            return
+        all_selected = set(selected) == set(DIMENSION_KEYS)
+        labels = "、".join(DIMENSION_NAMES[key] for key in selected)
+        if all_selected:
+            self.note.setText(
+                "将完整替换目标世界：主世界、下界、末地、玩家数据和公共数据"
+                "都会从来源复制过去，原世界会先整体备份。"
+            )
+        else:
+            self.note.setText(
+                f"只导入{labels}：其他维度、level.dat、玩家数据和服务端配置"
+                "保持原样；目标已有同名维度会先备份为 .bak-时间。"
+                "目标世界不存在时会创建，并复制 level.dat 等公共文件。"
+            )
 
     def _pick_folder(self) -> None:
         start = self._initial_path or str(Path.home())
@@ -242,6 +343,15 @@ class WorldImportDialog(StyledDialog):
             self.name_hint.setText("世界文件夹名称不能为空。")
             self.name_hint.setStyleSheet(f"color: {colors()['red']};")
             return
+        dimensions = None
+        if self.server_info is not None:
+            selected = self._selected_dimensions()
+            if not selected:
+                self.note.setText("至少选择一个要导入的维度。")
+                self.note.setStyleSheet(f"color: {colors()['red']};")
+                return
+            if set(selected) != set(DIMENSION_KEYS):
+                dimensions = selected
         self._set_busy(True)
         self.progress.setValue(0)
         self.progress_text.setText("准备导入…")
@@ -250,6 +360,7 @@ class WorldImportDialog(StyledDialog):
             dest_parent=self.dest_parent,
             folder_name=name,
             server_info=self.server_info,
+            dimensions=dimensions,
             parent=self,
         )
         self._worker = worker
@@ -293,6 +404,8 @@ class WorldImportDialog(StyledDialog):
         self.folder_btn.setEnabled(not busy)
         self.zip_btn.setEnabled(not busy)
         self.name_edit.setEnabled(not busy)
+        for box in self.dimension_boxes.values():
+            box.setEnabled(not busy and box.property("available") is not False)
         self.close_btn.setText("取消并关闭" if busy else "取消")
         self.close_btn.setEnabled(True)
         self.import_btn.setText("取消导入" if busy else "开始导入")

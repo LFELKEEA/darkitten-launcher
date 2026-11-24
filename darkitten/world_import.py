@@ -1,11 +1,14 @@
-"""把其他游戏版本的完整存档导入服务端或启动器存档目录。
+"""把其他游戏版本的存档导入服务端或启动器存档目录。
 
-导入只做文件复制：level.dat、region、DIM-1、DIM1、dimensions、playerdata、
-stats、advancements、data、datapacks 等都原样搬过去，不重写任何 NBT。
+可以导入完整世界，也可以只导入主世界、下界或末地中的一个或几个维度：
+完整导入只做文件复制，level.dat、region、DIM-1、DIM1、dimensions、playerdata、
+stats、advancements、data、datapacks 等都原样搬过去，不重写任何 NBT；
+按维度导入时只替换选中的维度，未选中的维度、level.dat 和玩家数据保持原样。
 因此玩家数据、物品栏、末影箱、进度和各个维度都会保留；如果目标版本更新，
 Minecraft 会在首次打开世界时自己完成跨版本升级。
 
-目标位置已有同名世界时不会删除，而是重命名为 ``<名字>.bak-时间戳`` 保留。
+目标位置已有同名世界或同名维度时不会删除，而是重命名为
+``<名字>.bak-时间戳`` 保留。
 """
 
 from __future__ import annotations
@@ -53,6 +56,23 @@ _DIMENSION_LABELS = {
     "minecraft:the_nether": "下界",
     "minecraft:the_end": "末地",
 }
+
+DIMENSION_KEYS = ("overworld", "nether", "end")
+DIMENSION_NAMES = {
+    "overworld": "主世界",
+    "nether": "下界",
+    "end": "末地",
+}
+_NAMESPACED_PATHS = {
+    "overworld": ("dimensions", "minecraft", "overworld"),
+    "nether": ("dimensions", "minecraft", "the_nether"),
+    "end": ("dimensions", "minecraft", "the_end"),
+}
+_LEGACY_PATHS = {
+    "nether": ("DIM-1",),
+    "end": ("DIM1",),
+}
+_OVERWORLD_DIRS = {"region", "entities", "poi"}
 
 
 class WorldImportError(ValueError):
@@ -111,10 +131,18 @@ class WorldImportResult:
     files: int = 0
     total_bytes: int = 0
     level_name: str = ""
+    backups: list[Path] = field(default_factory=list)
+    dimensions: list[str] = field(default_factory=list)
 
     @property
     def size_text(self) -> str:
         return human_size(self.total_bytes)
+
+    @property
+    def dimension_text(self) -> str:
+        return "、".join(
+            DIMENSION_NAMES.get(key, key) for key in self.dimensions
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -215,6 +243,405 @@ def _players_of(relative_files: list[Path]) -> int:
         and relative.parts[0] == "playerdata"
         and relative.suffix.lower() == ".dat"
     )
+
+
+def available_dimensions(info: WorldSource) -> list[str]:
+    labels = set(info.dimensions)
+    return [
+        key for key in DIMENSION_KEYS
+        if DIMENSION_NAMES[key] in labels
+    ]
+
+
+def _source_dimension_entry(
+    relative: Path,
+) -> tuple[str, tuple[str, ...]] | None:
+    """Return ``(dimension, path_inside_dimension)`` for a source entry."""
+    parts = relative.parts
+    if not parts:
+        return None
+    if len(parts) >= 4 and parts[0] == "dimensions" and parts[1] == "minecraft":
+        key = {
+            "overworld": "overworld",
+            "the_nether": "nether",
+            "the_end": "end",
+        }.get(parts[2])
+        if key is not None:
+            return key, parts[3:]
+        return None
+    if parts[0] == "DIM-1":
+        return "nether", parts[1:]
+    if parts[0] == "DIM1":
+        return "end", parts[1:]
+    if parts[0] in _OVERWORLD_DIRS:
+        return "overworld", parts
+    return None
+
+
+def _is_common_relative(relative: Path) -> bool:
+    parts = relative.parts
+    if not parts or parts[0] == "dimensions":
+        return False
+    return _source_dimension_entry(relative) is None
+
+
+def _target_layout(
+    world: Path,
+    level_name: str,
+    target_version: str,
+    server_kind: str,
+) -> str:
+    if (world / "dimensions" / "minecraft").is_dir():
+        return "namespaced"
+    if (
+        (world.parent / f"{level_name}_nether").exists()
+        or (world.parent / f"{level_name}_the_end").exists()
+    ):
+        return "split"
+    if (world / "DIM-1").exists() or (world / "DIM1").exists():
+        return "nested"
+    if version_key(target_version) >= (26, 1, 0):
+        return "namespaced"
+    if server_kind in {"paper", "spigot"}:
+        return "split"
+    return "nested"
+
+
+def _target_dimension_root(
+    world: Path,
+    level_name: str,
+    layout: str,
+    key: str,
+) -> Path:
+    if layout == "namespaced":
+        return world.joinpath(*_NAMESPACED_PATHS[key])
+    if layout == "split":
+        if key == "overworld":
+            return world
+        suffix = "nether" if key == "nether" else "the_end"
+        return (
+            world.parent
+            / f"{level_name}_{suffix}"
+            / ("DIM-1" if key == "nether" else "DIM1")
+        )
+    if key == "overworld":
+        return world
+    return world / ("DIM-1" if key == "nether" else "DIM1")
+
+
+def _target_backup_paths(
+    world: Path,
+    level_name: str,
+    layout: str,
+    key: str,
+    source_heads: set[tuple[str, str]] | None = None,
+) -> list[Path]:
+    root = _target_dimension_root(world, level_name, layout, key)
+    if source_heads is None:
+        return [root]
+    heads = [head for dim, head in source_heads if dim == key]
+    # 只备份真正会被覆盖的子目录，避免把来源里没有的 entities/poi 挪走。
+    return [root / head for head in dict.fromkeys(heads)]
+
+
+def _source_entries(
+    source: WorldSource,
+) -> Iterator[tuple[Path, int, Path | str]]:
+    if source.is_zip:
+        with zipfile.ZipFile(source.path) as zf:
+            for relative, info in _zip_entries(zf, source.root):
+                yield relative, max(0, int(info.file_size)), info.filename
+    else:
+        for relative, path, size in _folder_entries(source.path):
+            yield relative, size, path
+
+
+def _backup_paths(
+    paths: list[Path],
+    stamp: str,
+) -> list[tuple[Path, Path]]:
+    moved: list[tuple[Path, Path]] = []
+    try:
+        for path in paths:
+            if not path.exists():
+                continue
+            base = path.name[:48]
+            candidate = path.with_name(f"{base}.bak-{stamp}")
+            index = 2
+            while candidate.exists():
+                candidate = path.with_name(f"{base}.bak-{stamp}-{index}")
+                index += 1
+            path.rename(candidate)
+            moved.append((path, candidate))
+    except OSError as error:
+        _restore_backups(moved)
+        raise WorldImportError(
+            f"目标维度正在被占用，无法备份：{error}。"
+            "请先关闭正在使用这个存档的游戏或服务端。"
+        ) from error
+    return moved
+
+
+def _restore_backups(moved: list[tuple[Path, Path]]) -> None:
+    for original, backup in reversed(moved):
+        if not backup.exists():
+            continue
+        if original.is_dir():
+            shutil.rmtree(original, ignore_errors=True)
+        elif original.exists():
+            try:
+                original.unlink()
+            except OSError:
+                pass
+        try:
+            backup.rename(original)
+        except OSError:
+            pass
+
+
+def _remove_paths(paths: list[Path]) -> None:
+    for path in paths:
+        if path.is_dir():
+            shutil.rmtree(path, ignore_errors=True)
+        elif path.exists():
+            try:
+                path.unlink()
+            except OSError:
+                pass
+
+
+def _copy_selected_dimensions(
+    source: WorldSource,
+    target_world: Path,
+    roots: dict[str, Path],
+    selected: list[str],
+    include_common: bool,
+    progress: ProgressCallback,
+    cancel_event: threading.Event | None,
+) -> tuple[int, int, int]:
+    planned: list[tuple[str, tuple[str, ...], int, Path | str]] = []
+    total = 0
+    for relative, size, ref in _source_entries(source):
+        classified = _source_dimension_entry(relative)
+        if classified is not None:
+            key, inner = classified
+            if not inner:
+                continue
+            if key not in selected:
+                continue
+            if relative.name.lower() in {
+                "paper-world.yml",
+                "paper-world-defaults.yml",
+            }:
+                continue
+            planned.append((key, inner, size, ref))
+            total += size
+        elif include_common and _is_common_relative(relative):
+            planned.append(("common", relative.parts, size, ref))
+            total += size
+    if not planned:
+        raise WorldImportError("没有找到可导入的维度数据")
+    if total > MAX_TOTAL_BYTES:
+        raise WorldImportError("选中的维度超过 256 GB，已停止导入")
+
+    total = max(1, total)
+    copied = 0
+    written = 0
+    last_report = 0.0
+    zf = zipfile.ZipFile(source.path) if source.is_zip else None
+    try:
+        for key, inner, size, ref in planned:
+            _check_cancel(cancel_event)
+            root = roots.get(key, target_world)
+            target = root.joinpath(*inner)
+            target.parent.mkdir(parents=True, exist_ok=True)
+            try:
+                if zf is not None:
+                    with zf.open(str(ref)) as reader, open(target, "wb") as writer:
+                        while True:
+                            chunk = reader.read(1024 * 1024)
+                            if not chunk:
+                                break
+                            written += len(chunk)
+                            if written > MAX_TOTAL_BYTES:
+                                raise WorldImportError(
+                                    "解压后超过 256 GB，已停止导入"
+                                )
+                            writer.write(chunk)
+                else:
+                    shutil.copy2(Path(ref), target)
+            except (OSError, zipfile.BadZipFile) as error:
+                raise WorldImportError(f"复制 {Path(*inner)} 失败：{error}") from error
+            copied += 1
+            if zf is None:
+                written += size
+            now = time.monotonic()
+            if now - last_report > 0.12:
+                last_report = now
+                percent = 5 + int(90 * min(written, total) / total)
+                label = DIMENSION_NAMES.get(key, "公共数据")
+                progress(percent, f"正在导入{label} {Path(*inner)}")
+    finally:
+        if zf is not None:
+            zf.close()
+    return copied, written, total
+
+
+def import_world_dimensions(
+    source: WorldSource | Path | str,
+    target_world: Path | str,
+    *,
+    dimensions: list[str],
+    level_name: str = "",
+    target_version: str = "",
+    server_kind: str = "",
+    progress_cb: ProgressCallback | None = None,
+    cancel_event: threading.Event | None = None,
+) -> WorldImportResult:
+    """Import selected dimensions into an existing or new server world.
+
+    Existing dimension folders are moved to ``.bak-时间戳`` before replacement.
+    Common files are only copied when the target world does not exist yet.
+    """
+    progress = progress_cb or (lambda _p, _m: None)
+    info = source if isinstance(source, WorldSource) else inspect_world_source(source)
+    selected = [key for key in DIMENSION_KEYS if key in set(dimensions)]
+    if not selected:
+        raise WorldImportError("至少选择一个要导入的维度")
+    invalid = [key for key in dimensions if key not in DIMENSION_KEYS]
+    if invalid:
+        raise WorldImportError(f"未知维度：{', '.join(invalid)}")
+    missing = [key for key in selected if key not in available_dimensions(info)]
+    if missing:
+        names = "、".join(DIMENSION_NAMES[key] for key in missing)
+        raise WorldImportError(f"来源存档里没有{names}数据")
+
+    world = Path(target_world)
+    name = safe_folder_name(level_name or world.name)
+
+    if set(selected) == set(DIMENSION_KEYS):
+        # 三个维度都导入时按完整存档处理，自定义维度、数据包等也一并保留。
+        world.parent.mkdir(parents=True, exist_ok=True)
+        result = import_world(
+            info,
+            world.parent,
+            folder_name=name,
+            progress_cb=progress,
+            cancel_event=cancel_event,
+        )
+        result.dimensions = list(selected)
+        return result
+
+    if not info.is_zip:
+        source_root = info.path.resolve()
+        target_root = world.resolve()
+        if (
+            target_root == source_root
+            or source_root in target_root.parents
+            or target_root in source_root.parents
+        ):
+            raise WorldImportError("不能把维度导入到它自己或它的子目录里")
+
+    has_world = world.is_dir() and any(world.iterdir())
+    if has_world and not (world / "level.dat").is_file():
+        raise WorldImportError("目标世界缺少 level.dat，无法安全合并维度")
+    new_world = not has_world
+
+    progress(2, "检查目标世界布局…")
+    layout = _target_layout(world, name, target_version, server_kind)
+    roots = {
+        key: _target_dimension_root(world, name, layout, key)
+        for key in selected
+    }
+    roots["common"] = world
+
+    backup_paths: list[Path] = []
+    source_heads: set[tuple[str, str]] = set()
+    for relative, _size, _ref in _source_entries(info):
+        classified = _source_dimension_entry(relative)
+        if classified is None:
+            continue
+        key, inner = classified
+        if key in selected and inner:
+            source_heads.add((key, inner[0]))
+    for key in selected:
+        backup_paths.extend(
+            _target_backup_paths(world, name, layout, key, source_heads)
+        )
+    # Remove duplicates while preserving order.
+    backup_paths = list(dict.fromkeys(backup_paths))
+
+    moved: list[tuple[Path, Path]] = []
+    created_world = False
+    try:
+        if new_world:
+            world.mkdir(parents=True, exist_ok=True)
+            created_world = True
+            progress(4, "创建目标世界…")
+        moved = _backup_paths(backup_paths, _now_stamp())
+        if moved:
+            progress(6, f"已备份 {len(moved)} 个旧维度")
+        files, total, _ = _copy_selected_dimensions(
+            info,
+            world,
+            roots,
+            selected,
+            include_common=new_world,
+            progress=progress,
+            cancel_event=cancel_event,
+        )
+        _check_cancel(cancel_event)
+        if not (world / "level.dat").is_file():
+            raise WorldImportError("导入完成后目标世界没有 level.dat")
+    except BaseException as error:
+        _remove_paths(backup_paths)
+        if created_world and world.exists():
+            shutil.rmtree(world, ignore_errors=True)
+        _restore_backups(moved)
+        if isinstance(error, WorldImportCancelled):
+            raise
+        if isinstance(error, WorldImportError):
+            raise
+        raise WorldImportError(f"导入维度失败：{error}") from error
+
+    backups = [backup for _original, backup in moved]
+    progress(100, f"已导入{'、'.join(DIMENSION_NAMES[key] for key in selected)}")
+    return WorldImportResult(
+        folder=world,
+        backup=backups[0] if backups else None,
+        source=info,
+        files=files,
+        total_bytes=total,
+        level_name=name,
+        backups=backups,
+        dimensions=selected,
+    )
+
+
+def import_dimensions_into_server(
+    info,
+    source: WorldSource | Path | str,
+    *,
+    dimensions: list[str],
+    level_name: str = "",
+    progress_cb: ProgressCallback | None = None,
+    cancel_event: threading.Event | None = None,
+) -> WorldImportResult:
+    from .servers import update_server_properties
+
+    level = safe_folder_name(level_name or "world")
+    result = import_world_dimensions(
+        source,
+        info.path / level,
+        dimensions=dimensions,
+        level_name=level,
+        target_version=info.mc_version,
+        server_kind=info.kind,
+        progress_cb=progress_cb,
+        cancel_event=cancel_event,
+    )
+    update_server_properties(info, {"level-name": level})
+    return result
 
 
 def _folder_root(path: Path) -> Path:

@@ -103,6 +103,7 @@ from .littleskin import LittleSkinAccount, fetch_skin, login as littleskin_login
 from .world_import import (
     WorldImportCancelled,
     WorldSource,
+    import_dimensions_into_server,
     import_into_server,
     import_world,
 )
@@ -2923,6 +2924,7 @@ class WorldImportWorker(QObject):
         dest_parent: Path | None = None,
         folder_name: str = "",
         server_info: ServerInfo | None = None,
+        dimensions: list[str] | None = None,
         parent: QObject | None = None,
     ) -> None:
         super().__init__(parent)
@@ -2930,6 +2932,7 @@ class WorldImportWorker(QObject):
         self.dest_parent = Path(dest_parent) if dest_parent is not None else None
         self.folder_name = folder_name
         self.server_info = server_info
+        self.dimensions = list(dimensions) if dimensions else None
         self.cancel_event = threading.Event()
         self._thread: threading.Thread | None = None
 
@@ -2946,13 +2949,23 @@ class WorldImportWorker(QObject):
     def _run(self) -> None:
         try:
             if self.server_info is not None:
-                result = import_into_server(
-                    self.server_info,
-                    self.source,
-                    level_name=self.folder_name or "world",
-                    progress_cb=self._progress,
-                    cancel_event=self.cancel_event,
-                )
+                if self.dimensions:
+                    result = import_dimensions_into_server(
+                        self.server_info,
+                        self.source,
+                        dimensions=self.dimensions,
+                        level_name=self.folder_name or "world",
+                        progress_cb=self._progress,
+                        cancel_event=self.cancel_event,
+                    )
+                else:
+                    result = import_into_server(
+                        self.server_info,
+                        self.source,
+                        level_name=self.folder_name or "world",
+                        progress_cb=self._progress,
+                        cancel_event=self.cancel_event,
+                    )
             else:
                 if self.dest_parent is None:
                     raise ValueError("没有指定导入目标")
@@ -2971,4 +2984,8 @@ class WorldImportWorker(QObject):
             else:
                 self.finished.emit(False, str(exc) or "导入失败", None)
         else:
-            self.finished.emit(True, f"已导入「{result.source.name}」", result)
+            if result.dimensions:
+                message = f"已导入{result.dimension_text}，来源世界「{result.source.name}」"
+            else:
+                message = f"已导入「{result.source.name}」"
+            self.finished.emit(True, message, result)

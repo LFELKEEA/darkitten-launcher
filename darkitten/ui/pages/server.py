@@ -922,8 +922,8 @@ class ServerPage(QWidget):
         self.import_world_btn.setCursor(Qt.PointingHandCursor)
         self.import_world_btn.setIcon(icons.icon("globe", colors()["accent"], 14))
         self.import_world_btn.setToolTip(
-            "把其他游戏版本的完整存档导入为这个服务端的世界，"
-            "所有维度和玩家数据都会保留"
+            "把其他游戏版本的存档导入这个服务端，可以只导入主世界、下界或末地；"
+            "只选部分维度时合并，未选维度和玩家数据保持原样"
         )
         self.import_world_btn.clicked.connect(self.import_world_dialog)
         actions.addWidget(self.import_world_btn)
@@ -1994,7 +1994,9 @@ class ServerPage(QWidget):
         dialog = WorldImportDialog(
             self.main,
             target_text=(
-                f"把完整存档导入服务端「{info.name}」，作为它的主世界。"
+                f"把其他游戏版本的存档导入服务端「{info.name}」，作为它的主世界。"
+                "可以选择只导入主世界、下界或末地；只选部分维度时会合并到现有世界，"
+                "level.dat、玩家数据和未选维度保持原样。"
                 "导入后 server.properties 的 level-name 会同步更新。"
             ),
             default_name=level_name,
@@ -2004,9 +2006,19 @@ class ServerPage(QWidget):
         dialog.exec()
         if dialog.import_result is not None:
             self.refresh_servers(info.folder)
-            backup = getattr(dialog.import_result, "backup", None)
-            suffix = f"，原世界已备份为 {backup.name}" if backup is not None else ""
-            self.toast(f"存档已导入服务端{suffix}", "success")
+            result = dialog.import_result
+            dimensions = getattr(result, "dimension_text", "")
+            backups = getattr(result, "backups", None) or []
+            if not backups and getattr(result, "backup", None) is not None:
+                backups = [result.backup]
+            prefix = f"{dimensions}已导入服务端" if dimensions else "存档已导入服务端"
+            if backups:
+                names = "、".join(item.name for item in backups[:3])
+                more = f" 等 {len(backups)} 个" if len(backups) > 3 else ""
+                suffix = f"，旧数据已备份为 {names}{more}"
+            else:
+                suffix = ""
+            self.toast(f"{prefix}{suffix}", "success")
 
     def open_import_dialog(self, path: str | Path | None = None) -> None:
         from ..server_pack_dialog import ServerPackImportDialog
