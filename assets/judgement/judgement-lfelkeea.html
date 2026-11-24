@@ -733,7 +733,7 @@ function updateCamera(dt) {
 
 /* ========================= DEVELOPER MODE ========================= */
 
-const DEV_CODE = 'lfelkeea-developer-mode-true-7398246571';
+const DEV_CODE = 'LFELKEEA-developer-mode-true';
 let devMode = false;
 let devBuf = '';
 let devBanner = 0;
@@ -965,7 +965,7 @@ function onKeyDown(e) {
   const low = e.key.toLowerCase();
   const fresh = !keys[low];
   keys[low] = true;
-  if (fresh && devFeed(low)) return;
+  if (fresh && devFeed(e.key)) return;
   if (fresh) handlePress(low, e.code || '');
 }
 
