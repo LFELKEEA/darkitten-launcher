@@ -37,6 +37,13 @@ from .loaders import (
     _patch_installer,
     _preseed_libraries,
 )
+from .mods import (
+    META_DIR_NAME,
+    load_mod_meta,
+    mod_meta_icon_path,
+    mod_meta_json_path,
+    write_mod_meta,
+)
 from .versions import maven_path
 
 SERVER_NAMES = {
@@ -1805,8 +1812,6 @@ def delete_addon(addon: AddonFile) -> tuple[bool, str]:
     if not ok:
         return False, message
     try:
-        from .mods import mod_meta_icon_path, mod_meta_json_path
-
         names = [path.name]
         if path.name.lower().endswith(".disabled"):
             names.append(path.name[: -len(".disabled")])
@@ -1823,6 +1828,204 @@ def delete_addon(addon: AddonFile) -> tuple[bool, str]:
     except Exception:  # noqa: BLE001 - 元数据清理失败不影响卸载
         pass
     return True, message
+
+
+ADDON_SUFFIXES = (".jar", ".jar.disabled")
+_ADDON_SCAN_SKIP = {
+    ".git",
+    ".dkl-meta",
+    ".dkl-updates",
+    ".trash",
+    "__pycache__",
+    "backups",
+    "cache",
+    "libraries",
+    "logs",
+    "runtime",
+    "versions",
+}
+
+
+def is_addon_path(path: Path) -> bool:
+    return Path(path).name.lower().endswith(ADDON_SUFFIXES)
+
+
+def scan_addon_paths(paths: list[Path]) -> tuple[list[Path], list[Path]]:
+    """把拖入或选择的文件和文件夹展开成可导入的 jar 列表。
+
+    文件夹会递归扫描，但跳过 cache、libraries、versions 等明显的
+    非内容目录，避免把整个服务端根目录拖进来时误收依赖 jar。
+    """
+    found: list[Path] = []
+    ignored: list[Path] = []
+    seen: set[str] = set()
+
+    def add(candidate: Path) -> None:
+        try:
+            key = str(candidate.resolve()).lower()
+        except OSError:
+            key = str(candidate).lower()
+        if key in seen:
+            return
+        seen.add(key)
+        if is_addon_path(candidate):
+            found.append(candidate)
+        else:
+            ignored.append(candidate)
+
+    def walk(folder: Path) -> None:
+        try:
+            children = sorted(folder.iterdir(), key=lambda p: p.name.lower())
+        except OSError:
+            return
+        for child in children:
+            try:
+                if child.is_file():
+                    if is_addon_path(child):
+                        add(child)
+                elif child.is_dir() and child.name.lower() not in _ADDON_SCAN_SKIP:
+                    walk(child)
+            except OSError:
+                continue
+
+    for raw in paths:
+        path = Path(raw)
+        try:
+            if path.is_dir():
+                walk(path)
+            elif path.is_file():
+                add(path)
+            else:
+                ignored.append(path)
+        except OSError:
+            ignored.append(path)
+    found.sort(key=lambda p: str(p).lower())
+    return found, ignored
+
+
+def _addon_sha1(path: Path) -> str:
+    digest = hashlib.sha1()
+    try:
+        with Path(path).open("rb") as fp:
+            while True:
+                chunk = fp.read(1024 * 1024)
+                if not chunk:
+                    break
+                digest.update(chunk)
+    except OSError:
+        return ""
+    return digest.hexdigest()
+
+
+def _same_addon_content(left: Path, right: Path) -> bool:
+    try:
+        if Path(left).stat().st_size != Path(right).stat().st_size:
+            return False
+    except OSError:
+        return False
+    return _addon_sha1(left) == _addon_sha1(right)
+
+
+@dataclass
+class AddonImportResult:
+    imported: list[Path] = field(default_factory=list)
+    skipped: list[tuple[Path, str]] = field(default_factory=list)
+    errors: list[str] = field(default_factory=list)
+    replaced: list[Path] = field(default_factory=list)
+
+
+def addon_import_conflicts(sources: list[Path], target_dir: Path) -> list[Path]:
+    """返回会覆盖目标目录里同名且内容不同的源文件。"""
+    target_dir = Path(target_dir)
+    conflicts: list[Path] = []
+    seen: set[str] = set()
+    for raw in sources:
+        source = Path(raw)
+        dest = target_dir / source.name
+        key = dest.name.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        try:
+            if not dest.is_file():
+                continue
+            if source.resolve() == dest.resolve():
+                continue
+            if _same_addon_content(source, dest):
+                continue
+        except OSError:
+            continue
+        conflicts.append(source)
+    return conflicts
+
+
+def _backup_addon_file(path: Path, backup_root: Path) -> Path:
+    backup_root.mkdir(parents=True, exist_ok=True)
+    target = backup_root / path.name
+    index = 2
+    while target.exists():
+        target = backup_root / f"{path.stem}-{index}{path.suffix}"
+        index += 1
+    shutil.move(str(path), str(target))
+    return target
+
+
+def import_addon_files(
+    sources: list[Path],
+    target_dir: Path,
+    *,
+    overwrite: bool = False,
+) -> AddonImportResult:
+    """把 jar 复制进服务端的 mods/plugins 目录。
+
+    overwrite=False 时同名且内容不同的文件会被跳过；overwrite=True
+    时旧文件先移到 .dkl-meta/backups/addons/<时间>，再复制新文件。
+    源目录里的 .dkl-meta 下载记录会一并带过来，方便继续检查更新。
+    """
+    target_dir = Path(target_dir)
+    result = AddonImportResult()
+    try:
+        target_dir.mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        result.errors.append(f"无法创建目录：{exc}")
+        return result
+    stamp = time.strftime("%Y%m%d-%H%M%S")
+    backup_root = target_dir / META_DIR_NAME / "backups" / "addons" / stamp
+    for raw in sources:
+        source = Path(raw)
+        dest = target_dir / source.name
+        try:
+            if dest.exists():
+                if source.resolve() == dest.resolve():
+                    result.skipped.append((source, "已在目标目录中"))
+                    continue
+                if _same_addon_content(source, dest):
+                    result.skipped.append((source, "文件内容相同"))
+                    continue
+                if not overwrite:
+                    result.skipped.append((source, "同名文件已存在"))
+                    continue
+                result.replaced.append(_backup_addon_file(dest, backup_root))
+            shutil.copy2(source, dest)
+        except OSError as exc:
+            result.errors.append(f"{source.name}：{exc}")
+            continue
+
+        meta = load_mod_meta(source.parent, source.name)
+        if meta:
+            icon = b""
+            try:
+                icon_path = mod_meta_icon_path(source.parent, source.name)
+                if icon_path.is_file():
+                    icon = icon_path.read_bytes()
+            except OSError:
+                icon = b""
+            try:
+                write_mod_meta(target_dir, dest.name, dict(meta), icon)
+            except OSError:
+                pass
+        result.imported.append(dest)
+    return result
 
 
 # ---------------------------------------------------------------------------

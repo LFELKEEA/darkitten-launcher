@@ -734,6 +734,16 @@ class MainWindow(QWidget):
     def _archive_paths(mime) -> list[Path]:
         return local_transfer_paths(mime)
 
+    @staticmethod
+    def _is_addon_drop_target(widget) -> bool:
+        """服务端插件列表自己处理拖入时，把事件让给它。"""
+        node = widget
+        while isinstance(node, QWidget):
+            if node.property("dklAddonDrop"):
+                return True
+            node = node.parentWidget()
+        return False
+
     def _position_drop_hint(self) -> None:
         self.drop_hint.move(
             (self.width() - self.drop_hint.width()) // 2,
@@ -769,6 +779,10 @@ class MainWindow(QWidget):
                 and isValid(self)
                 and QApplication.activeModalWidget() is None
             ):
+                if self._is_addon_drop_target(obj):
+                    # 服务端插件列表有独立拖放区，交给控件自己处理。
+                    self._hide_drop_hint()
+                    return False
                 if etype == QEvent.DragLeave:
                     self._hide_drop_hint()
                     return False

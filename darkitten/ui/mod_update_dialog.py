@@ -17,7 +17,12 @@ from .widgets import badge, colors
 
 
 class _UpdateRow(QFrame):
-    def __init__(self, update: ModUpdate, parent: QWidget | None = None) -> None:
+    def __init__(
+        self,
+        update: ModUpdate,
+        parent: QWidget | None = None,
+        label: str = "Mod",
+    ) -> None:
         super().__init__(parent)
         self.update = update
         self.setObjectName("SelectRow")
@@ -28,7 +33,7 @@ class _UpdateRow(QFrame):
 
         self.check = QCheckBox()
         self.check.setChecked(True)
-        self.check.setToolTip("选中后会更新这个 Mod")
+        self.check.setToolTip(f"选中后会更新这个 {label}")
         layout.addWidget(self.check)
 
         texts = QVBoxLayout()
@@ -90,10 +95,17 @@ def _open_url(url: str) -> None:
 
 
 class ModUpdatesDialog(StyledDialog):
-    def __init__(self, parent, updates: list[ModUpdate]) -> None:
+    def __init__(
+        self,
+        parent,
+        updates: list[ModUpdate],
+        label: str = "Mod",
+        folder_name: str = "mods",
+    ) -> None:
+        self.label = str(label or "Mod")
         super().__init__(
             parent,
-            f"发现 {len(updates)} 个 Mod 更新",
+            f"发现 {len(updates)} 个 {self.label} 更新",
             "download",
             colors()["green"],
             width=700,
@@ -103,8 +115,8 @@ class ModUpdatesDialog(StyledDialog):
         self._rows: list[_UpdateRow] = []
 
         intro = QLabel(
-            "只显示适配当前游戏版本与加载器的文件。更新前会把旧文件备份到 "
-            "mods/.dkl-meta/backups，不会直接删除。"
+            "只显示适配当前游戏版本与平台的文件。更新前会把旧文件备份到 "
+            f"{folder_name}/.dkl-meta/backups，不会直接删除。"
         )
         intro.setObjectName("Muted")
         intro.setWordWrap(True)
@@ -120,7 +132,7 @@ class ModUpdatesDialog(StyledDialog):
         layout.setContentsMargins(0, 0, 4, 0)
         layout.setSpacing(5)
         for update in self.updates:
-            row = _UpdateRow(update, holder)
+            row = _UpdateRow(update, holder, self.label)
             self._rows.append(row)
             layout.addWidget(row)
         layout.addStretch(1)
@@ -131,7 +143,9 @@ class ModUpdatesDialog(StyledDialog):
         self.summary.setObjectName("Tiny")
         self.body.addWidget(self.summary)
 
-        self.update_btn = self.add_button("全部更新", "Primary", self._confirm)
+        self.update_btn = self.add_button(
+            f"更新全部{self.label}", "Primary", self._confirm
+        )
         self.add_button("取消", "Secondary", self.reject)
         for row in self._rows:
             row.check.toggled.connect(self._refresh_summary)
@@ -146,7 +160,9 @@ class ModUpdatesDialog(StyledDialog):
 
     def _refresh_summary(self) -> None:
         count = len(self._checked())
-        self.summary.setText(f"已选择 {count} / {len(self.updates)} 个 Mod")
+        self.summary.setText(
+            f"已选择 {count} / {len(self.updates)} 个 {self.label}"
+        )
         self.update_btn.setEnabled(count > 0)
         self.update_btn.setText(f"更新选中 ({count})" if count > 0 else "更新选中")
 

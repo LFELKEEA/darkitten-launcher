@@ -35,6 +35,7 @@ from PySide6.QtWidgets import (
 )
 
 from ...java import pick_java
+from ...mods import list_mods
 from ...server_config import read_server_properties
 from ...servers import (
     EULA_URL,
@@ -43,10 +44,13 @@ from ...servers import (
     ServerError,
     ServerInfo,
     ServerProcess,
+    addon_import_conflicts,
     addons_dir,
     check_port,
     delete_addon,
+    import_addon_files,
     list_addons,
+    scan_addon_paths,
     required_java_major,
     save_server,
     scan_servers,
@@ -64,12 +68,15 @@ from ...sakura import (
     remove_tunnel_config,
 )
 from ...workers import (
+    ModUpdateApplyWorker,
+    ModUpdateCheckWorker,
     SakuraLoginWorker,
     SakuraRoomWorker,
     ServerInstallWorker,
 )
 from .. import icons
 from ..dialogs import ConfirmDialog, NoticeDialog, TextInputDialog
+from ..mod_update_dialog import ModUpdatesDialog
 from ..server_addons import ServerAddonDialog
 from ..server_config_dialog import ServerConfigDialog
 from ..server_dialog import ServerCreateDialog
@@ -82,6 +89,7 @@ from ..widgets import (
     colors,
     hline,
     icon_button,
+    local_transfer_paths,
     repolish,
     transparent_children,
 )
@@ -395,6 +403,108 @@ class AddonRow(QFrame):
         layout.addWidget(self.switch)
 
 
+class AddonDropArea(QScrollArea):
+    """支持把 .jar 或包含 .jar 的文件夹拖进服务端列表。"""
+
+    files_dropped = Signal(list)
+
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setAcceptDrops(True)
+        self.setProperty("dklAddonDrop", True)
+        self._hint = QLabel("松开鼠标，把 jar 放进这个服务端", self.viewport())
+        self._hint.setAlignment(Qt.AlignCenter)
+        self._hint.setAttribute(Qt.WA_TransparentForMouseEvents, True)
+        self._hint.setStyleSheet(
+            "background: rgba(20, 12, 18, 225);"
+            f" border: 2px dashed {colors()['accent']};"
+            " border-radius: 10px; color: #F8E9EF;"
+            " font-size: 12px; font-weight: 700;"
+        )
+        self._hint.hide()
+
+    @staticmethod
+    def _local_paths(mime) -> list[Path]:
+        result: list[Path] = []
+        try:
+            candidates = local_transfer_paths(mime)
+        except Exception:
+            return result
+        for path in candidates:
+            try:
+                if path.is_dir() or path.name.lower().endswith(
+                    (".jar", ".jar.disabled")
+                ):
+                    result.append(path)
+            except OSError:
+                continue
+        return result
+
+    def _set_drag_active(self, active: bool) -> None:
+        if active:
+            self._position_hint()
+            self._hint.show()
+            self._hint.raise_()
+        else:
+            self._hint.hide()
+
+    def _position_hint(self) -> None:
+        width = max(80, self.viewport().width() - 24)
+        self._hint.setGeometry(12, 10, width, 34)
+
+    def viewportEvent(self, event) -> bool:
+        # QAbstractScrollArea 的 viewport 默认接收拖放，事件不会直接到
+        # 滚动区域本身，这里转给下面的处理函数。
+        etype = event.type()
+        if etype == QEvent.DragEnter:
+            self.dragEnterEvent(event)
+            return True
+        if etype == QEvent.DragMove:
+            self.dragMoveEvent(event)
+            return True
+        if etype == QEvent.DragLeave:
+            self.dragLeaveEvent(event)
+            return True
+        if etype == QEvent.Drop:
+            self.dropEvent(event)
+            return True
+        return super().viewportEvent(event)
+
+    def dragEnterEvent(self, event) -> None:
+        if self._local_paths(event.mimeData()):
+            event.setDropAction(Qt.CopyAction)
+            event.accept()
+            self._set_drag_active(True)
+            return
+        event.ignore()
+
+    def dragMoveEvent(self, event) -> None:
+        if self._local_paths(event.mimeData()):
+            event.setDropAction(Qt.CopyAction)
+            event.accept()
+            return
+        event.ignore()
+
+    def dragLeaveEvent(self, event) -> None:
+        self._set_drag_active(False)
+        super().dragLeaveEvent(event)
+
+    def dropEvent(self, event) -> None:
+        paths = self._local_paths(event.mimeData())
+        self._set_drag_active(False)
+        if not paths:
+            event.ignore()
+            return
+        event.setDropAction(Qt.CopyAction)
+        event.accept()
+        self.files_dropped.emit(paths)
+
+    def resizeEvent(self, event) -> None:
+        super().resizeEvent(event)
+        if self._hint.isVisible():
+            self._position_hint()
+
+
 class ServerPage(QWidget):
     def __init__(self, main, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -407,6 +517,7 @@ class ServerPage(QWidget):
         self._expected_stop: set[str] = set()
         self._install_worker: ServerInstallWorker | None = None
         self._install_folder = ""
+        self._addon_update_worker: ModUpdateCheckWorker | None = None
         self._sakura_login_worker: SakuraLoginWorker | None = None
         self._sakura_worker: SakuraRoomWorker | None = None
         self._sakura_tunnel: SakuraTunnelProcess | None = None
@@ -783,17 +894,40 @@ class ServerPage(QWidget):
         self.addon_open_btn.setIcon(icons.icon("folder", colors()["text2"], 14))
         self.addon_open_btn.clicked.connect(self._open_addons_folder)
         top.addWidget(self.addon_open_btn)
+        layout.addLayout(top)
+
+        actions = QHBoxLayout()
+        actions.setSpacing(6)
+        drop_tip = QLabel("把 .jar 或文件夹拖进列表即可导入")
+        drop_tip.setObjectName("Tiny")
+        actions.addWidget(drop_tip)
+        actions.addStretch(1)
+        self.addon_check_btn = QPushButton("检查更新")
+        self.addon_check_btn.setObjectName("Ghost")
+        self.addon_check_btn.setCursor(Qt.PointingHandCursor)
+        self.addon_check_btn.setIcon(icons.icon("refresh", colors()["text2"], 14))
+        self.addon_check_btn.setToolTip("检查已安装插件/Mod 是否有新版本")
+        self.addon_check_btn.clicked.connect(self._check_addon_updates)
+        actions.addWidget(self.addon_check_btn)
+        self.addon_import_btn = QPushButton("从文件夹导入")
+        self.addon_import_btn.setObjectName("Secondary")
+        self.addon_import_btn.setCursor(Qt.PointingHandCursor)
+        self.addon_import_btn.setIcon(icons.icon("plus", colors()["text2"], 14))
+        self.addon_import_btn.setToolTip("选择一个文件夹，导入里面的 .jar")
+        self.addon_import_btn.clicked.connect(self._import_addon_folder)
+        actions.addWidget(self.addon_import_btn)
         self.addon_download_btn = QPushButton("下载插件")
         self.addon_download_btn.setObjectName("Soft")
         self.addon_download_btn.setCursor(Qt.PointingHandCursor)
         self.addon_download_btn.setIcon(icons.icon("download", colors()["accent"], 14))
         self.addon_download_btn.clicked.connect(self.open_addon_dialog)
-        top.addWidget(self.addon_download_btn)
-        layout.addLayout(top)
+        actions.addWidget(self.addon_download_btn)
+        layout.addLayout(actions)
 
-        self.addon_scroll = QScrollArea()
+        self.addon_scroll = AddonDropArea()
         self.addon_scroll.setWidgetResizable(True)
         self.addon_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.addon_scroll.files_dropped.connect(self._import_addon_paths)
         self.addon_holder = QWidget()
         self.addon_layout = QVBoxLayout(self.addon_holder)
         self.addon_layout.setContentsMargins(0, 0, 3, 0)
@@ -1313,6 +1447,12 @@ class ServerPage(QWidget):
         self.addon_download_btn.setText(
             "下载插件" if info.is_plugin_server else "下载 Mod"
         )
+        self.addon_check_btn.setToolTip(
+            f"检查已安装{info.addon_label}是否有新版本"
+        )
+        self.addon_import_btn.setToolTip(
+            f"选择包含{info.addon_label}的文件夹，自动导入里面的 .jar"
+        )
         self.addon_path_label.setText(str(addons_dir(info)))
         self.address_label.setText(f"localhost:{info.port}")
         self.tab_stack.setCurrentIndex(0)
@@ -1687,8 +1827,9 @@ class ServerPage(QWidget):
         addons = list_addons(info)
         if not addons:
             self.addon_empty.setText(
-                f"还没有{info.addon_label}。点击右上角“下载{info.addon_label}”"
-                f"从 Modrinth 或 CurseForge 获取适配 {info.mc_version} 的项目。"
+                f"还没有{info.addon_label}。点击“下载{info.addon_label}”从 "
+                f"Modrinth 或 CurseForge 获取适配 {info.mc_version} 的项目，"
+                "也可以把 .jar 或包含 .jar 的文件夹直接拖进这个列表。"
             )
             self.addon_empty.setVisible(True)
             return
@@ -1791,6 +1932,198 @@ class ServerPage(QWidget):
         dialog = ServerAddonDialog(self.main, info)
         dialog.installed.connect(lambda _: self.refresh_addons())
         dialog.exec()
+        self.refresh_addons()
+
+    # ------------------------------------------------------------------
+    # 插件检查更新与本地导入
+
+    def _check_addon_updates(self) -> None:
+        info = self._current_info()
+        if info is None:
+            return
+        if self._addon_update_worker is not None:
+            self.toast("正在检查更新，请稍候", "info")
+            return
+        mods = list_mods(addons_dir(info))
+        if not mods:
+            self.toast(f"当前服务端还没有安装{info.addon_label}", "info")
+            return
+        content_type = "plugin" if info.is_plugin_server else "mod"
+        self.addon_check_btn.setEnabled(False)
+        self.addon_check_btn.setText("检查中…")
+        worker = ModUpdateCheckWorker(
+            mods,
+            info.mc_version,
+            info.kind,
+            self,
+            content_type=content_type,
+        )
+        self._addon_update_worker = worker
+        worker.progress.connect(self._on_addon_update_progress)
+        worker.finished.connect(
+            lambda updates, errors, folder=info.folder: self._on_addon_updates_checked(
+                folder, updates, errors
+            )
+        )
+        worker.start()
+
+    def _on_addon_update_progress(self, done: int, total: int, _name: str) -> None:
+        self.addon_check_btn.setText(f"检查中 {done}/{total}")
+
+    def _on_addon_updates_checked(
+        self, folder: str, updates, errors
+    ) -> None:
+        self._addon_update_worker = None
+        self.addon_check_btn.setEnabled(True)
+        self.addon_check_btn.setText("检查更新")
+        info = self._current_info()
+        if info is None or info.folder != folder:
+            return
+        found = list(updates or [])
+        detail = ""
+        if errors:
+            detail = "；".join(str(item) for item in list(errors)[:2])
+        if not found:
+            if detail:
+                self.toast(f"检查未完成：{detail}", "info")
+            else:
+                self.toast(
+                    f"所有{info.addon_label}都是最新版本，或没有找到在线来源",
+                    "success",
+                )
+            return
+        if detail:
+            self.toast(f"{len(found)} 个可更新，部分检查失败：{detail}", "info")
+        dialog = ModUpdatesDialog(
+            self,
+            found,
+            label=info.addon_label,
+            folder_name=info.addon_dir_name,
+        )
+        if dialog.exec():
+            self._apply_addon_updates(info, dialog.selected)
+
+    def _apply_addon_updates(self, info: ServerInfo, updates) -> None:
+        updates = list(updates or [])
+        if not updates:
+            return
+        if info.folder in self._processes:
+            self.toast("服务端正在运行，请先停止再更新", "error")
+            return
+        target = addons_dir(info)
+        worker = ModUpdateApplyWorker(
+            updates,
+            target,
+            threads=self.main.config.download_threads,
+            parent=self,
+            label=info.addon_label,
+        )
+        worker.finished.connect(
+            lambda success, message, filename, i=info: self._on_addon_updates_applied(
+                i, success, message, filename
+            )
+        )
+        title = (
+            f"更新 {len(updates)} 个{info.addon_label}"
+            if len(updates) > 1
+            else f"更新{info.addon_label}：{updates[0].mod.name}"
+        )
+        self.main.download_center.start_worker(
+            worker,
+            title=title,
+            content_type="mod-update",
+            target=target,
+            source="mixed",
+        )
+        self.toast("更新已加入下载中心，关闭页面也会继续", "info")
+
+    def _on_addon_updates_applied(
+        self, info: ServerInfo, success: bool, message: str, _filename: str
+    ) -> None:
+        self.refresh_addons()
+        self.main.toast(message, "success" if success else "error")
+        if success and info.folder in self._processes:
+            self.toast("需要重启服务端后生效", "info")
+
+    def _import_addon_folder(self) -> None:
+        info = self._current_info()
+        if info is None:
+            return
+        start = addons_dir(info)
+        if not start.is_dir():
+            start = info.path
+        folder = QFileDialog.getExistingDirectory(
+            self,
+            f"选择包含{info.addon_label}的文件夹",
+            str(start),
+        )
+        if not folder:
+            return
+        self._import_addon_paths([Path(folder)], info)
+
+    def _import_addon_paths(self, paths, info: ServerInfo | None = None) -> None:
+        info = info or self._current_info()
+        if info is None:
+            self.toast("请先选择一个服务端", "info")
+            return
+        sources, _ignored = scan_addon_paths([Path(item) for item in paths])
+        label = info.addon_label
+        if not sources:
+            NoticeDialog(
+                self,
+                "没有可导入的文件",
+                f"没有找到 .jar 或 .jar.disabled 文件。\n\n"
+                f"可以直接把 jar 拖进列表，或选择包含{label}的文件夹。",
+                button_text="知道了",
+                icon_name="warning",
+            ).exec()
+            return
+        target = addons_dir(info)
+        try:
+            target.mkdir(parents=True, exist_ok=True)
+        except OSError as exc:
+            self.toast(f"无法创建目录：{exc}", "error")
+            return
+
+        conflicts = addon_import_conflicts(sources, target)
+        overwrite = False
+        if conflicts:
+            names = "\n".join(f"· {Path(item).name}" for item in conflicts[:8])
+            if len(conflicts) > 8:
+                names += f"\n…另有 {len(conflicts) - 8} 个"
+            dialog = ConfirmDialog(
+                self,
+                f"发现同名{label}",
+                f"{len(conflicts)} 个文件与现有文件同名，要覆盖吗？",
+                primary_text="覆盖旧文件",
+                secondary_text="跳过同名",
+                icon_name="warning",
+                details=(
+                    names + "\n\n覆盖前会把旧文件备份到 "
+                    ".dkl-meta/backups/addons，不会直接删除。"
+                ),
+            )
+            overwrite = bool(dialog.exec())
+
+        result = import_addon_files(sources, target, overwrite=overwrite)
+        if result.imported:
+            self.toast(f"已导入 {len(result.imported)} 个{label}", "success")
+        if result.replaced:
+            self.toast(f"已覆盖 {len(result.replaced)} 个旧文件并完成备份", "info")
+        if result.skipped:
+            self.toast(
+                f"跳过 {len(result.skipped)} 个文件（内容相同或同名）", "info"
+            )
+        if result.errors:
+            NoticeDialog(
+                self,
+                "部分文件导入失败",
+                "\n".join(result.errors[:8]),
+                button_text="知道了",
+                icon_name="warning",
+            ).exec()
+        if result.imported and info.folder in self._processes:
+            self.toast("需要重启服务端后生效", "info")
         self.refresh_addons()
 
     def _open_addons_folder(self) -> None:
@@ -2742,6 +3075,8 @@ class ServerPage(QWidget):
         self.online_copy_btn.setIcon(icons.icon("copy", colors()["accent"], 14))
         self.pack_btn.setIcon(icons.icon("package", colors()["accent"], 14))
         self.addon_open_btn.setIcon(icons.icon("folder", colors()["text2"], 14))
+        self.addon_check_btn.setIcon(icons.icon("refresh", colors()["text2"], 14))
+        self.addon_import_btn.setIcon(icons.icon("plus", colors()["text2"], 14))
         self.addon_download_btn.setIcon(
             icons.icon("download", colors()["accent"], 14)
         )

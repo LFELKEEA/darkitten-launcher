@@ -1846,11 +1846,13 @@ class ModUpdateCheckWorker(QObject):
         game_version: str = "",
         loader: str = "",
         parent: QObject | None = None,
+        content_type: str = "mod",
     ) -> None:
         super().__init__(parent)
         self.mods = list(mods)
         self.game_version = str(game_version or "")
         self.loader = str(loader or "")
+        self.content_type = str(content_type or "mod").lower()
         self.cancel_event = threading.Event()
 
     def start(self) -> None:
@@ -1862,6 +1864,7 @@ class ModUpdateCheckWorker(QObject):
                 self.mods,
                 self.game_version,
                 self.loader,
+                content_type=self.content_type,
                 progress_cb=lambda done, total, name: self.progress.emit(
                     done, total, name
                 ),
@@ -1886,11 +1889,13 @@ class ModUpdateApplyWorker(QObject):
         mods_dir: Path,
         threads: int = 8,
         parent: QObject | None = None,
+        label: str = "Mod",
     ) -> None:
         super().__init__(parent)
         self.updates = list(updates)
         self.mods_dir = Path(mods_dir)
         self.threads = max(1, min(16, int(threads)))
+        self.label = str(label or "Mod")
         self.cancel_event = threading.Event()
 
     def start(self) -> None:
@@ -1922,7 +1927,7 @@ class ModUpdateApplyWorker(QObject):
             return
         self.finished.emit(
             True,
-            f"已更新 {len(paths)} 个 Mod",
+            f"已更新 {len(paths)} 个{self.label}",
             paths[-1].name if paths else "",
         )
 
