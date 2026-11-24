@@ -1719,12 +1719,16 @@ class AddonFile:
     filename: str
     size: int
     enabled: bool
+    version: str = ""
+    loader: str = ""
     project_id: str = ""
     source: str = ""
     source_label: str = ""
     project_url: str = ""
     description: str = ""
     description_zh: str = ""
+    icon_bytes: bytes = b""
+    sha1: str = ""
 
     @property
     def intro(self) -> str:
@@ -1740,6 +1744,8 @@ class AddonFile:
 
 
 def list_addons(info: ServerInfo) -> list[AddonFile]:
+    from .mods import read_mod
+
     directory = addons_dir(info)
     if not directory.exists():
         return []
@@ -1751,41 +1757,49 @@ def list_addons(info: ServerInfo) -> list[AddonFile]:
     for path in files:
         name = path.name
         lower = name.lower()
-        if lower.endswith(".jar"):
-            enabled = True
-            display = name[:-4]
-        elif lower.endswith(".jar.disabled"):
-            enabled = False
-            display = name[: -len(".jar.disabled")]
-        else:
+        if not (lower.endswith(".jar") or lower.endswith(".jar.disabled")):
             continue
         try:
-            size = path.stat().st_size
-        except OSError:
-            size = 0
-        meta = {}
-        try:
-            from .mods import load_mod_meta
-
-            meta = load_mod_meta(directory, name)
-        except Exception:  # noqa: BLE001 - 元数据损坏时退回文件名
-            meta = {}
+            mod = read_mod(path)
+        except Exception:  # noqa: BLE001 - 损坏的 jar 退回文件名
+            mod = None
+        if mod is None:
+            enabled = lower.endswith(".jar")
+            display = name[:-4] if enabled else name[: -len(".jar.disabled")]
+            try:
+                size = path.stat().st_size
+            except OSError:
+                size = 0
+            result.append(
+                AddonFile(
+                    path=path,
+                    name=display,
+                    filename=name,
+                    size=size,
+                    enabled=enabled,
+                )
+            )
+            continue
         result.append(
             AddonFile(
                 path=path,
-                name=str(meta.get("title") or display),
+                name=mod.name or name,
                 filename=name,
-                size=size,
-                enabled=enabled,
-                project_id=str(meta.get("project_id") or ""),
-                source=str(meta.get("source") or ""),
-                source_label=str(meta.get("source_label") or meta.get("source") or ""),
-                project_url=str(meta.get("project_url") or ""),
-                description=str(meta.get("description") or ""),
-                description_zh=str(meta.get("description_zh") or ""),
+                size=mod.size,
+                enabled=mod.enabled,
+                version=mod.version,
+                loader=mod.loader,
+                project_id=mod.project_id,
+                source=mod.source,
+                source_label=mod.source_label,
+                project_url=mod.project_url,
+                description=mod.description,
+                description_zh=mod.description_zh,
+                icon_bytes=mod.icon_bytes,
+                sha1=mod.sha1,
             )
         )
-    result.sort(key=lambda item: item.name.lower())
+    result.sort(key=lambda item: (not item.enabled, item.name.lower()))
     return result
 
 

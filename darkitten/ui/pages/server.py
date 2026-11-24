@@ -365,13 +365,21 @@ class AddonRow(QFrame):
         icon = QLabel()
         icon.setFixedSize(30, 30)
         icon.setAlignment(Qt.AlignCenter)
-        icon.setPixmap(
-            icons.pixmap(
-                "plug" if is_plugin else "cube",
-                colors()["purple"] if is_plugin else colors()["accent"],
-                18,
+        pixmap = QPixmap()
+        if addon.icon_bytes and pixmap.loadFromData(addon.icon_bytes):
+            icon.setPixmap(
+                pixmap.scaled(
+                    30, 30, Qt.KeepAspectRatio, Qt.SmoothTransformation
+                )
             )
-        )
+        else:
+            icon.setPixmap(
+                icons.pixmap(
+                    "plug" if is_plugin else "cube",
+                    colors()["purple"] if is_plugin else colors()["accent"],
+                    18,
+                )
+            )
         layout.addWidget(icon)
 
         info_layout = QVBoxLayout()
@@ -379,10 +387,23 @@ class AddonRow(QFrame):
         name = _ElidedLabel(addon.name)
         name.setStyleSheet("font-weight: 600; font-size: 12px;")
         info_layout.addWidget(name)
-        meta = _ElidedLabel(f"{addon.filename} · {addon.size_text}")
+        meta_bits = [addon.filename, addon.size_text]
+        if addon.version:
+            meta_bits.insert(0, f"v{addon.version}")
+        if addon.loader:
+            meta_bits.insert(
+                1 if addon.version else 0, addon.loader
+            )
+        meta = _ElidedLabel(" · ".join(meta_bits))
         meta.setObjectName("Tiny")
         info_layout.addWidget(meta)
         layout.addLayout(info_layout, 1)
+        tips = [addon.filename]
+        if addon.version:
+            tips.append(f"版本 {addon.version}")
+        if addon.loader:
+            tips.append(addon.loader)
+        self.setToolTip(" · ".join(tips))
 
         info_btn = icon_button("message", "查看介绍", colors()["accent"], 28, 14)
         info_btn.clicked.connect(lambda _=False: self.details_requested.emit(self.addon))
@@ -1865,10 +1886,26 @@ class ServerPage(QWidget):
             }
             ServerAddonDialog(self.main, info, hit).exec()
             return
-        text = addon.intro or (
-            f"{addon.name}\n\n这个文件没有记录下载来源，无法在线获取完整介绍。"
-            f"\n\n文件名：{addon.filename}"
-        )
+        text = addon.intro
+        if not text:
+            details = [addon.filename]
+            if addon.version:
+                details.append(f"版本 {addon.version}")
+            if addon.loader:
+                details.append(addon.loader)
+            text = (
+                f"{addon.name}\n\n"
+                + " · ".join(details)
+                + "\n\nJAR 内没有可读取的简介，也没有记录在线来源。"
+                "文件仍可正常启用、禁用或卸载。"
+            )
+        else:
+            header = [addon.name]
+            if addon.version:
+                header.append(f"v{addon.version}")
+            if addon.loader:
+                header.append(addon.loader)
+            text = f"{' · '.join(header)}\n\n{text}"
         NoticeDialog(self, addon.name, text, icon_name="cube").exec()
 
     def _toggle_addon(
@@ -1961,8 +1998,8 @@ class ServerPage(QWidget):
         self._addon_update_worker = worker
         worker.progress.connect(self._on_addon_update_progress)
         worker.finished.connect(
-            lambda updates, errors, folder=info.folder: self._on_addon_updates_checked(
-                folder, updates, errors
+            lambda updates, errors, folder=info.folder, total=len(mods): (
+                self._on_addon_updates_checked(folder, updates, errors, total)
             )
         )
         worker.start()
@@ -1971,7 +2008,7 @@ class ServerPage(QWidget):
         self.addon_check_btn.setText(f"检查中 {done}/{total}")
 
     def _on_addon_updates_checked(
-        self, folder: str, updates, errors
+        self, folder: str, updates, errors, total: int = 0
     ) -> None:
         self._addon_update_worker = None
         self.addon_check_btn.setEnabled(True)
@@ -1980,20 +2017,21 @@ class ServerPage(QWidget):
         if info is None or info.folder != folder:
             return
         found = list(updates or [])
+        checked = f"已检查 {total or len(found)} 个{info.addon_label}"
         detail = ""
         if errors:
             detail = "；".join(str(item) for item in list(errors)[:2])
         if not found:
             if detail:
-                self.toast(f"检查未完成：{detail}", "info")
+                self.toast(f"{checked}，检查未完成：{detail}", "info")
             else:
                 self.toast(
-                    f"所有{info.addon_label}都是最新版本，或没有找到在线来源",
+                    f"{checked}，都是最新版本或没有找到在线来源",
                     "success",
                 )
             return
         if detail:
-            self.toast(f"{len(found)} 个可更新，部分检查失败：{detail}", "info")
+            self.toast(f"{checked}，{len(found)} 个可更新，部分检查失败：{detail}", "info")
         dialog = ModUpdatesDialog(
             self,
             found,
