@@ -515,6 +515,10 @@ class ServerAddonDialog(StyledDialog):
             return
         self._source = source
         self.source_tabs.set_value(source)
+        # 丢弃旧来源的搜索结果：旧 worker 的回调会因为不再是当前 worker 而被忽略。
+        self._search_worker = None
+        self._polling = False
+        self.search_btn.setEnabled(True)
         self._hits = []
         self._rows = []
         self._total = 0
