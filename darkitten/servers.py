@@ -1845,19 +1845,6 @@ def delete_addon(addon: AddonFile) -> tuple[bool, str]:
 
 
 ADDON_SUFFIXES = (".jar", ".jar.disabled")
-_ADDON_SCAN_SKIP = {
-    ".git",
-    ".dkl-meta",
-    ".dkl-updates",
-    ".trash",
-    "__pycache__",
-    "backups",
-    "cache",
-    "libraries",
-    "logs",
-    "runtime",
-    "versions",
-}
 
 
 def is_addon_path(path: Path) -> bool:
@@ -1865,53 +1852,33 @@ def is_addon_path(path: Path) -> bool:
 
 
 def scan_addon_paths(paths: list[Path]) -> tuple[list[Path], list[Path]]:
-    """把拖入或选择的文件和文件夹展开成可导入的 jar 列表。
+    """从选中的路径里挑出可以直接导入的 jar 文件。
 
-    文件夹会递归扫描，但跳过 cache、libraries、versions 等明显的
-    非内容目录，避免把整个服务端根目录拖进来时误收依赖 jar。
+    只接受文件，不会递归扫描文件夹；文件夹或非 jar 文件会放进
+    ignored，交给界面提示。
     """
     found: list[Path] = []
     ignored: list[Path] = []
     seen: set[str] = set()
-
-    def add(candidate: Path) -> None:
-        try:
-            key = str(candidate.resolve()).lower()
-        except OSError:
-            key = str(candidate).lower()
-        if key in seen:
-            return
-        seen.add(key)
-        if is_addon_path(candidate):
-            found.append(candidate)
-        else:
-            ignored.append(candidate)
-
-    def walk(folder: Path) -> None:
-        try:
-            children = sorted(folder.iterdir(), key=lambda p: p.name.lower())
-        except OSError:
-            return
-        for child in children:
-            try:
-                if child.is_file():
-                    if is_addon_path(child):
-                        add(child)
-                elif child.is_dir() and child.name.lower() not in _ADDON_SCAN_SKIP:
-                    walk(child)
-            except OSError:
-                continue
-
     for raw in paths:
         path = Path(raw)
         try:
-            if path.is_dir():
-                walk(path)
-            elif path.is_file():
-                add(path)
-            else:
+            if not path.is_file():
                 ignored.append(path)
+                continue
         except OSError:
+            ignored.append(path)
+            continue
+        try:
+            key = str(path.resolve()).lower()
+        except OSError:
+            key = str(path).lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        if is_addon_path(path):
+            found.append(path)
+        else:
             ignored.append(path)
     found.sort(key=lambda p: str(p).lower())
     return found, ignored

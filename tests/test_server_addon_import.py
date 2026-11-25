@@ -47,22 +47,33 @@ def _version(version_id: str, filename: str, size: int, sha1: str) -> dict:
 
 
 class ScanAddonPathsTests(unittest.TestCase):
-    def test_collects_jars_recursively_and_skips_libraries(self) -> None:
+    def test_ignores_folder_paths(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             (root / "a.jar").write_bytes(b"a")
-            (root / "readme.txt").write_text("x", encoding="utf-8")
             nested = root / "plugins"
             nested.mkdir()
-            (nested / "b.jar.disabled").write_bytes(b"b")
-            libs = root / "libraries"
-            libs.mkdir()
-            (libs / "dep.jar").write_bytes(b"c")
+            (nested / "b.jar").write_bytes(b"b")
 
-            found, _ignored = scan_addon_paths([root])
+            found, ignored = scan_addon_paths([root])
 
-            names = sorted(path.name for path in found)
-            self.assertEqual(names, ["a.jar", "b.jar.disabled"])
+            self.assertEqual(found, [])
+            self.assertEqual(ignored, [root])
+
+    def test_collects_selected_jar_files(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            jar = root / "a.jar"
+            jar.write_bytes(b"a")
+            disabled = root / "b.jar.disabled"
+            disabled.write_bytes(b"b")
+            text = root / "note.txt"
+            text.write_text("x", encoding="utf-8")
+
+            found, ignored = scan_addon_paths([jar, disabled, text])
+
+            self.assertEqual(found, [jar, disabled])
+            self.assertEqual(ignored, [text])
 
     def test_deduplicates_same_path(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -230,7 +241,45 @@ class AddonDropAreaTests(unittest.TestCase):
     def setUpClass(cls) -> None:
         cls._app = QApplication.instance() or QApplication([])
 
-    def test_viewport_drop_emits_local_paths(self) -> None:
+    def _drop(self, area: AddonDropArea, paths: list[Path]) -> QDropEvent:
+        mime = QMimeData()
+        mime.setUrls([QUrl.fromLocalFile(str(path)) for path in paths])
+        enter = QDragEnterEvent(
+            QPoint(5, 5),
+            Qt.CopyAction,
+            mime,
+            Qt.LeftButton,
+            Qt.NoModifier,
+        )
+        QApplication.sendEvent(area.viewport(), enter)
+        drop = QDropEvent(
+            QPoint(5, 5),
+            Qt.CopyAction,
+            mime,
+            Qt.LeftButton,
+            Qt.NoModifier,
+        )
+        QApplication.sendEvent(area.viewport(), drop)
+        return drop
+
+    def test_viewport_drop_emits_jar_files(self) -> None:
+        area = AddonDropArea()
+        area.resize(320, 200)
+        area.show()
+        received: list[list[Path]] = []
+        area.files_dropped.connect(received.append)
+        with tempfile.TemporaryDirectory() as tmp:
+            jar = Path(tmp) / "a.jar"
+            jar.write_bytes(b"a")
+
+            drop = self._drop(area, [jar])
+
+            self.assertTrue(drop.isAccepted())
+            self.assertEqual(received, [[jar]])
+        area.deleteLater()
+        QApplication.processEvents()
+
+    def test_folder_drop_is_ignored(self) -> None:
         area = AddonDropArea()
         area.resize(320, 200)
         area.show()
@@ -239,29 +288,11 @@ class AddonDropAreaTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             folder = Path(tmp)
             (folder / "a.jar").write_bytes(b"a")
-            mime = QMimeData()
-            mime.setUrls([QUrl.fromLocalFile(str(folder))])
 
-            enter = QDragEnterEvent(
-                QPoint(5, 5),
-                Qt.CopyAction,
-                mime,
-                Qt.LeftButton,
-                Qt.NoModifier,
-            )
-            QApplication.sendEvent(area.viewport(), enter)
-            self.assertTrue(enter.isAccepted())
+            drop = self._drop(area, [folder])
 
-            drop = QDropEvent(
-                QPoint(5, 5),
-                Qt.CopyAction,
-                mime,
-                Qt.LeftButton,
-                Qt.NoModifier,
-            )
-            QApplication.sendEvent(area.viewport(), drop)
-            self.assertTrue(drop.isAccepted())
-            self.assertEqual(received, [[folder]])
+            self.assertFalse(drop.isAccepted())
+            self.assertEqual(received, [])
         area.deleteLater()
         QApplication.processEvents()
 

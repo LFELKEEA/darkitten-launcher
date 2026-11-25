@@ -425,7 +425,7 @@ class AddonRow(QFrame):
 
 
 class AddonDropArea(QScrollArea):
-    """支持把 .jar 或包含 .jar 的文件夹拖进服务端列表。"""
+    """支持把 .jar 文件直接拖进服务端插件/Mod 列表。"""
 
     files_dropped = Signal(list)
 
@@ -453,7 +453,7 @@ class AddonDropArea(QScrollArea):
             return result
         for path in candidates:
             try:
-                if path.is_dir() or path.name.lower().endswith(
+                if path.is_file() and path.name.lower().endswith(
                     (".jar", ".jar.disabled")
                 ):
                     result.append(path)
@@ -919,7 +919,7 @@ class ServerPage(QWidget):
 
         actions = QHBoxLayout()
         actions.setSpacing(6)
-        drop_tip = QLabel("把 .jar 或文件夹拖进列表即可导入")
+        drop_tip = QLabel("把 .jar 拖进列表即可添加")
         drop_tip.setObjectName("Tiny")
         actions.addWidget(drop_tip)
         actions.addStretch(1)
@@ -930,12 +930,12 @@ class ServerPage(QWidget):
         self.addon_check_btn.setToolTip("检查已安装插件/Mod 是否有新版本")
         self.addon_check_btn.clicked.connect(self._check_addon_updates)
         actions.addWidget(self.addon_check_btn)
-        self.addon_import_btn = QPushButton("从文件夹导入")
+        self.addon_import_btn = QPushButton("添加内容")
         self.addon_import_btn.setObjectName("Secondary")
         self.addon_import_btn.setCursor(Qt.PointingHandCursor)
         self.addon_import_btn.setIcon(icons.icon("plus", colors()["text2"], 14))
-        self.addon_import_btn.setToolTip("选择一个文件夹，导入里面的 .jar")
-        self.addon_import_btn.clicked.connect(self._import_addon_folder)
+        self.addon_import_btn.setToolTip("从文件管理器选择 .jar 添加")
+        self.addon_import_btn.clicked.connect(self._import_addon_files)
         actions.addWidget(self.addon_import_btn)
         self.addon_download_btn = QPushButton("下载插件")
         self.addon_download_btn.setObjectName("Soft")
@@ -1472,7 +1472,7 @@ class ServerPage(QWidget):
             f"检查已安装{info.addon_label}是否有新版本"
         )
         self.addon_import_btn.setToolTip(
-            f"选择包含{info.addon_label}的文件夹，自动导入里面的 .jar"
+            f"从文件管理器选择{info.addon_label} .jar 添加"
         )
         self.addon_path_label.setText(str(addons_dir(info)))
         self.address_label.setText(f"localhost:{info.port}")
@@ -1850,7 +1850,7 @@ class ServerPage(QWidget):
             self.addon_empty.setText(
                 f"还没有{info.addon_label}。点击“下载{info.addon_label}”从 "
                 f"Modrinth 或 CurseForge 获取适配 {info.mc_version} 的项目，"
-                "也可以把 .jar 或包含 .jar 的文件夹直接拖进这个列表。"
+                "也可以把 .jar 直接拖进这个列表，或点击“添加内容”从文件管理器选择。"
             )
             self.addon_empty.setVisible(True)
             return
@@ -2083,21 +2083,22 @@ class ServerPage(QWidget):
         if success and info.folder in self._processes:
             self.toast("需要重启服务端后生效", "info")
 
-    def _import_addon_folder(self) -> None:
+    def _import_addon_files(self) -> None:
         info = self._current_info()
         if info is None:
             return
         start = addons_dir(info)
         if not start.is_dir():
             start = info.path
-        folder = QFileDialog.getExistingDirectory(
+        files, _selected = QFileDialog.getOpenFileNames(
             self,
-            f"选择包含{info.addon_label}的文件夹",
+            f"选择要添加的{info.addon_label}",
             str(start),
+            f"{info.addon_label} (*.jar *.jar.disabled);;所有文件 (*.*)",
         )
-        if not folder:
+        if not files:
             return
-        self._import_addon_paths([Path(folder)], info)
+        self._import_addon_paths(files, info)
 
     def _import_addon_paths(self, paths, info: ServerInfo | None = None) -> None:
         info = info or self._current_info()
@@ -2111,7 +2112,7 @@ class ServerPage(QWidget):
                 self,
                 "没有可导入的文件",
                 f"没有找到 .jar 或 .jar.disabled 文件。\n\n"
-                f"可以直接把 jar 拖进列表，或选择包含{label}的文件夹。",
+                f"可以把 jar 直接拖进列表，或点击“添加内容”重新选择。",
                 button_text="知道了",
                 icon_name="warning",
             ).exec()
