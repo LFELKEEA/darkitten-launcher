@@ -22,7 +22,7 @@ HTML_PATH = APP_DIR / "assets" / "judgement" / "judgement-lfelkeea.html"
 REWARD_SHATTERED = "shattered"
 REWARD_ATTACHMENT = "attachment"
 VALID_REWARDS = (REWARD_SHATTERED, REWARD_ATTACHMENT)
-VALID_ROUTES = ("genocide", "mercy", "neutral")
+VALID_ROUTES = ("genocide", "mercy", "neutral", "endurance")
 VALID_DIFFICULTIES = ("hard", "normal")
 
 REWARDS: dict[str, dict[str, str]] = {

@@ -66,6 +66,14 @@ class JudgementStateTests(unittest.TestCase):
         self.assertFalse(judgement.has_any(state))
         self.assertEqual(state["last"]["route"], "neutral")
 
+    def test_endurance_route_is_recorded_without_reward(self) -> None:
+        applied = judgement.apply_result("endurance", "hard", turns=300, damage=0, hits=4)
+        self.assertEqual(applied["reward"], "")
+        state = judgement.load_state()
+        self.assertFalse(judgement.has_any(state))
+        self.assertEqual(state["last"]["route"], "endurance")
+        self.assertEqual(state["last"]["turns"], 300)
+
     def test_invalid_payload_is_rejected(self) -> None:
         with self.assertRaises(ValueError):
             judgement.apply_result("victory", "hard")
