@@ -1700,8 +1700,11 @@ function hurt(amount, karmic, who) {
   if (state !== 'attack' && state !== 'endurance') return;
   const p = who || player;
   if (!p || p.invuln > 0) return;
-  // 中毒伤害不致死：最多剩 1 HP
-  if (karmic && player.hp - amount <= 0) {
+  if (state === 'endurance') {
+    // 终焉模式不做血量结算：受击即失败
+    p.hp = 0;
+  } else if (karmic && player.hp - amount <= 0) {
+    // 中毒伤害不致死：最多剩 1 HP
     player.hp = 1;
   } else {
     player.hp -= amount;
@@ -3852,7 +3855,8 @@ function startEndurance() {
   };
   player = makeSoul(0, 'red', box);
   player.endure = true;
-  player.hp = player.max = PLAYER_HP;
+  // 终焉模式：一滴血，任何受击直接进入死亡界面
+  player.hp = player.max = 1;
   player.kr = 0;
   applyEndForm('normal');
   state = 'endurance';
