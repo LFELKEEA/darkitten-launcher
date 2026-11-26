@@ -340,7 +340,7 @@
 
   const FEEDBACK_EMAIL = "lfel278623@outlook.com";
   const GITHUB_NEW_ISSUE = "https://github.com/LFELKEEA/darkitten-launcher/issues/new";
-  const FEEDBACK_VERSION_FALLBACK = "1.15.9";
+  const FEEDBACK_VERSION_FALLBACK = "1.16.0";
   const KIND_LABELS = {
     bug: "Bug",
     suggestion: "改进建议",
