@@ -28,6 +28,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Iterable
 
+from . import game_ids
 from .config import APP_DIR
 
 # ---------------------------------------------------------------------------
@@ -592,8 +593,25 @@ def minecraftseedmap_url(seed: int | str, version: str | None = None) -> str:
     return f"{base}/{major}" if major else base
 
 
-def mcmod_search_url(query: str) -> str:
-    return "https://search.mcmod.cn/s?key=" + urllib.parse.quote((query or "").strip())
+MC_MOD_FILTERS: tuple[tuple[str, int], ...] = (
+    ("全部", 0),
+    ("模组", 1),
+    ("整合包", 2),
+    ("资料", 3),
+    ("教程", 4),
+    ("作者", 5),
+    ("用户", 6),
+    ("社群", 7),
+)
+
+
+def mcmod_search_url(query: str, filter_id: int = 0, page: int = 1) -> str:
+    keyword = urllib.parse.quote((query or "").strip())
+    page = max(1, int(page or 1))
+    return (
+        "https://search.mcmod.cn/s?key="
+        f"{keyword}&filter={max(0, int(filter_id or 0))}&page={page}"
+    )
 
 
 @dataclass(frozen=True)
@@ -601,6 +619,18 @@ class MCModResult:
     title: str
     url: str
     summary: str
+    category: str = ""
+    meta: str = ""
+
+
+@dataclass(frozen=True)
+class MCModPage:
+    results: tuple[MCModResult, ...]
+    keyword: str
+    filter_id: int
+    page: int
+    total_pages: int
+    total_text: str
 
 
 def _strip_html(text: str) -> str:
@@ -608,16 +638,120 @@ def _strip_html(text: str) -> str:
     text = re.sub(r"<style[\s\S]*?</style>", " ", text, flags=re.I)
     text = re.sub(r"<[^>]+>", "", text)
     text = html_module.unescape(text)
+    text = re.sub(r"\[h\d+=([^\]]*)\]", r"【\1】", text)
     return re.sub(r"\s+", " ", text).strip()
 
 
-def search_mcmod(query: str, limit: int = 12, timeout: int = 15) -> list[MCModResult]:
-    """在启动器内抓取 MC百科搜索结果，避免只丢一个浏览器链接。"""
+def _mcmod_category(url: str) -> str:
+    path = urllib.parse.urlparse(url).path
+    if "/modpack/" in path:
+        return "整合包"
+    if "/class/" in path:
+        return "模组"
+    if "/post/" in path:
+        return "教程"
+    if "/author/" in path:
+        return "作者"
+    if "/user/" in path:
+        return "用户"
+    if "/group/" in path:
+        return "社群"
+    if any(part in path for part in ("/item/", "/block/", "/entity/", "/fluid/")):
+        return "资料"
+    return "其他"
+
+
+def _parse_mcmod_page(page: str, keyword: str, filter_id: int) -> MCModPage:
+    blocks = re.findall(
+        r'<div class="result-item">([\s\S]*?)(?=<div class="result-item">|'
+        r'<div class="search-result-pages"|</body>)',
+        page,
+    )
+    results: list[MCModResult] = []
+    for block in blocks:
+        head = re.search(
+            r'<div class="head">([\s\S]*?)<div class="body">', block
+        )
+        if not head:
+            continue
+        chosen = None
+        for href, raw_title in re.findall(
+            r'<a[^>]*href="([^"]+)"[^>]*>([\s\S]*?)</a>', head.group(1)
+        ):
+            title = _strip_html(raw_title)
+            if title:
+                chosen = (href, title)
+                break
+        if chosen is None:
+            continue
+        url = html_module.unescape(chosen[0]).strip()
+        title = chosen[1]
+        if not url:
+            continue
+        if url.startswith("//"):
+            url = "https:" + url
+        elif url.startswith("/"):
+            url = "https://www.mcmod.cn" + url
+        body = re.search(r'<div class="body">([\s\S]*?)</div>', block)
+        summary = _strip_html(body.group(1)) if body else ""
+        if len(summary) > 320:
+            summary = summary[:320].rstrip() + "…"
+        foot = re.search(r'<div class="foot">([\s\S]*?)</div>', block)
+        meta_parts = []
+        if foot:
+            for label, value in re.findall(
+                r'<span>([^<]+)</span>\s*<span class="value">([\s\S]*?)</span>',
+                foot.group(1),
+            ):
+                clean_label = _strip_html(label).rstrip("：:")
+                clean_value = _strip_html(value)
+                if clean_value and clean_label:
+                    meta_parts.append(f"{clean_label}：{clean_value}")
+        results.append(
+            MCModResult(
+                title=title,
+                url=url,
+                summary=summary,
+                category=_mcmod_category(url),
+                meta=" · ".join(meta_parts[:3]),
+            )
+        )
+
+    info = re.search(r'<p class="info">([\s\S]*?)</p>', page)
+    info_text = _strip_html(info.group(1)) if info else ""
+    total_pages = 1
+    page_match = re.search(r"共约?\s*(\d+)\s*页", info_text)
+    if page_match:
+        total_pages = max(1, int(page_match.group(1)))
+    total_match = re.search(r"找到约?\s*([\d,]+)\s*条结果", info_text)
+    total_text = (
+        f"找到约 {total_match.group(1)} 条结果"
+        if total_match
+        else (info_text.split("[")[0].strip() or "搜索完成")
+    )
+    return MCModPage(
+        results=tuple(results),
+        keyword=keyword,
+        filter_id=filter_id,
+        page=max(1, int(re.search(r"&page=(\d+)", page).group(1)) if re.search(r"&page=(\d+)", page) else 1),
+        total_pages=total_pages,
+        total_text=total_text,
+    )
+
+
+def search_mcmod_page(
+    query: str,
+    *,
+    filter_id: int = 0,
+    page: int = 1,
+    timeout: int = 15,
+) -> MCModPage:
+    """在启动器内抓取一页 MC百科搜索结果，包含分类与总页数。"""
     keyword = (query or "").strip()
     if not keyword:
         raise ValueError("请输入要搜索的关键词")
     request = urllib.request.Request(
-        mcmod_search_url(keyword),
+        mcmod_search_url(keyword, filter_id, page),
         headers={
             "User-Agent": (
                 "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -629,39 +763,26 @@ def search_mcmod(query: str, limit: int = 12, timeout: int = 15) -> list[MCModRe
     )
     try:
         with urllib.request.urlopen(request, timeout=max(5, timeout)) as response:
-            page = response.read().decode("utf-8", "replace")
+            html = response.read().decode("utf-8", "replace")
     except urllib.error.URLError as error:
         raise RuntimeError(f"连接 MC百科失败：{error.reason}") from error
     except OSError as error:
         raise RuntimeError(f"请求 MC百科失败：{error}") from error
-
-    blocks = re.findall(
-        r'<div class="result-item">([\s\S]*?)(?=<div class="result-item">|'
-        r'<div class="search-result-pages"|</body>)',
-        page,
+    data = _parse_mcmod_page(html, keyword, filter_id)
+    return MCModPage(
+        results=data.results,
+        keyword=data.keyword,
+        filter_id=data.filter_id,
+        page=max(1, min(int(page or 1), data.total_pages)),
+        total_pages=data.total_pages,
+        total_text=data.total_text,
     )
-    results: list[MCModResult] = []
-    for block in blocks:
-        link = re.search(
-            r'<div class="head">[\s\S]*?<a[^>]*href="([^"]+)"[^>]*>([\s\S]*?)</a>',
-            block,
-        )
-        if not link:
-            continue
-        url = html_module.unescape(link.group(1)).strip()
-        title = _strip_html(link.group(2))
-        if not title or not url:
-            continue
-        if url.startswith("//"):
-            url = "https:" + url
-        body = re.search(r'<div class="body">([\s\S]*?)</div>', block)
-        summary = _strip_html(body.group(1)) if body else ""
-        if len(summary) > 180:
-            summary = summary[:180].rstrip() + "…"
-        results.append(MCModResult(title=title, url=url, summary=summary))
-        if len(results) >= max(1, int(limit)):
-            break
-    return results
+
+
+def search_mcmod(query: str, limit: int = 12, timeout: int = 15) -> list[MCModResult]:
+    """兼容旧调用：返回单页结果，按 limit 截断。"""
+    data = search_mcmod_page(query, timeout=timeout)
+    return list(data.results)[: max(1, int(limit))]
 
 
 WIKI_LINKS: tuple[tuple[str, str, str], ...] = (
@@ -902,6 +1023,10 @@ class TemplateField:
     default: str = ""
     placeholder: str = ""
     required: bool = True
+    kind: str = "text"  # text / int / choice / picker / component
+    options: tuple[game_ids.Option, ...] = ()
+    picker: str = ""
+    help: str = ""
 
 
 @dataclass(frozen=True)
@@ -1075,122 +1200,207 @@ def _tpl_damage(values: dict[str, str]) -> str:
     )
 
 
+
+
+def _target_field(default: str = "@s") -> TemplateField:
+    return TemplateField(
+        "target",
+        "目标",
+        default,
+        "选择要让谁执行",
+        kind="choice",
+        options=game_ids.TARGETS,
+        help="常用选择器都在列表里，选完下方会显示它代表什么。",
+    )
+
+
 COMMAND_TEMPLATES: tuple[CommandTemplate, ...] = (
     CommandTemplate("give", "给予物品", "支持 1.20.5+ 组件语法，也兼容旧版 NBT。", (
-        TemplateField("target", "目标", "@s", "@s / @a / 玩家名"),
-        TemplateField("item", "物品 ID", "minecraft:diamond_sword", "minecraft:item"),
-        TemplateField("extra", "组件/NBT（可空）", "", "[custom_name='\"喵剑\"']"),
-        TemplateField("count", "数量", "1", "1-64"),
+        _target_field(),
+        TemplateField(
+            "item", "物品 ID", "minecraft:diamond_sword", "搜索中文名或 ID",
+            kind="picker", picker="item",
+            help="点“选择”可以按中文名搜索，也可以直接粘贴命名空间 ID。",
+        ),
+        TemplateField(
+            "extra", "物品组件（可空）", "", "例如 [custom_name=…]",
+            kind="component",
+            help="1.20.5+ 用 [组件]；1.20.4 及更早用 {NBT}。点“组件”看可用项和说明。",
+        ),
+        TemplateField(
+            "count", "数量", "1", "1-64", kind="int",
+            help="一次最多堆叠 64 个；超过 64 会被游戏截断。",
+        ),
     ), _tpl_give),
     CommandTemplate("tp", "传送", "把目标送到坐标，支持 ~ 相对坐标。", (
-        TemplateField("target", "目标", "@s"),
-        TemplateField("x", "X", "~"),
-        TemplateField("y", "Y", "~"),
-        TemplateField("z", "Z", "~"),
+        _target_field(),
+        TemplateField("x", "X", "~", "支持 ~ 和 ^", help="~ 表示相对当前位置，^ 表示相对朝向。"),
+        TemplateField("y", "Y", "~", "支持 ~"),
+        TemplateField("z", "Z", "~", "支持 ~"),
     ), _tpl_tp),
     CommandTemplate("setblock", "放置方块", "单方块放置，支持 replace / destroy / keep。", (
         TemplateField("x", "X", "~"), TemplateField("y", "Y", "~"), TemplateField("z", "Z", "~"),
-        TemplateField("block", "方块 ID", "minecraft:stone"),
-        TemplateField("mode", "模式", "replace", "replace / destroy / keep"),
+        TemplateField("block", "方块 ID", "minecraft:stone", kind="picker", picker="block"),
+        TemplateField("mode", "模式", "replace", kind="choice", options=game_ids.MODES),
     ), _tpl_setblock),
     CommandTemplate("fill", "区域填充", "一次最多 32768 格，超出请拆成多条。", (
         TemplateField("x1", "起点 X", "~-5"), TemplateField("y1", "起点 Y", "~"), TemplateField("z1", "起点 Z", "~-5"),
         TemplateField("x2", "终点 X", "~5"), TemplateField("y2", "终点 Y", "~5"), TemplateField("z2", "终点 Z", "~5"),
-        TemplateField("block", "方块 ID", "minecraft:glass"),
-        TemplateField("mode", "模式", "replace", "replace / hollow / outline …"),
+        TemplateField("block", "方块 ID", "minecraft:glass", kind="picker", picker="block"),
+        TemplateField("mode", "模式", "replace", kind="choice", options=game_ids.MODES),
     ), _tpl_fill),
     CommandTemplate("summon", "生成实体", "生成实体并可选附加 NBT。", (
-        TemplateField("entity", "实体 ID", "minecraft:zombie"),
+        TemplateField("entity", "实体 ID", "minecraft:zombie", kind="picker", picker="entity"),
         TemplateField("x", "X", "~"), TemplateField("y", "Y", "~1"), TemplateField("z", "Z", "~"),
-        TemplateField("nbt", "NBT（可空）", "", '{NoAI:1b,CustomName:\'"测试"\'}'),
+        TemplateField("nbt", "NBT（可空）", "", '{NoAI:1b,CustomName:\'"测试"\'}',
+                      help="可选。NBT 写错会导致实体生成失败，先用空值测试。"),
     ), _tpl_summon),
     CommandTemplate("effect", "状态效果", "给予速度、力量等药水效果。", (
-        TemplateField("target", "目标", "@s"),
-        TemplateField("effect", "效果 ID", "minecraft:speed"),
-        TemplateField("duration", "持续秒数", "30"),
-        TemplateField("amplifier", "等级（0 为 I 级）", "1"),
+        _target_field(),
+        TemplateField("effect", "效果 ID", "minecraft:speed", kind="picker", picker="effect"),
+        TemplateField("duration", "持续秒数", "30", kind="int",
+                      help="单位是秒；写 0 或负数通常表示立即结束。"),
+        TemplateField("amplifier", "等级（0 为 I 级）", "1", kind="int",
+                      help="0 = I 级，1 = II 级，以此类推。"),
     ), _tpl_effect),
     CommandTemplate("enchant", "附魔", "受原版附魔规则限制，不能乱叠冲突附魔。", (
-        TemplateField("target", "目标", "@s"),
-        TemplateField("enchantment", "附魔 ID", "minecraft:sharpness"),
-        TemplateField("level", "等级", "5"),
+        _target_field(),
+        TemplateField("enchantment", "附魔 ID", "minecraft:sharpness", kind="picker", picker="enchantment"),
+        TemplateField("level", "等级", "5", kind="int",
+                      help="不能超过该附魔的原版最大等级。"),
     ), _tpl_enchant),
     CommandTemplate("title", "标题文字", "自动把文字包装成 JSON 文本。", (
-        TemplateField("target", "目标", "@a"),
-        TemplateField("position", "位置", "title", "title / subtitle / actionbar"),
+        _target_field("@a"),
+        TemplateField("position", "位置", "title", kind="choice", options=game_ids.POSITIONS),
         TemplateField("text", "文字", "欢迎来到喵喵世界"),
     ), _tpl_title),
     CommandTemplate("tellraw", "JSON 文本", "自动包装成 JSON，可再手动加颜色。", (
-        TemplateField("target", "目标", "@a"),
+        _target_field("@a"),
         TemplateField("text", "文字", "你好，冒险者"),
     ), _tpl_tellraw),
     CommandTemplate("playsound", "播放声音", "在目标位置播放音效。", (
-        TemplateField("sound", "声音 ID", "minecraft:entity.player.levelup"),
-        TemplateField("source", "声音频道", "master", "master / player / block / ambient"),
-        TemplateField("target", "目标", "@a"),
-        TemplateField("volume", "音量", "1"),
-        TemplateField("pitch", "音调", "1"),
+        TemplateField("sound", "声音 ID", "minecraft:entity.player.levelup", kind="picker", picker="sound"),
+        TemplateField("source", "声音频道", "master", kind="choice", options=game_ids.SOUND_SOURCES),
+        _target_field("@a"),
+        TemplateField("volume", "音量", "1", help="1 是正常音量，0.5 是一半。"),
+        TemplateField("pitch", "音调", "1", help="1 是原调，2 高一个八度，0.5 低一个八度。"),
     ), _tpl_playsound),
     CommandTemplate("particle", "粒子效果", "生成粒子，适合做特效。", (
-        TemplateField("particle", "粒子 ID", "minecraft:flame"),
+        TemplateField("particle", "粒子 ID", "minecraft:flame", kind="picker", picker="particle"),
         TemplateField("x", "X", "~"), TemplateField("y", "Y", "~1"), TemplateField("z", "Z", "~"),
         TemplateField("dx", "扩散 X", "0.2"), TemplateField("dy", "扩散 Y", "0.2"), TemplateField("dz", "扩散 Z", "0.2"),
-        TemplateField("speed", "速度", "0.01"), TemplateField("count", "数量", "30"),
+        TemplateField("speed", "速度", "0.01"),
+        TemplateField("count", "数量", "30", kind="int"),
     ), _tpl_particle),
     CommandTemplate("execute", "execute 条件执行", "复杂指令的核心：指定执行者、位置与条件。", (
-        TemplateField("target", "执行者", "@a"),
-        TemplateField("condition", "条件", "entity @s type=minecraft:player", "entity @s type=… / block ~ ~-1 ~ …"),
-        TemplateField("command", "执行的指令", "say hello"),
+        TemplateField("target", "执行者", "@a", kind="choice", options=game_ids.TARGETS),
+        TemplateField(
+            "condition", "条件", "entity @s type=minecraft:player",
+            "entity @s type=… / block ~ ~-1 ~ …",
+            help="常用写法：entity @s type=minecraft:player、block ~ ~-1 ~ minecraft:stone。",
+        ),
+        TemplateField("command", "执行的指令", "say hello",
+                      help="不要写开头的 /，例如 say hello。"),
     ), _tpl_execute),
     CommandTemplate("scoreboard_add", "计分板：新建目标", "创建一个计分板目标。", (
-        TemplateField("objective", "目标名", "kills"),
-        TemplateField("criterion", "准则", "dummy", "dummy / deathCount / playerKillCount …"),
+        TemplateField("objective", "目标名", "kills", help="只能用字母、数字、下划线。"),
+        TemplateField(
+            "criterion",
+            "准则",
+            "dummy",
+            kind="choice",
+            options=tuple(
+                game_ids.Option(item.value, f"{item.value} — {item.name}", item.help)
+                for item in game_ids.CRITERIA
+            ),
+            help="决定这项分数怎么涨，例如 dummy 需要手动加、kill 会自动统计击杀。",
+        ),
     ), _tpl_scoreboard_add),
     CommandTemplate("scoreboard_set", "计分板：设置分数", "给玩家或实体设置分数。", (
-        TemplateField("target", "目标", "@s"),
+        _target_field(),
         TemplateField("objective", "目标名", "kills"),
-        TemplateField("value", "分数", "0"),
+        TemplateField("value", "分数", "0", kind="int"),
     ), _tpl_scoreboard_set),
     CommandTemplate("spawnpoint", "设置重生点", "设置个人重生点。", (
-        TemplateField("target", "目标", "@s"),
+        _target_field(),
         TemplateField("x", "X", "~"), TemplateField("y", "Y", "~"), TemplateField("z", "Z", "~"),
     ), _tpl_spawnpoint),
     CommandTemplate("locate", "查找最近结构", "查找最近的结构/群系/兴趣点。", (
-        TemplateField("type", "类型", "structure", "structure / biome / poi"),
-        TemplateField("id", "ID", "minecraft:stronghold"),
+        TemplateField("type", "类型", "structure", kind="choice", options=game_ids.LOCATE_TYPES),
+        TemplateField("id", "ID", "minecraft:stronghold", kind="picker", picker="structure",
+                      help="type 选 biome / poi 时，这里也可以手动填对应 ID。"),
     ), _tpl_locate),
     CommandTemplate("worldborder", "世界边界", "设置世界边界直径。", (
-        TemplateField("diameter", "直径（格）", "2000"),
+        TemplateField("diameter", "直径（格）", "2000", kind="int"),
     ), _tpl_worldborder),
     CommandTemplate("time", "设置时间", "day / night / noon / midnight 或数字。", (
-        TemplateField("value", "时间", "day"),
+        TemplateField("value", "时间", "day", kind="choice", options=game_ids.TIME_VALUES),
     ), _tpl_time),
     CommandTemplate("weather", "设置天气", "clear / rain / thunder。", (
-        TemplateField("type", "天气", "clear"),
-        TemplateField("duration", "持续秒数", "600"),
+        TemplateField("type", "天气", "clear", kind="choice", options=game_ids.WEATHER_VALUES),
+        TemplateField("duration", "持续秒数", "600", kind="int"),
     ), _tpl_weather),
     CommandTemplate("gamerule", "游戏规则", "例如 keepInventory、doDaylightCycle。", (
-        TemplateField("rule", "规则名", "keepInventory"),
-        TemplateField("value", "值", "true", "true / false / 数字"),
+        TemplateField("rule", "规则名", "keepInventory", kind="picker", picker="gamerule",
+                      help="列表里每条规则都带中文说明。"),
+        TemplateField("value", "值", "true", "true / false / 数字",
+                      help="开关类规则填 true / false；randomTickSpeed 这类填数字。"),
     ), _tpl_gamerule),
     CommandTemplate("clear", "清除物品", "清空背包或指定物品。", (
-        TemplateField("target", "目标", "@s"),
-        TemplateField("item", "物品 ID", "minecraft:dirt"),
-        TemplateField("count", "数量", "64"),
+        _target_field(),
+        TemplateField("item", "物品 ID", "minecraft:dirt", kind="picker", picker="item"),
+        TemplateField("count", "数量", "64", kind="int"),
     ), _tpl_clear),
     CommandTemplate("xp", "经验值", "增加或设置经验。", (
-        TemplateField("target", "目标", "@s"),
-        TemplateField("amount", "数量", "30"),
-        TemplateField("unit", "单位", "levels", "levels / points"),
+        _target_field(),
+        TemplateField("amount", "数量", "30", kind="int"),
+        TemplateField("unit", "单位", "levels", kind="choice", options=game_ids.UNITS),
     ), _tpl_xp),
     CommandTemplate("damage", "造成伤害", "按指定伤害类型造成伤害。", (
-        TemplateField("target", "目标", "@s"),
-        TemplateField("amount", "伤害值", "5"),
-        TemplateField("type", "伤害类型", "minecraft:magic"),
+        _target_field(),
+        TemplateField("amount", "伤害值", "5", kind="int"),
+        TemplateField("type", "伤害类型", "minecraft:magic", kind="picker", picker="damage"),
     ), _tpl_damage),
 )
 
 TEMPLATE_BY_ID = {item.id: item for item in COMMAND_TEMPLATES}
+
+# 模板结构：花括号里是该模板可编辑参数的键，其余文字是指令关键字和固定语法。
+# 界面按这份结构渲染“可改 / 不可改”两部分，生成后仍然可以整条手改。
+TEMPLATE_SKELETONS: dict[str, str] = {
+    "give": "/give {target} {item}{extra} {count}",
+    "tp": "/tp {target} {x} {y} {z}",
+    "setblock": "/setblock {x} {y} {z} {block} {mode}",
+    "fill": "/fill {x1} {y1} {z1} {x2} {y2} {z2} {block} {mode}",
+    "summon": "/summon {entity} {x} {y} {z} {nbt}",
+    "effect": "/effect give {target} {effect} {duration} {amplifier}",
+    "enchant": "/enchant {target} {enchantment} {level}",
+    "title": "/title {target} {position} {text}",
+    "tellraw": "/tellraw {target} {text}",
+    "playsound": "/playsound {sound} {source} {target} ~ ~ ~ {volume} {pitch}",
+    "particle": "/particle {particle} {x} {y} {z} {dx} {dy} {dz} {speed} {count}",
+    "execute": "/execute as {target} at @s if {condition} run {command}",
+    "scoreboard_add": "/scoreboard objectives add {objective} {criterion}",
+    "scoreboard_set": "/scoreboard players set {target} {objective} {value}",
+    "spawnpoint": "/spawnpoint {target} {x} {y} {z}",
+    "locate": "/locate {type} {id}",
+    "worldborder": "/worldborder set {diameter}",
+    "time": "/time set {value}",
+    "weather": "/weather {type} {duration}",
+    "gamerule": "/gamerule {rule} {value}",
+    "clear": "/clear {target} {item} {count}",
+    "xp": "/xp add {target} {amount} {unit}",
+    "damage": "/damage {target} {amount} {type}",
+}
+
+
+def template_skeleton(template: CommandTemplate) -> str:
+    """返回模板结构；没有登记时退回仅列出参数名的通用写法。"""
+    skeleton = TEMPLATE_SKELETONS.get(template.id)
+    if skeleton:
+        return skeleton
+    names = " ".join(f"{{{field.key}}}" for field in template.fields)
+    return f"/{template.id} {names}".strip()
 
 
 def default_template_values(template: CommandTemplate) -> dict[str, str]:
@@ -1286,12 +1496,78 @@ def build_mcfunction(commands: Iterable[str], header: bool = True) -> str:
 
 _VERSION_RE = re.compile(r"(\d+)\.(\d+)")
 
+# 官方数据包版本号（来自 Mojang 的 pack.mcmeta）。26.x 换成新的年份版本号后
+# 不能再按 1.x 的区间推算，所以这里按版本号精确查表。
+PACK_FORMATS: dict[str, int] = {
+    "26.3": 121,
+    "26.2": 107,
+    "26.1.2": 101,
+    "26.1.1": 101,
+    "26.1": 101,
+    "1.21.11": 94,
+    "1.21.10": 88,
+    "1.21.9": 88,
+    "1.21.8": 81,
+    "1.21.7": 81,
+    "1.21.6": 80,
+    "1.21.5": 71,
+    "1.21.4": 61,
+    "1.21.3": 57,
+    "1.21.2": 57,
+    "1.21.1": 48,
+    "1.21": 48,
+    "1.20.6": 41,
+    "1.20.5": 41,
+    "1.20.4": 26,
+    "1.20.3": 26,
+    "1.20.2": 18,
+    "1.20.1": 15,
+    "1.20": 15,
+    "1.19.4": 12,
+    "1.19.3": 10,
+    "1.19.2": 10,
+    "1.19.1": 10,
+    "1.19": 10,
+    "1.18.2": 9,
+    "1.18.1": 8,
+    "1.18": 8,
+    "1.17.1": 7,
+    "1.17": 7,
+    "1.16.5": 6,
+    "1.16.4": 6,
+    "1.16.3": 6,
+    "1.16.2": 6,
+    "1.16.1": 5,
+    "1.16": 5,
+    "1.15.2": 5,
+    "1.15.1": 5,
+    "1.15": 5,
+    "1.14.4": 4,
+    "1.14.3": 4,
+    "1.14.2": 4,
+    "1.14.1": 4,
+    "1.14": 4,
+}
+
 
 def _version_tuple(version: str) -> tuple[int, int]:
     match = _VERSION_RE.search(version or "")
     if not match:
         return (1, 21)
     return (int(match.group(1)), int(match.group(2)))
+
+
+def _version_sort_key(version: str) -> tuple:
+    text = str(version or "").strip().lower()
+    parts = re.findall(r"\d+|[a-z]+", text)
+    return tuple(
+        (0, int(part), "") if part.isdigit() else (1, 0, part) for part in parts
+    )
+
+
+def _base_version(version: str) -> str:
+    match = re.match(r"\d+(?:\.\d+){0,2}", str(version or "").strip())
+    return match.group(0) if match else ""
 
 
 def datapack_folders(version: str = "1.21.4") -> tuple[str, str]:
@@ -1302,20 +1578,19 @@ def datapack_folders(version: str = "1.21.4") -> tuple[str, str]:
 
 
 def pack_format_for(version: str = "1.21.4") -> int:
-    major, minor = _version_tuple(version)
-    if major >= 1 and minor >= 21:
-        return 61
-    if (major, minor) >= (1, 20):
-        return 26 if minor >= 4 else 15
-    if (major, minor) >= (1, 19):
-        return 12 if minor >= 4 else 10
-    if (major, minor) >= (1, 18):
-        return 8
-    if (major, minor) >= (1, 17):
-        return 7
-    if (major, minor) >= (1, 16):
-        return 6
-    return 4
+    key = _base_version(version)
+    if key in PACK_FORMATS:
+        return PACK_FORMATS[key]
+    # 未知的新版本按“不高于它的最近版本”取格式号，至少不会退回 4。
+    target = _version_sort_key(key)
+    best_key: tuple | None = None
+    best_format = 4
+    for known, pack_format in PACK_FORMATS.items():
+        known_key = _version_sort_key(known)
+        if known_key <= target and (best_key is None or known_key > best_key):
+            best_key = known_key
+            best_format = pack_format
+    return best_format
 
 
 _NAMESPACE_RE = re.compile(r"^[a-z0-9_.-]+$")

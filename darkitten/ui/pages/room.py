@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+from pathlib import Path
 
 from PySide6.QtCore import Qt, QTimer, QUrl
 from PySide6.QtGui import QDesktopServices
@@ -38,11 +39,18 @@ from ...sakura import (
     preferred_lan_port,
     remove_tunnel_config,
 )
+from ...mods import list_mods
 from ...room_sync import RoomManifest, RoomSyncError, decode_manifest
 from ...social import INVITE_PREFIX, SocialError, parse_invite
-from ...workers import RoomInviteWorker, SakuraLoginWorker, SakuraRoomWorker
+from ...workers import (
+    LanPortWorker,
+    RoomInviteWorker,
+    SakuraLoginWorker,
+    SakuraRoomWorker,
+)
+from ...worlds import scan_worlds
 from .. import icons
-from ..dialogs import ConfirmDialog
+from ..dialogs import ConfirmDialog, NoticeDialog
 from ..easytier_panel import EasyTierPanel
 from ..mod_sync_dialog import ModSyncDialog
 from ..widgets import (
@@ -85,6 +93,16 @@ class RoomPage(QWidget):
         self._busy = False
         self._auto_login_attempted = False
         self._notice_shown = False
+        self._lan_worker: LanPortWorker | None = None
+        self._lan_port = 0
+        self._auto_create_pending = False
+        self._auto_room_flow = False
+        self._quick_world_id = ""
+        self._lan_warning_shown = False
+        self._quick_session_key = ""
+        self._lan_timer = QTimer(self)
+        self._lan_timer.setInterval(2500)
+        self._lan_timer.timeout.connect(self._poll_lan_port)
         self._decoded_address = ""
         self._host_status_kind = "muted"
         self._guest_status_kind = "muted"
@@ -159,6 +177,7 @@ class RoomPage(QWidget):
         sakura_layout = QVBoxLayout(sakura_page)
         sakura_layout.setContentsMargins(0, 0, 0, 0)
         sakura_layout.setSpacing(14)
+        sakura_layout.addWidget(self._build_quick_card())
         columns = QHBoxLayout()
         columns.setSpacing(14)
         self.host_card = self._build_host_card()
@@ -171,6 +190,119 @@ class RoomPage(QWidget):
         self.mode_stack.addWidget(sakura_page)
         layout.addWidget(self.mode_stack, 1)
         self._switch_mode("p2p")
+
+    def _build_quick_card(self) -> QWidget:
+        card = Card()
+        layout = QVBoxLayout(card)
+        layout.setContentsMargins(18, 14, 18, 14)
+        layout.setSpacing(8)
+
+        header = QHBoxLayout()
+        title = QLabel("一键联机")
+        title.setObjectName("H2")
+        header.addWidget(title)
+        header.addWidget(badge("选择存档 · 自动建房", "purple"))
+        header.addStretch(1)
+        self.quick_badge = badge("待命", "gray")
+        header.addWidget(self.quick_badge)
+        layout.addLayout(header)
+
+        sub = QLabel(
+            "选一个游戏版本和单人存档，启动器会启动游戏；"
+            "Minecraft 1.20 及以上会直接进入该存档。"
+            "在游戏里按 Esc → 对局域网开放后，会自动检测端口并创建房间。"
+        )
+        sub.setObjectName("Tiny")
+        sub.setWordWrap(True)
+        layout.addWidget(sub)
+
+        row = QHBoxLayout()
+        row.setSpacing(8)
+        version_label = QLabel("版本")
+        version_label.setStyleSheet("font-weight: 600;")
+        row.addWidget(version_label)
+        self.quick_version_combo = QComboBox()
+        self.quick_version_combo.setMinimumWidth(190)
+        self.quick_version_combo.currentIndexChanged.connect(
+            lambda _: self._sync_quick_saves()
+        )
+        row.addWidget(self.quick_version_combo, 1)
+
+        save_label = QLabel("存档")
+        save_label.setStyleSheet("font-weight: 600;")
+        row.addWidget(save_label)
+        self.quick_save_combo = QComboBox()
+        self.quick_save_combo.setMinimumWidth(250)
+        row.addWidget(self.quick_save_combo, 2)
+        self.quick_refresh_btn = icon_button("refresh", "刷新存档列表")
+        self.quick_refresh_btn.clicked.connect(self._sync_quick_saves)
+        row.addWidget(self.quick_refresh_btn)
+        layout.addLayout(row)
+
+        action_row = QHBoxLayout()
+        action_row.setSpacing(8)
+        self.quick_start_btn = QPushButton("启动存档并创建房间")
+        self.quick_start_btn.setObjectName("Primary")
+        self.quick_start_btn.setCursor(Qt.PointingHandCursor)
+        self.quick_start_btn.setIcon(icons.icon("bolt", "#FFFFFF", 16))
+        self.quick_start_btn.clicked.connect(self.quick_start)
+        action_row.addWidget(self.quick_start_btn)
+        self.quick_server_btn = QPushButton("改用专用服务端")
+        self.quick_server_btn.setObjectName("Ghost")
+        self.quick_server_btn.setCursor(Qt.PointingHandCursor)
+        self.quick_server_btn.setToolTip(
+            "专用服务端可以关闭正版验证，在“服务器 → 公网联机”里设置。"
+        )
+        self.quick_server_btn.clicked.connect(self._open_server_page)
+        action_row.addWidget(self.quick_server_btn)
+        action_row.addStretch(1)
+        layout.addLayout(action_row)
+
+        lan_row = QHBoxLayout()
+        lan_row.setSpacing(6)
+        lan_row.addWidget(badge("需要模组", "orange"))
+        lan_label = QLabel("官方局域网默认只允许正版玩家进入")
+        lan_label.setObjectName("Tiny")
+        lan_label.setWordWrap(True)
+        lan_label.setToolTip(
+            "Minecraft 官方的“对局域网开放”默认开启正版验证，"
+            "离线/非正版玩家会被拒绝。需要房主安装联机模组并关闭正版验证。"
+        )
+        lan_row.addWidget(lan_label, 1)
+        self.quick_mod_btn = QPushButton("安装联机模组")
+        self.quick_mod_btn.setObjectName("Soft")
+        self.quick_mod_btn.setCursor(Qt.PointingHandCursor)
+        self.quick_mod_btn.clicked.connect(lambda: self._install_lan_mod())
+        lan_row.addWidget(self.quick_mod_btn)
+        self.quick_mod_help_btn = QPushButton("安装步骤")
+        self.quick_mod_help_btn.setObjectName("Ghost")
+        self.quick_mod_help_btn.setCursor(Qt.PointingHandCursor)
+        self.quick_mod_help_btn.clicked.connect(self._show_lan_mod_help)
+        lan_row.addWidget(self.quick_mod_help_btn)
+        self.quick_mod_page_btn = QPushButton("模组页面")
+        self.quick_mod_page_btn.setObjectName("Ghost")
+        self.quick_mod_page_btn.setCursor(Qt.PointingHandCursor)
+        self.quick_mod_page_btn.clicked.connect(
+            lambda: self._open_url("https://modrinth.com/mod/mcwifipnp")
+        )
+        lan_row.addWidget(self.quick_mod_page_btn)
+        layout.addLayout(lan_row)
+
+        self.quick_status = QLabel("选择版本与存档后，一键启动并建房。")
+        self.quick_status.setObjectName("Tiny")
+        self.quick_status.setWordWrap(True)
+        layout.addWidget(self.quick_status)
+
+        hint = QLabel(
+            "官方“对局域网开放”默认开启正版验证，只允许正版账户加入。"
+            "如果朋友使用离线/非正版客户端，房主需要先安装 LAN World Plug-n-Play"
+            "（mcwifipnp）等自定义局域网模组，并在开放局域网时把“正版验证”设为关闭；"
+            "也可以点“改用专用服务端”，在服务端的公网联机页关闭正版验证。"
+        )
+        hint.setObjectName("Tiny")
+        hint.setWordWrap(True)
+        layout.addWidget(hint)
+        return card
 
     def _build_host_card(self) -> QWidget:
         card = Card()
@@ -565,6 +697,13 @@ class RoomPage(QWidget):
     # ------------------------------------------------------------------
     # 状态与主题
 
+    def _open_server_page(self) -> None:
+        switch = getattr(self.main, "switch_page", None)
+        if callable(switch):
+            switch("server")
+            return
+        self.toast("请先在左侧打开“服务器”页", "info")
+
     def _switch_mode(self, mode: str) -> None:
         if not hasattr(self, "mode_stack"):
             return
@@ -600,6 +739,8 @@ class RoomPage(QWidget):
         if hasattr(self, "easytier_panel"):
             self.easytier_panel.refresh_theme()
         self.create_btn.setIcon(icons.icon("bolt", "#FFFFFF", 16))
+        if hasattr(self, "quick_start_btn"):
+            self.quick_start_btn.setIcon(icons.icon("bolt", "#FFFFFF", 16))
         self.join_btn.setIcon(icons.icon("play", "#FFFFFF", 16))
         self.copy_code_btn.setIcon(icons.icon("copy", "#FFFFFF", 14))
         for button in (self.copy_address_btn, self.copy_decode_btn):
@@ -697,6 +838,13 @@ class RoomPage(QWidget):
                 self.host_status, error or "无法读取樱花穿透账户。", "error"
             )
             self.toast(error or "樱花穿透连接失败", "error")
+            if self._auto_create_pending:
+                self._auto_create_pending = False
+                self._auto_room_flow = False
+                self._set_quick_status(
+                    f"樱花穿透连接失败：{error or '请检查访问密钥'}", "error"
+                )
+                self._set_badge(self.quick_badge, "待命", "gray")
             self._sync_controls()
             return
 
@@ -738,6 +886,10 @@ class RoomPage(QWidget):
                 self.host_status, "账户已连接，可以创建房间。", "success"
             )
         self._sync_controls()
+        if self._auto_create_pending:
+            self._auto_create_pending = False
+            QTimer.singleShot(0, lambda: self.create_room(auto=True))
+            return
         if not silent:
             self.toast("樱花穿透账户已连接", "success")
 
@@ -798,10 +950,338 @@ class RoomPage(QWidget):
         return max(candidates, key=lambda item: item.id) if candidates else None
 
     # ------------------------------------------------------------------
+    # 一键联机
+
+    def _sync_quick_versions(self) -> None:
+        if not hasattr(self, "quick_version_combo"):
+            return
+        versions = list(self.main.game_version_summaries())
+        current = self.quick_version_combo.currentData() or self.main.selected_version
+        self.quick_version_combo.blockSignals(True)
+        self.quick_version_combo.clear()
+        for summary in versions:
+            kind = summary.loader or summary.type_name or ""
+            display = self.main.config.version_name(summary.id) or summary.id
+            label = f"{display} · {kind}" if kind else display
+            self.quick_version_combo.addItem(label, summary.id)
+            if display != summary.id:
+                index = self.quick_version_combo.count() - 1
+                self.quick_version_combo.setItemData(
+                    index, f"内部版本：{summary.id}", Qt.ToolTipRole
+                )
+        if versions:
+            index = self.quick_version_combo.findData(current)
+            if index < 0:
+                index = 0
+            self.quick_version_combo.setCurrentIndex(index)
+        else:
+            self.quick_version_combo.addItem("未安装游戏版本", "")
+        self.quick_version_combo.blockSignals(False)
+        self._sync_quick_saves()
+
+    def _sync_quick_saves(self) -> None:
+        if not hasattr(self, "quick_save_combo"):
+            return
+        version_id = str(self.quick_version_combo.currentData() or "")
+        current = self._quick_world_id or self.quick_save_combo.currentData()
+        worlds = []
+        if version_id:
+            try:
+                worlds = scan_worlds(
+                    Path(self.main.config.version_game_path(version_id))
+                )
+            except OSError:
+                worlds = []
+        self.quick_save_combo.blockSignals(True)
+        self.quick_save_combo.clear()
+        if not worlds:
+            self.quick_save_combo.addItem(
+                "这个版本还没有存档" if version_id else "请先安装游戏版本", ""
+            )
+            self._quick_world_id = ""
+        else:
+            for world in worlds:
+                label = (
+                    f"{world.name} · {world.mode_text} · "
+                    f"{world.last_played_text}"
+                )
+                self.quick_save_combo.addItem(label, world.folder.name)
+            index = self.quick_save_combo.findData(current)
+            self.quick_save_combo.setCurrentIndex(index if index >= 0 else 0)
+            self._quick_world_id = str(
+                self.quick_save_combo.currentData() or ""
+            )
+        self.quick_save_combo.blockSignals(False)
+        self._sync_controls()
+
+    LAN_AUTH_MOD_KEYS = (
+        "mcwifipnp",
+        "customlan",
+        "custom-lan",
+        "offlinelan",
+        "easylan",
+        "lanserverproperties",
+        "lan-server-properties",
+    )
+
+    def _lan_auth_mod_installed(self, version_id: str) -> bool:
+        if not version_id:
+            return False
+        try:
+            mods = list_mods(Path(self.main.config.mods_path(version_id)))
+        except Exception:
+            return False
+        for mod in mods:
+            name = mod.filename.lower().replace("_", "-")
+            if any(key in name for key in self.LAN_AUTH_MOD_KEYS):
+                return True
+        return False
+
+    def ensure_lan_auth_mod(self, version_id: str) -> bool:
+        """提醒房主安装能关闭正版验证的联机模组。
+
+        返回 False 表示用户选择先去安装，调用方应停止本次启动。
+        """
+        if self._lan_warning_shown or self._lan_auth_mod_installed(version_id):
+            return True
+        dialog = ConfirmDialog(
+            self,
+            "官方局域网默认只允许正版玩家",
+            "Minecraft 官方的“对局域网开放”默认开启正版验证，"
+            "离线/非正版朋友会被拒绝进入。",
+            primary_text="安装联机模组",
+            secondary_text="仍然继续",
+            icon_name="users",
+            icon_color=colors()["orange"],
+            details=(
+                "推荐安装 LAN World Plug-n-Play（mcwifipnp）："
+                "开放局域网时把“正版验证”设为关闭，就能让离线玩家加入。\n"
+                "也可以点“改用专用服务端”，在服务端的公网联机页关闭正版验证。"
+            ),
+        )
+        self._lan_warning_shown = True
+        if dialog.exec():
+            self._install_lan_mod(version_id)
+            return False
+        return True
+
+    def _install_lan_mod(self, version_id: str | None = None) -> None:
+        from ..mod_dialog import ModBrowserDialog
+
+        version_id = str(version_id or self.quick_version_combo.currentData() or "")
+        if version_id and version_id != self.main.selected_version:
+            self.main.home_page.select_version(version_id)
+        hit = {
+            "project_id": "mcwifipnp",
+            "slug": "mcwifipnp",
+            "title": "LAN World Plug-n-Play (mcwifipnp)",
+            "source": "modrinth",
+            "source_label": "Modrinth",
+            "content_type": "mod",
+            "description": (
+                "在“对局域网开放”界面里开关正版验证、端口、"
+                "最大玩家数和 PVP，支持 Fabric / Forge / NeoForge。"
+            ),
+            "project_url": "https://modrinth.com/mod/mcwifipnp",
+            "categories": [],
+            "downloads": 0,
+            "icon_url": "",
+        }
+        ModBrowserDialog(self.main, hit).exec()
+        refresh = getattr(self.main, "_refresh_download_chip", None)
+        if callable(refresh):
+            refresh()
+
+    def _show_lan_mod_help(self) -> None:
+        NoticeDialog(
+            self,
+            "非正版玩家怎么进局域网",
+            "Minecraft 官方的“对局域网开放”默认开启正版验证，"
+            "只允许正版账户加入。\n\n"
+            "1. 点“安装联机模组”，在打开的页面里选择当前游戏版本，"
+            "下载并安装 LAN World Plug-n-Play（mcwifipnp）。\n"
+            "2. 启动游戏进入存档，按 Esc → 对局域网开放。\n"
+            "3. 在开放局域网的界面里，把“正版验证（Online Mode）”"
+            "设为“禁用”，再点“开放局域网”。\n"
+            "4. 回到启动器，点“检测游戏端口”，或等待一键联机自动建房。\n\n"
+            "也可以安装 OfflineLAN（仅 Fabric）或 Custom LAN（Fabric/Quilt，"
+            "部分版本）。如果不想装模组，可以点“改用专用服务端”，"
+            "在服务端的“公网联机”页关闭正版验证。\n\n"
+            "注意：关闭正版验证后，任何知道地址的人都能尝试加入，"
+            "请只把房间号发给认识的朋友。",
+            icon_name="users",
+        ).exec()
+
+    def quick_start(self) -> None:
+        if self.main.launch_active:
+            self.toast("游戏正在启动，请稍候", "info")
+            return
+        version_id = str(self.quick_version_combo.currentData() or "")
+        world_id = str(self.quick_save_combo.currentData() or "")
+        if not version_id or not world_id:
+            self._set_quick_status("请先选择游戏版本和存档。", "error")
+            return
+        if self._tunnel_process is not None or self._room_payload is not None:
+            self.toast("房间已经开启，请先关闭当前房间。", "info")
+            return
+
+        token = self.token_edit.text().strip() or self._token
+        if not token:
+            self._set_quick_status(
+                "一键联机需要樱花穿透访问密钥，请先在下方“开房间”里填写。",
+                "error",
+            )
+            return
+        if not self.ensure_lan_auth_mod(version_id):
+            return
+
+        existing = self.main.find_game_session(version_id)
+        if existing is not None:
+            # 这个版本已经在运行，直接复用它等待对局域网开放，不再开第二个进程。
+            self._quick_session_key = existing.key
+            self._quick_world_id = world_id
+            self._auto_room_flow = True
+            self._lan_port = 0
+            self._set_quick_status(
+                "这个版本已经在运行。请在游戏里按 Esc → 对局域网开放，"
+                "启动器会自动检测端口并建房。",
+                "busy",
+            )
+            self._set_badge(self.quick_badge, "等待端口", "blue")
+            self._lan_timer.start()
+            self._sync_controls()
+            return
+
+        self._quick_world_id = world_id
+        self._auto_room_flow = True
+        self._lan_port = 0
+        self._set_quick_status(
+            f"正在启动 {version_id}。进入存档后按 Esc → 对局域网开放，"
+            "启动器会自动检测端口并建房。",
+            "busy",
+        )
+        self._set_badge(self.quick_badge, "启动中", "blue")
+        if version_id != self.main.selected_version:
+            self.main.home_page.select_version(version_id)
+        self._quick_session_key = self.main.launch_selected(quick_world=world_id)
+        if not self._quick_session_key:
+            self._auto_room_flow = False
+            self._set_quick_status("启动没有完成，请查看启动器提示。", "error")
+            self._set_badge(self.quick_badge, "待命", "gray")
+            return
+        self._lan_timer.start()
+        self._sync_controls()
+
+    def _poll_lan_port(self) -> None:
+        if self._closing:
+            self._lan_timer.stop()
+            return
+        if self._room_payload is not None or self._tunnel_process is not None:
+            self._lan_timer.stop()
+            return
+        if self._quick_session_key:
+            process = self.main.session_process(self._quick_session_key)
+            if process is None:
+                if not self.main.launch_active:
+                    # 自己启动的那个游戏已经退出，停止自动建房。
+                    self._quick_session_key = ""
+                    self._lan_timer.stop()
+                    if self._auto_room_flow:
+                        self._auto_room_flow = False
+                        self._set_badge(self.quick_badge, "待命", "gray")
+                        self._set_quick_status(
+                            "启动的游戏已经退出，一键联机已停止。", "muted"
+                        )
+                return
+        else:
+            if not self.main.game_running:
+                return
+            process = self.main.game_process
+        if self._lan_worker is not None:
+            return
+        pid = int(getattr(process, "pid", 0) or 0) if process else 0
+        if not pid:
+            return
+        worker = LanPortWorker(pid, self)
+        self._lan_worker = worker
+        worker.ready.connect(
+            lambda ports, w=worker: self._lan_ready(w, ports)
+        )
+        worker.start()
+
+    def _lan_ready(self, worker: LanPortWorker, ports) -> None:
+        if worker is not self._lan_worker:
+            return
+        self._lan_worker = None
+        if self._closing:
+            return
+        values = [int(port) for port in (ports or []) if int(port or 0) > 0]
+        if not values:
+            if self._auto_room_flow:
+                self._set_quick_status(
+                    "游戏已启动。进入存档后按 Esc → 对局域网开放，"
+                    "启动器会自动检测端口并建房。",
+                    "busy",
+                )
+            return
+        port = preferred_lan_port(values)
+        if port == self._lan_port:
+            return
+        self._lan_port = port
+        self.port_spin.setValue(port)
+        self._lan_timer.stop()
+        self._set_quick_status(
+            f"已检测到局域网端口 {port}，正在创建房间…", "busy"
+        )
+        self._set_badge(self.quick_badge, "建房中", "blue")
+        self._set_status(
+            self.host_status, f"已检测到游戏端口 {port}，正在创建房间…", "busy"
+        )
+        self._ensure_account_then_create()
+
+    def _ensure_account_then_create(self) -> None:
+        if self._closing:
+            return
+        if self._tunnel_process is not None or self._room_payload is not None:
+            return
+        if self._busy or self._room_worker is not None:
+            QTimer.singleShot(1500, self._ensure_account_then_create)
+            return
+        if self._user is None:
+            token = self.token_edit.text().strip() or self._token
+            if not token:
+                self._auto_room_flow = False
+                self._set_quick_status(
+                    "检测到端口，但还没有樱花穿透访问密钥。"
+                    "请在下方填写密钥后再点一次“创建房间”。",
+                    "error",
+                )
+                self._set_badge(self.quick_badge, "待命", "gray")
+                return
+            self._auto_create_pending = True
+            self.login_sakura(silent=True)
+            return
+        self._notice_shown = True
+        self.create_room(auto=True)
+
+    def _set_quick_status(self, text: str, kind: str = "muted") -> None:
+        if not hasattr(self, "quick_status"):
+            return
+        c = colors()
+        key = STATUS_COLORS.get(kind, STATUS_COLORS["muted"])[0]
+        self.quick_status.setStyleSheet(
+            f"color: {c[key]}; font-size: 11px; background: transparent;"
+        )
+        self.quick_status.setText(text)
+
+    # ------------------------------------------------------------------
     # 主机流程
 
     def detect_port(self) -> None:
-        process = self.main.game_process
+        process = None
+        if self._quick_session_key:
+            process = self.main.session_process(self._quick_session_key)
+        process = process or self.main.game_process
         pid = process.pid if process and self.main.game_running else 0
         if not pid:
             self._set_status(
@@ -826,13 +1306,15 @@ class RoomPage(QWidget):
             text += f"（其他监听端口：{', '.join(others[:4])}）"
         self._set_status(self.host_status, text, "success")
 
-    def create_room(self) -> None:
+    def create_room(self, auto: bool = False) -> None:
         if self._busy:
             return
         if self._user is None:
             self._set_status(
                 self.host_status, "请先验证并连接樱花穿透访问密钥。", "error"
             )
+            self._auto_room_flow = False
+            self._set_quick_status("请先验证樱花穿透访问密钥。", "error")
             return
         if self.token_edit.text().strip() != self._token:
             self._set_status(
@@ -840,13 +1322,17 @@ class RoomPage(QWidget):
                 "访问密钥已修改，请先点击“验证并连接”再创建房间。",
                 "warning",
             )
+            self._auto_room_flow = False
+            self._set_quick_status(
+                "访问密钥已修改，请先点击“验证并连接”。", "warning"
+            )
             return
         if self._tunnel_process is not None or self._room_payload is not None:
             self.toast("房间已经开启，请先关闭当前房间。", "info")
             return
         port = int(self.port_spin.value())
         node_id = self._selected_node_id()
-        if not self._notice_shown:
+        if not self._notice_shown and not auto:
             dialog = ConfirmDialog(
                 self,
                 "创建联机房间",
@@ -884,6 +1370,7 @@ class RoomPage(QWidget):
             preferred_tunnel_id=self.main.config.sakura_tunnel_id,
             frpc_path=self.main.config.sakura_frpc_path,
             parent=self,
+            avoid_tunnel_id=self.main.config.sakura_server_tunnel_id,
         )
         self._room_worker = worker
         worker.progress.connect(
@@ -941,6 +1428,9 @@ class RoomPage(QWidget):
                 self.host_status, error or "创建房间失败。", "error"
             )
             self._set_badge(self.host_badge, "已连接", "green")
+            self._auto_room_flow = False
+            self._set_badge(self.quick_badge, "失败", "red")
+            self._set_quick_status(error or "创建房间失败。", "error")
             self.toast(error or "创建房间失败", "error")
             self._sync_controls()
             return
@@ -991,6 +1481,20 @@ class RoomPage(QWidget):
             )
         self._show_room_result(payload)
         self.progress.setVisible(False)
+        if self._auto_room_flow or self.quick_save_combo.currentData():
+            self._auto_room_flow = False
+            self._lan_timer.stop()
+            self._set_badge(self.quick_badge, "房间开启", "green")
+            address = str(
+                payload.get("room_code") or payload.get("address") or ""
+            )
+            if address:
+                self._set_quick_status(
+                    f"房间已创建，把房间号或地址发给朋友即可：{address}",
+                    "success",
+                )
+            else:
+                self._set_quick_status("房间已创建。", "success")
         self._sync_controls()
 
     def _show_room_result(self, payload: dict) -> None:
@@ -1059,6 +1563,12 @@ class RoomPage(QWidget):
         )
         self._set_status(self.host_status, message, "error")
         self.result_box.setVisible(False)
+        self._auto_room_flow = False
+        self._auto_create_pending = False
+        self._lan_timer.stop()
+        if hasattr(self, "quick_badge"):
+            self._set_badge(self.quick_badge, "失败", "red")
+            self._set_quick_status(message, "error")
         self.toast(message, "error")
         self._sync_controls()
 
@@ -1088,6 +1598,12 @@ class RoomPage(QWidget):
         self._set_status(self.host_status, "房间已关闭。", "muted")
         self.result_box.setVisible(False)
         self._closing = False
+        self._auto_room_flow = False
+        self._auto_create_pending = False
+        self._lan_timer.stop()
+        if hasattr(self, "quick_badge"):
+            self._set_badge(self.quick_badge, "待命", "gray")
+            self._set_quick_status("房间已关闭，可以重新选存档建房。", "muted")
         self._sync_controls()
 
     def _copy_room_code(self) -> None:
@@ -1177,7 +1693,9 @@ class RoomPage(QWidget):
 
     def join_friend_room(self, room_code: str, version_id: str = "") -> None:
         """从好友簿进入房间：填好房间号和版本，直接走客人启动流程。"""
-        if self.main.game_running:
+        if self.main.game_running and (
+            not version_id or self.main.find_game_session(version_id)
+        ):
             self._copy_text(room_code, "好友房间地址")
             return
         text = str(room_code or "").strip()
@@ -1229,6 +1747,7 @@ class RoomPage(QWidget):
         else:
             self.version_combo.addItem("未安装游戏版本", "")
         self.version_combo.blockSignals(False)
+        self._sync_quick_versions()
         self._sync_controls()
 
     def _sync_selection(self, version_id: str) -> None:
@@ -1239,6 +1758,13 @@ class RoomPage(QWidget):
             self.version_combo.blockSignals(True)
             self.version_combo.setCurrentIndex(index)
             self.version_combo.blockSignals(False)
+        if hasattr(self, "quick_version_combo"):
+            quick_index = self.quick_version_combo.findData(version_id)
+            if (
+                quick_index >= 0
+                and quick_index != self.quick_version_combo.currentIndex()
+            ):
+                self.quick_version_combo.setCurrentIndex(quick_index)
 
     def _update_code_preview(self) -> None:
         text = self.code_edit.text().strip()
@@ -1433,20 +1959,21 @@ class RoomPage(QWidget):
             )
             return
         address = self._decoded_address
-        if self.main.game_running:
-            self._copy_text(address, "服务器地址")
-            self._set_status(
-                self.guest_status,
-                "游戏已经在运行，地址已复制。请在多人游戏中添加服务器。",
-                "warning",
-            )
-            return
         if self.main.install_active:
             self.toast("正在安装游戏文件，请稍候", "info")
             return
         version_id = str(self.version_combo.currentData() or "")
         if not version_id:
             self.toast("请先安装一个游戏版本", "info")
+            return
+        existing = self.main.find_game_session(version_id)
+        if existing is not None:
+            self._copy_text(address, "服务器地址")
+            self._set_status(
+                self.guest_status,
+                "这个版本已经在运行，地址已复制。请在多人游戏中添加服务器。",
+                "warning",
+            )
             return
         if version_id != self.main.selected_version:
             self.main.home_page.select_version(version_id)
@@ -1455,8 +1982,8 @@ class RoomPage(QWidget):
             f"正在启动 {version_id} 并连接 {address}…",
             "busy",
         )
-        self.main.launch_selected(connect_address=address)
-        if not self.main.game_running and not self.main.launch_active:
+        key = self.main.launch_selected(connect_address=address)
+        if not key:
             self._set_status(
                 self.guest_status,
                 "启动没有完成，请查看启动器提示或运行日志。",
@@ -1478,6 +2005,18 @@ class RoomPage(QWidget):
             self.join_btn.setText("游戏运行中 · 复制地址")
         else:
             self.join_btn.setText("启动游戏并进入")
+            self._lan_timer.stop()
+            if self._auto_room_flow:
+                self._auto_room_flow = False
+                self._set_badge(self.quick_badge, "待命", "gray")
+                self._set_quick_status(
+                    "游戏没有运行，一键联机已停止。", "muted"
+                )
+            if self._tunnel_process is not None or self._room_payload is not None:
+                self.close_room()
+                self._set_quick_status(
+                    "游戏已关闭，房间也随之关闭。", "muted"
+                )
         self.detect_btn.setEnabled(running)
         if hasattr(self, "join_btn"):
             self.join_btn.setIcon(
@@ -1506,6 +2045,26 @@ class RoomPage(QWidget):
         self.copy_decode_btn.setEnabled(has_version)
         if hasattr(self, "sync_mods_btn"):
             self.sync_mods_btn.setEnabled(not self._busy)
+        if hasattr(self, "quick_start_btn"):
+            quick_ready = bool(
+                self.quick_version_combo.currentData()
+                and self.quick_save_combo.currentData()
+            )
+            self.quick_start_btn.setEnabled(
+                quick_ready
+                and not self._busy
+                and not room_active
+                and not self._auto_room_flow
+                and not self.main.launch_active
+            )
+            idle = not room_active and not self._busy
+            self.quick_version_combo.setEnabled(idle)
+            self.quick_save_combo.setEnabled(idle)
+            self.quick_refresh_btn.setEnabled(idle)
+            if hasattr(self, "quick_mod_btn"):
+                self.quick_mod_btn.setEnabled(not self._busy)
+                self.quick_mod_help_btn.setEnabled(not self._busy)
+                self.quick_mod_page_btn.setEnabled(not self._busy)
 
     def toast(self, text: str, kind: str = "info") -> None:
         self.main.toast(text, kind)
@@ -1515,6 +2074,10 @@ class RoomPage(QWidget):
 
     def shutdown(self) -> None:
         self._closing = True
+        self._lan_timer.stop()
+        self._lan_worker = None
+        self._auto_room_flow = False
+        self._auto_create_pending = False
         if hasattr(self, "easytier_panel"):
             self.easytier_panel.shutdown()
         worker = self._room_worker

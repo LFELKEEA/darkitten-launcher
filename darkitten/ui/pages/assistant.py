@@ -1,10 +1,19 @@
 from __future__ import annotations
 
 import html
+import re
 import threading
 from pathlib import Path
 
-from PySide6.QtCore import QObject, Qt, QTimer, QUrl, Signal
+from PySide6.QtCore import (
+    QObject,
+    QRunnable,
+    Qt,
+    QThreadPool,
+    QTimer,
+    QUrl,
+    Signal,
+)
 from PySide6.QtGui import QDesktopServices, QStandardItemModel
 from PySide6.QtWidgets import (
     QApplication,
@@ -18,6 +27,8 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QLineEdit,
+    QListWidget,
+    QListWidgetItem,
     QMessageBox,
     QPlainTextEdit,
     QPushButton,
@@ -30,11 +41,17 @@ from PySide6.QtWidgets import (
 
 from ... import chunkbase_registry as registry
 from ... import game_assistant as ga
+from ... import game_catalog
+from ... import game_ids
 from ...java import pick_java
+from ...mc_versions import release_versions
 from .. import icons
+from ..version_picker import VersionPickerDialog
 from ..widgets import (
     Card,
     ChibiCompanion,
+    ChoiceComboBox,
+    NoWheelSpinBox,
     SegmentedControl,
     badge,
     colors,
@@ -43,20 +60,9 @@ from ..widgets import (
     transparent_children,
 )
 
-MC_VERSIONS = (
-    "1.21.9",
-    "1.21.4",
-    "1.21.1",
-    "1.20.6",
-    "1.20.4",
-    "1.20.1",
-    "1.19.4",
-    "1.18.2",
-    "1.17.1",
-    "1.16.5",
-)
+MC_VERSIONS = tuple(release_versions())
 
-TAB_ORDER = ("seed", "commands", "enchant", "wiki", "tools")
+TAB_ORDER = ("seed", "commands", "enchant", "wiki")
 
 CATEGORY_LABELS = {
     "全部": "全部",
@@ -69,52 +75,6 @@ CATEGORY_LABELS = {
     "进阶": "进阶",
     "显示": "显示",
 }
-
-QUICK_IDS: dict[str, tuple[tuple[str, str], ...]] = {
-    "常用附魔": (
-        ("锋利", "minecraft:sharpness"),
-        ("保护", "minecraft:protection"),
-        ("效率", "minecraft:efficiency"),
-        ("时运", "minecraft:fortune"),
-        ("经验修补", "minecraft:mending"),
-        ("抢夺", "minecraft:looting"),
-        ("耐久", "minecraft:unbreaking"),
-        ("力量", "minecraft:power"),
-        ("无限", "minecraft:infinity"),
-        ("冰霜行者", "minecraft:frost_walker"),
-    ),
-    "常用物品": (
-        ("钻石剑", "minecraft:diamond_sword"),
-        ("下界合金剑", "minecraft:netherite_sword"),
-        ("金苹果", "minecraft:golden_apple"),
-        ("附魔金苹果", "minecraft:enchanted_golden_apple"),
-        ("鞘翅", "minecraft:elytra"),
-        ("不死图腾", "minecraft:totem_of_undying"),
-        ("末影珍珠", "minecraft:ender_pearl"),
-        ("命名牌", "minecraft:name_tag"),
-    ),
-    "常用实体": (
-        ("僵尸", "minecraft:zombie"),
-        ("骷髅", "minecraft:skeleton"),
-        ("苦力怕", "minecraft:creeper"),
-        ("末影人", "minecraft:enderman"),
-        ("村民", "minecraft:villager"),
-        ("铁傀儡", "minecraft:iron_golem"),
-        ("凋灵", "minecraft:wither"),
-        ("末影龙", "minecraft:ender_dragon"),
-    ),
-    "常用粒子": (
-        ("火焰", "minecraft:flame"),
-        ("末地烛", "minecraft:end_rod"),
-        ("爱心", "minecraft:heart"),
-        ("音符", "minecraft:note"),
-        ("烟雾", "minecraft:smoke"),
-        ("爆炸", "minecraft:explosion"),
-        ("龙息", "minecraft:dragon_breath"),
-        ("闪光", "minecraft:flash"),
-    ),
-}
-
 
 # ---------------------------------------------------------------------------
 # 后台任务
@@ -147,16 +107,24 @@ class MCModWorker(QObject):
     finished = Signal(object)
     failed = Signal(str)
 
-    def __init__(self, query: str, parent=None) -> None:
+    def __init__(
+        self, query: str, filter_id: int = 0, page: int = 1, parent=None
+    ) -> None:
         super().__init__(parent)
         self.query = query
+        self.filter_id = filter_id
+        self.page = page
 
     def start(self) -> None:
         threading.Thread(target=self._run, daemon=True).start()
 
     def _run(self) -> None:
         try:
-            self.finished.emit(ga.search_mcmod(self.query, limit=12))
+            self.finished.emit(
+                ga.search_mcmod_page(
+                    self.query, filter_id=self.filter_id, page=self.page
+                )
+            )
         except Exception as error:  # noqa: BLE001
             self.failed.emit(str(error))
 
@@ -186,31 +154,479 @@ class VersionRegistryWorker(QObject):
 
 
 class MCModRow(QFrame):
-    clicked = Signal(str)
+    clicked = Signal(object)
 
     def __init__(self, result: ga.MCModResult, parent=None) -> None:
         super().__init__(parent)
+        self.result = result
         self.setObjectName("SelectRow")
         self.setAttribute(Qt.WA_StyledBackground, True)
         self.setCursor(Qt.PointingHandCursor)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(10, 7, 10, 7)
         layout.setSpacing(2)
+        head = QHBoxLayout()
+        head.setSpacing(6)
         title = QLabel(result.title)
         title.setStyleSheet("font-weight: 700; font-size: 12px;")
         title.setWordWrap(True)
+        head.addWidget(title, 1)
+        if result.category:
+            head.addWidget(badge(result.category, "purple"), 0, Qt.AlignTop)
+        layout.addLayout(head)
         summary = QLabel(result.summary or result.url)
         summary.setObjectName("Tiny")
         summary.setWordWrap(True)
-        layout.addWidget(title)
         layout.addWidget(summary)
+        if result.meta:
+            meta = QLabel(result.meta)
+            meta.setObjectName("Tiny")
+            meta.setWordWrap(True)
+            layout.addWidget(meta)
         transparent_children(self)
-        self._url = result.url
+        self._selected = False
+
+    def set_selected(self, selected: bool) -> None:
+        self._selected = selected
+        self.setProperty("selected", selected)
+        repolish(self)
 
     def mouseReleaseEvent(self, event) -> None:
         if event.button() == Qt.LeftButton:
-            self.clicked.emit(self._url)
+            self.clicked.emit(self.result)
         super().mouseReleaseEvent(event)
+
+
+# ---------------------------------------------------------------------------
+# ID 选择器（指令生成器）
+
+CATALOG_KINDS = {
+    "item",
+    "block",
+    "entity",
+    "effect",
+    "enchantment",
+    "particle",
+    "sound",
+    "structure",
+}
+
+
+class CatalogSignals(QObject):
+    done = Signal(object)
+    failed = Signal(str)
+
+
+class CatalogTask(QRunnable):
+    """后台拉取完整注册表，避免第一次打开选择窗口时卡住界面。"""
+
+    def __init__(self, version: str, force: bool = False) -> None:
+        super().__init__()
+        self.version = version
+        self.force = force
+        self.signals = CatalogSignals()
+
+    def run(self) -> None:
+        try:
+            result = game_catalog.fetch_catalog(self.version, force=self.force)
+        except Exception as error:  # 网络、镜像或数据格式问题
+            self.signals.failed.emit(str(error))
+            return
+        self.signals.done.emit(result)
+
+
+class EntryPickerDialog(QDialog):
+    """带中文搜索与分类筛选的 ID 清单。"""
+
+    def __init__(
+        self,
+        kind: str,
+        current: str = "",
+        parent=None,
+        title: str = "",
+        version: str = "",
+    ) -> None:
+        super().__init__(parent)
+        self.kind = kind
+        self._entry: game_ids.Entry | None = None
+        self._version = str(version or "").strip() or game_catalog.default_version()
+        self._task: CatalogTask | None = None
+        self.setWindowTitle(title or game_ids.picker_title(kind))
+        self.setModal(True)
+        self.resize(720, 540)
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(16, 14, 16, 14)
+        layout.setSpacing(8)
+
+        head = QHBoxLayout()
+        self.search = QLineEdit()
+        self.search.setPlaceholderText("搜索中文名、英文 ID 或说明，例如：钻石、sharpness")
+        self.search.setClearButtonEnabled(True)
+        self.category = QComboBox()
+        head.addWidget(self.search, 1)
+        head.addWidget(self.category)
+        self.refresh_btn = QPushButton("刷新清单")
+        self.refresh_btn.setObjectName("Ghost")
+        self.refresh_btn.setCursor(Qt.PointingHandCursor)
+        self.refresh_btn.setToolTip("从网站重新下载这个版本的完整注册表")
+        self.refresh_btn.clicked.connect(lambda: self._load_catalog(force=True))
+        head.addWidget(self.refresh_btn)
+        layout.addLayout(head)
+
+        self.status = QLabel("")
+        self.status.setObjectName("Tiny")
+        self.status.setWordWrap(True)
+        layout.addWidget(self.status)
+
+        body = QHBoxLayout()
+        body.setSpacing(10)
+        self.list = QListWidget()
+        self.list.setAlternatingRowColors(True)
+        body.addWidget(self.list, 3)
+        self.detail = QLabel("从左侧选一个 ID，这里会显示说明。")
+        self.detail.setWordWrap(True)
+        self.detail.setAlignment(Qt.AlignTop | Qt.AlignLeft)
+        self.detail.setObjectName("Muted")
+        detail_holder = QFrame()
+        detail_holder.setObjectName("SoftCard")
+        detail_holder.setAttribute(Qt.WA_StyledBackground, True)
+        detail_layout = QVBoxLayout(detail_holder)
+        detail_layout.setContentsMargins(12, 10, 12, 10)
+        detail_layout.addWidget(self.detail)
+        detail_layout.addStretch(1)
+        body.addWidget(detail_holder, 2)
+        layout.addLayout(body, 1)
+
+        buttons = QHBoxLayout()
+        self.count_label = QLabel("")
+        self.count_label.setObjectName("Tiny")
+        buttons.addWidget(self.count_label, 1)
+        cancel = QPushButton("取消")
+        cancel.setObjectName("Secondary")
+        cancel.clicked.connect(self.reject)
+        self.ok = QPushButton("使用这个 ID")
+        self.ok.setObjectName("Primary")
+        self.ok.setEnabled(False)
+        self.ok.clicked.connect(self.accept)
+        buttons.addWidget(cancel)
+        buttons.addWidget(self.ok)
+        layout.addLayout(buttons)
+
+        self.search.textChanged.connect(self._refresh)
+        self.category.currentIndexChanged.connect(self._refresh)
+        self.list.currentItemChanged.connect(self._on_select)
+        self.list.itemDoubleClicked.connect(lambda _item: self.accept())
+
+        cached = game_catalog.load_cached(self._version)
+        if cached is not None:
+            self._apply_catalog(cached, cached=True)
+        else:
+            self._rebuild_categories()
+        self._refresh()
+        self._preselect(current)
+        if self.kind in CATALOG_KINDS:
+            self._load_catalog(force=False)
+        else:
+            self.status.setText(f"当前使用内置清单，共 {len(game_ids.dataset(self.kind))} 项。")
+
+    def _load_catalog(self, force: bool = False) -> None:
+        if self.kind not in CATALOG_KINDS:
+            return
+        if self._task is not None:
+            return
+        if force:
+            self.status.setText(f"正在从网站重新拉取 {self._version} 的完整清单…")
+        self.refresh_btn.setEnabled(False)
+        task = CatalogTask(self._version, force=force)
+        task.signals.done.connect(self._on_catalog_done)
+        task.signals.failed.connect(self._on_catalog_failed)
+        self._task = task
+        QThreadPool.globalInstance().start(task)
+
+    def _on_catalog_done(self, result: object) -> None:
+        self._task = None
+        self.refresh_btn.setEnabled(True)
+        if not isinstance(result, game_catalog.CatalogResult):
+            return
+        selected = self.list.currentItem()
+        previous = ""
+        if selected is not None:
+            entry = selected.data(Qt.UserRole)
+            if entry is not None:
+                previous = str(entry.value or "")
+        self._apply_catalog(result, cached=result.source != "network")
+        self._refresh()
+        self._preselect(previous)
+
+    def _on_catalog_failed(self, message: str) -> None:
+        self._task = None
+        self.refresh_btn.setEnabled(True)
+        self.status.setText(
+            f"在线清单拉取失败：{message}。当前先用内置常用清单"
+            f"（共 {len(game_ids.dataset(self.kind))} 项），点“刷新清单”可以重试。"
+        )
+
+    def _apply_catalog(
+        self, result: game_catalog.CatalogResult, cached: bool = False
+    ) -> None:
+        game_ids.set_catalog(result.entries, result.version)
+        self._rebuild_categories()
+        labels = (
+            ("block", "方块"),
+            ("item", "物品"),
+            ("entity", "实体"),
+            ("effect", "效果"),
+            ("enchantment", "附魔"),
+            ("particle", "粒子"),
+            ("sound", "音效"),
+        )
+        parts = [
+            f"{label} {len(result.entries.get(kind) or ())}"
+            for kind, label in labels
+            if result.entries.get(kind)
+        ]
+        prefix = "已加载本机缓存" if cached else "已从网站拉取"
+        version_note = (
+            str(result.data_version or result.version)
+            if result.data_version and result.data_version != result.version
+            else str(result.version)
+        )
+        detail_note = (
+            f"（{result.version} 暂无独立数据，使用 {version_note}）"
+            if result.data_version and result.data_version != result.version
+            else f"（{version_note}）"
+        )
+        if parts:
+            self.status.setText(
+                f"{prefix}{detail_note}：" + " · ".join(parts) + "。搜索框可以直接搜中文名。"
+            )
+        else:
+            self.status.setText(
+                f"{prefix}{detail_note}没有拿到注册表，继续使用内置常用清单。"
+            )
+
+    def _rebuild_categories(self) -> None:
+        current = str(self.category.currentData() or "全部")
+        self.category.blockSignals(True)
+        self.category.clear()
+        for name in game_ids.categories(self.kind):
+            self.category.addItem(name, name)
+        index = self.category.findData(current)
+        self.category.setCurrentIndex(index if index >= 0 else 0)
+        self.category.blockSignals(False)
+
+    def _refresh(self) -> None:
+        entries = game_ids.search(
+            self.kind, self.search.text(), str(self.category.currentData() or "全部")
+        )
+        self.list.blockSignals(True)
+        self.list.clear()
+        for entry in entries:
+            item = QListWidgetItem(f"{entry.name}    {entry.value}")
+            item.setData(Qt.UserRole, entry)
+            item.setToolTip(entry.help or entry.value)
+            self.list.addItem(item)
+        self.list.blockSignals(False)
+        self.count_label.setText(f"共 {len(entries)} 项")
+        if entries:
+            self.list.setCurrentRow(0)
+        else:
+            self._entry = None
+            self.ok.setEnabled(False)
+            self.detail.setText("没有匹配的条目，换个关键词试试。")
+
+    def _preselect(self, current: str) -> None:
+        text = str(current or "").strip()
+        if not text:
+            return
+        for row in range(self.list.count()):
+            item = self.list.item(row)
+            entry = item.data(Qt.UserRole)
+            if entry is not None and entry.value == text:
+                self.list.setCurrentRow(row)
+                break
+
+    def _on_select(self, current: QListWidgetItem | None, _previous=None) -> None:
+        if current is None:
+            self._entry = None
+            self.ok.setEnabled(False)
+            return
+        entry = current.data(Qt.UserRole)
+        self._entry = entry
+        if entry is None:
+            self.ok.setEnabled(False)
+            return
+        self.ok.setEnabled(True)
+        parts = [f"<b>{html.escape(entry.name)}</b>", f"<code>{html.escape(entry.value)}</code>"]
+        if entry.category:
+            parts.append(f"分类：{html.escape(entry.category)}")
+        if entry.help:
+            parts.append(html.escape(entry.help))
+        self.detail.setText("<br><br>".join(parts))
+
+    def value(self) -> str:
+        return self._entry.value if self._entry is not None else ""
+
+
+class IdPicker(QWidget):
+    """输入框 + 选择按钮，值是命名空间 ID 或裸值。"""
+
+    def __init__(
+        self,
+        kind: str,
+        value: str = "",
+        parent: QWidget | None = None,
+        version_provider=None,
+    ) -> None:
+        super().__init__(parent)
+        self.kind = kind
+        self._version_provider = version_provider
+        row = QHBoxLayout(self)
+        row.setContentsMargins(0, 0, 0, 0)
+        row.setSpacing(6)
+        self.edit = QLineEdit(str(value or ""))
+        self.edit.setClearButtonEnabled(True)
+        button = QPushButton("选择…")
+        button.setObjectName("Secondary")
+        button.setCursor(Qt.PointingHandCursor)
+        button.setFixedWidth(72)
+        button.clicked.connect(self._pick)
+        row.addWidget(self.edit, 1)
+        row.addWidget(button)
+
+    def _pick(self) -> None:
+        version = ""
+        if callable(self._version_provider):
+            try:
+                version = str(self._version_provider() or "")
+            except Exception:
+                version = ""
+        dialog = EntryPickerDialog(
+            self.kind, self.edit.text(), self.window(), version=version
+        )
+        if dialog.exec():
+            self.edit.setText(dialog.value())
+
+    def text(self) -> str:
+        return self.edit.text().strip()
+
+    def setText(self, text: str) -> None:
+        self.edit.setText(str(text or ""))
+
+
+class ComponentPickerDialog(QDialog):
+    """物品组件速查：选中后返回组件片段，可在输入框里继续改。"""
+
+    def __init__(self, parent=None) -> None:
+        super().__init__(parent)
+        self.setWindowTitle("选择物品组件")
+        self.setModal(True)
+        self.resize(660, 460)
+        self._entry: game_ids.Entry | None = None
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(16, 14, 16, 14)
+        layout.setSpacing(8)
+        tip = QLabel(
+            "组件是 1.20.5+ 的写法，多个组件用逗号分隔。"
+            "选中后插入到输入框，再把示例值改成你要的。"
+        )
+        tip.setObjectName("Tiny")
+        tip.setWordWrap(True)
+        layout.addWidget(tip)
+        self.search = QLineEdit()
+        self.search.setPlaceholderText("搜索组件，例如：名称、附魔、耐久")
+        self.search.setClearButtonEnabled(True)
+        layout.addWidget(self.search)
+        self.list = QListWidget()
+        layout.addWidget(self.list, 1)
+        self.detail = QLabel("")
+        self.detail.setWordWrap(True)
+        self.detail.setObjectName("Muted")
+        layout.addWidget(self.detail)
+        buttons = QHBoxLayout()
+        buttons.addStretch(1)
+        cancel = QPushButton("取消")
+        cancel.setObjectName("Secondary")
+        cancel.clicked.connect(self.reject)
+        self.ok = QPushButton("插入组件")
+        self.ok.setObjectName("Primary")
+        self.ok.setEnabled(False)
+        self.ok.clicked.connect(self.accept)
+        buttons.addWidget(cancel)
+        buttons.addWidget(self.ok)
+        layout.addLayout(buttons)
+        self.search.textChanged.connect(self._refresh)
+        self.list.currentItemChanged.connect(self._on_select)
+        self.list.itemDoubleClicked.connect(lambda _item: self.accept())
+        self._refresh()
+
+    def _refresh(self) -> None:
+        needle = self.search.text().strip().lower()
+        self.list.clear()
+        for entry in game_ids.COMPONENTS:
+            haystack = f"{entry.name} {entry.value} {entry.help} {entry.category}".lower()
+            if needle and needle not in haystack:
+                continue
+            item = QListWidgetItem(f"{entry.name}  ·  {entry.category}")
+            item.setData(Qt.UserRole, entry)
+            self.list.addItem(item)
+        if self.list.count():
+            self.list.setCurrentRow(0)
+        else:
+            self._entry = None
+            self.ok.setEnabled(False)
+
+    def _on_select(self, current: QListWidgetItem | None, _previous=None) -> None:
+        if current is None:
+            self._entry = None
+            self.ok.setEnabled(False)
+            return
+        entry = current.data(Qt.UserRole)
+        self._entry = entry
+        self.ok.setEnabled(entry is not None)
+        if entry is not None:
+            self.detail.setText(
+                f"<b>{html.escape(entry.name)}</b>（{html.escape(entry.category)}）<br>"
+                f"<code>{html.escape(entry.value)}</code><br>{html.escape(entry.help)}"
+            )
+
+    def value(self) -> str:
+        return self._entry.value if self._entry is not None else ""
+
+
+class ComponentField(QWidget):
+    def __init__(self, value: str = "", parent=None) -> None:
+        super().__init__(parent)
+        row = QHBoxLayout(self)
+        row.setContentsMargins(0, 0, 0, 0)
+        row.setSpacing(6)
+        self.edit = QLineEdit(str(value or ""))
+        self.edit.setPlaceholderText("可留空；多个组件用逗号分隔")
+        self.edit.setClearButtonEnabled(True)
+        button = QPushButton("组件…")
+        button.setObjectName("Secondary")
+        button.setCursor(Qt.PointingHandCursor)
+        button.setFixedWidth(72)
+        button.clicked.connect(self._pick)
+        row.addWidget(self.edit, 1)
+        row.addWidget(button)
+
+    def _pick(self) -> None:
+        dialog = ComponentPickerDialog(self.window())
+        if not dialog.exec():
+            return
+        snippet = dialog.value()
+        if not snippet:
+            return
+        current = self.edit.text().strip().rstrip(",")
+        self.edit.setText(f"{current},{snippet}" if current else snippet)
+
+    def text(self) -> str:
+        return self.edit.text().strip()
+
+    def setText(self, text: str) -> None:
+        self.edit.setText(str(text or ""))
 
 
 class CommandRow(QFrame):
@@ -338,7 +754,12 @@ class AIConfigDialog(QDialog):
 
 
 class DatapackDialog(QDialog):
-    def __init__(self, version: str = "1.21.4", parent=None) -> None:
+    def __init__(
+        self,
+        version: str = "1.21.4",
+        versions: list[str] | tuple[str, ...] | None = None,
+        parent=None,
+    ) -> None:
         super().__init__(parent)
         self.setWindowTitle("导出数据包")
         self.setModal(True)
@@ -361,7 +782,7 @@ class DatapackDialog(QDialog):
         self.name = QLineEdit("main")
         self.namespace = QLineEdit("dkl")
         self.version = QComboBox()
-        for item in MC_VERSIONS:
+        for item in versions or MC_VERSIONS:
             self.version.addItem(item, item)
         index = self.version.findData(version)
         if index >= 0:
@@ -414,7 +835,11 @@ class AssistantPage(QWidget):
         self._version_groups, self._version_source = registry.load_groups(
             allow_network=False
         )
-        self._template_widgets: list[tuple[QLabel, QLineEdit, QWidget]] = []
+        self._template_inputs: dict[str, QWidget] = {}
+        self._version_options: list[str] = []
+        self._mcmod_results: list[ga.MCModResult] = []
+        self._mcmod_selected: int = -1
+        self._mcmod_page: ga.MCModPage | None = None
         self._build()
         QTimer.singleShot(600, self._auto_refresh_versions)
 
@@ -453,7 +878,6 @@ class AssistantPage(QWidget):
         self.tabs.add_item("指令工坊", "commands")
         self.tabs.add_item("附魔预测", "enchant")
         self.tabs.add_item("资料站", "wiki")
-        self.tabs.add_item("小工具", "tools")
         self.tabs.changed.connect(self._switch_tab)
         outer.addWidget(self.tabs, 0, Qt.AlignLeft)
 
@@ -462,7 +886,6 @@ class AssistantPage(QWidget):
         self.tab_stack.addWidget(self._build_command_tab())
         self.tab_stack.addWidget(self._build_enchant_tab())
         self.tab_stack.addWidget(self._build_wiki_tab())
-        self.tab_stack.addWidget(self._build_tools_tab())
         outer.addWidget(self.tab_stack, 1)
 
     def _switch_tab(self, value: str) -> None:
@@ -539,6 +962,7 @@ class AssistantPage(QWidget):
         layout.addWidget(self._build_slime_card())
         layout.addWidget(self._build_structure_card())
         layout.addWidget(self._build_coord_card())
+        layout.addWidget(self._build_chunk_tool_card())
         layout.addWidget(self._build_dimension_card())
         layout.addStretch(1)
         return scroll
@@ -691,6 +1115,8 @@ class AssistantPage(QWidget):
             self._version_groups = groups
             self._version_source = source
             self._populate_seed_versions()
+            if hasattr(self, "gen_version"):
+                self._populate_gen_versions(self._gen_version_text())
             if self._registry_manual:
                 total = sum(len(items) for _name, items in groups)
                 self.main.toast(f"地图版本已更新，共 {total} 个", "success")
@@ -1207,7 +1633,7 @@ class AssistantPage(QWidget):
         header = self._card_header(
             body,
             "指令生成器",
-            "选模板、填参数，自动拼出完整指令；生成后会顺手校验括号、长度和大区域填充。",
+            "点“选择…”会从网站拉取当前版本的完整注册表，方块、物品、实体、附魔、音效都能按中文名搜索；断网时退回内置常用清单。",
         )
         header.addWidget(badge("模板", "purple"))
 
@@ -1218,23 +1644,50 @@ class AssistantPage(QWidget):
             self.template_combo.addItem(template.name, template.id)
         self.template_combo.currentIndexChanged.connect(self._render_template_fields)
         self.gen_version = QComboBox()
-        for item in MC_VERSIONS:
-            self.gen_version.addItem(item, item)
+        self.gen_version.setMinimumWidth(110)
+        self.gen_version.setMaxVisibleItems(20)
+        self.gen_version.setEditable(True)
+        self.gen_version.setInsertPolicy(QComboBox.NoInsert)
+        self._populate_gen_versions(
+            release_versions()[0] if release_versions() else "1.21.11"
+        )
+        self.gen_version_pick_btn = QPushButton("选择…")
+        self.gen_version_pick_btn.setObjectName("Ghost")
+        self.gen_version_pick_btn.setCursor(Qt.PointingHandCursor)
+        self.gen_version_pick_btn.clicked.connect(self._pick_gen_version)
         top.addWidget(QLabel("模板"))
         top.addWidget(self.template_combo, 1)
         top.addWidget(QLabel("目标版本"))
         top.addWidget(self.gen_version)
+        top.addWidget(self.gen_version_pick_btn)
         body.addLayout(top)
+
+        hint = QLabel(
+            "模板只锁定指令关键字；方括号里的参数都能自由填写，"
+            "下拉选项只是常用值。生成后整条指令也可以直接编辑。"
+        )
+        hint.setObjectName("Tiny")
+        hint.setWordWrap(True)
+        body.addWidget(hint)
+
+        self.template_structure = QLabel("")
+        self.template_structure.setObjectName("Tiny")
+        self.template_structure.setWordWrap(True)
+        self.template_structure.setTextFormat(Qt.RichText)
+        body.addWidget(self.template_structure)
 
         self.template_form = QWidget()
         self.template_grid = QGridLayout(self.template_form)
         self.template_grid.setContentsMargins(0, 0, 0, 0)
-        self.template_grid.setHorizontalSpacing(10)
-        self.template_grid.setVerticalSpacing(6)
+        self.template_grid.setHorizontalSpacing(12)
+        self.template_grid.setVerticalSpacing(8)
         body.addWidget(self.template_form)
-        self._build_template_fields()
 
-        self.gen_output = self._output(70, "生成的指令会出现在这里。")
+        self.gen_output = self._output(84, "生成的指令会出现在这里，也可以直接编辑。")
+        self.gen_output.setReadOnly(False)
+        self.gen_output.setToolTip(
+            "生成后可以继续手动修改；复制、保存函数和导出数据包都会使用这里的内容。"
+        )
         body.addWidget(self.gen_output)
         self.gen_issues = QLabel("")
         self.gen_issues.setObjectName("Tiny")
@@ -1260,22 +1713,146 @@ class AssistantPage(QWidget):
         self._render_template_fields()
         return card
 
-    def _build_template_fields(self) -> None:
-        max_fields = max(len(template.fields) for template in ga.COMMAND_TEMPLATES)
-        for index in range(max_fields):
-            label = QLabel("")
-            label.setObjectName("Tiny")
-            edit = QLineEdit()
-            edit.setClearButtonEnabled(True)
-            holder = QWidget()
-            col = QVBoxLayout(holder)
-            col.setContentsMargins(0, 0, 0, 0)
-            col.setSpacing(2)
-            col.addWidget(label)
-            col.addWidget(edit)
-            self.template_grid.addWidget(holder, index // 2, index % 2)
-            self._template_widgets.append((label, edit, holder))
-            holder.hide()
+    def _all_versions(self) -> list[str]:
+        """合并本地版本记录与内置列表，保证新版本不会漏。"""
+        seen: set[str] = set()
+        result: list[str] = []
+        for item in release_versions():
+            if item not in seen:
+                seen.add(item)
+                result.append(item)
+        for _group, items in self._version_groups:
+            for label, _platform in items:
+                text = str(label or "").strip()
+                if not text or text in seen:
+                    continue
+                if not text[0].isdigit():
+                    continue
+                seen.add(text)
+                result.append(text)
+        return result
+
+    def _populate_gen_versions(self, current: str) -> None:
+        if not hasattr(self, "gen_version"):
+            return
+        versions = self._all_versions()
+        self.gen_version.blockSignals(True)
+        try:
+            self.gen_version.clear()
+            for item in versions:
+                self.gen_version.addItem(item, item)
+            index = self.gen_version.findData(str(current or ""))
+            if index >= 0:
+                self.gen_version.setCurrentIndex(index)
+            elif str(current or "").strip():
+                self.gen_version.setEditText(str(current).strip())
+            else:
+                self.gen_version.setCurrentIndex(0)
+        finally:
+            self.gen_version.blockSignals(False)
+        self._version_options = versions
+
+    def _gen_version_text(self) -> str:
+        if not hasattr(self, "gen_version"):
+            return ""
+        text = self.gen_version.currentText().strip()
+        index = self.gen_version.currentIndex()
+        if index >= 0 and text == self.gen_version.itemText(index):
+            data = self.gen_version.itemData(index)
+            if data:
+                return str(data)
+        return text
+
+    def _pick_gen_version(self) -> None:
+        installed = [
+            item
+            for _group, items in self._version_groups
+            for label, _platform in items
+            if str(label or "").strip()
+        ]
+        dialog = VersionPickerDialog(
+            self,
+            self.gen_version.currentText().strip(),
+            installed,
+            "选择目标版本",
+        )
+        if dialog.exec():
+            self.gen_version.setEditText(dialog.value())
+
+    def _make_field_widget(self, field: ga.TemplateField) -> QWidget:
+        if field.kind == "choice":
+            combo = ChoiceComboBox()
+            for option in field.options:
+                label = option.label
+                if option.value and option.label != option.value:
+                    label = f"{option.label}（{option.value}）"
+                combo.addItem(label, option.value)
+                if option.help:
+                    combo.setItemData(
+                        combo.count() - 1, option.help, Qt.ToolTipRole
+                    )
+            index = combo.findData(field.default)
+            if index >= 0:
+                combo.setCurrentIndex(index)
+            else:
+                combo.setEditText(field.default)
+            if combo.lineEdit() is not None:
+                combo.lineEdit().setPlaceholderText(
+                    field.placeholder or "选常用值，或直接输入自定义值"
+                )
+            combo.setToolTip(field.help or "可以直接输入下拉清单里没有的值。")
+            return combo
+        if field.kind == "picker":
+            picker = IdPicker(
+                field.picker,
+                field.default,
+                version_provider=self._gen_version_text,
+            )
+            picker.edit.setPlaceholderText(field.placeholder or "点右边选择，或直接输入 ID")
+            picker.setToolTip(field.help)
+            return picker
+        if field.kind == "component":
+            component = ComponentField(field.default)
+            component.setToolTip(field.help)
+            return component
+        if field.kind == "int":
+            spin = NoWheelSpinBox()
+            spin.setRange(-2147483647, 2147483647)
+            spin.setToolTip(field.help)
+            try:
+                spin.setValue(int(str(field.default or "0")))
+            except ValueError:
+                spin.setValue(0)
+            return spin
+        edit = QLineEdit(field.default)
+        edit.setClearButtonEnabled(True)
+        edit.setPlaceholderText(field.placeholder or field.default)
+        edit.setToolTip(field.help)
+        return edit
+
+    def _render_template_structure(self, template: ga.CommandTemplate) -> None:
+        if not hasattr(self, "template_structure"):
+            return
+        palette = colors()
+        labels = {field.key: field.label for field in template.fields}
+        pieces: list[str] = []
+        for piece in re.split(r"(\{[A-Za-z0-9_]+\})", ga.template_skeleton(template)):
+            if not piece:
+                continue
+            if piece.startswith("{") and piece.endswith("}"):
+                key = piece[1:-1]
+                label = labels.get(key, key)
+                pieces.append(
+                    f'<span style="color:{palette["accent"]};font-weight:600;">[{html.escape(label)}]</span>'
+                )
+            else:
+                pieces.append(f'<span style="color:{palette["muted"]};">{html.escape(piece)}</span>')
+        self.template_structure.setText(
+            f'<span style="color:{palette["muted"]};">模板结构：</span>'
+            + "".join(pieces)
+            + f'<br><span style="color:{palette["muted"]};">'
+            "灰色是固定语法，红色方括号里的参数都可以改；下拉列表只是常用值。</span>"
+        )
 
     def _render_template_fields(self) -> None:
         if not hasattr(self, "template_combo"):
@@ -1283,24 +1860,58 @@ class AssistantPage(QWidget):
         template = ga.TEMPLATE_BY_ID.get(str(self.template_combo.currentData()))
         if template is None:
             return
-        for index, (label, edit, holder) in enumerate(self._template_widgets):
-            if index < len(template.fields):
-                field = template.fields[index]
-                label.setText(field.label + (" *" if field.required else ""))
-                edit.setPlaceholderText(field.placeholder or field.default)
-                edit.setText(field.default)
-                holder.show()
-            else:
-                holder.hide()
+        self._render_template_structure(template)
+        while self.template_grid.count():
+            item = self.template_grid.takeAt(0)
+            widget = item.widget()
+            if widget is not None:
+                widget.deleteLater()
+        self._template_inputs = {}
+        for index, field in enumerate(template.fields):
+            holder = QWidget()
+            col = QVBoxLayout(holder)
+            col.setContentsMargins(0, 0, 0, 0)
+            col.setSpacing(3)
+            label = QLabel(field.label + (" *" if field.required else ""))
+            label.setObjectName("Tiny")
+            if field.help:
+                label.setToolTip(field.help)
+            widget = self._make_field_widget(field)
+            col.addWidget(label)
+            col.addWidget(widget)
+            if field.help:
+                hint = QLabel(field.help)
+                hint.setObjectName("Tiny")
+                hint.setWordWrap(True)
+                col.addWidget(hint)
+            self.template_grid.addWidget(holder, index // 2, index % 2)
+            self._template_inputs[field.key] = widget
 
     def _template_values(self) -> dict[str, str]:
         template = ga.TEMPLATE_BY_ID.get(str(self.template_combo.currentData()))
         if template is None:
             return {}
         values: dict[str, str] = {}
-        for index, field in enumerate(template.fields):
-            if index < len(self._template_widgets):
-                values[field.key] = self._template_widgets[index][1].text()
+        for field in template.fields:
+            widget = self._template_inputs.get(field.key)
+            if widget is None:
+                continue
+            if isinstance(widget, QComboBox):
+                data = widget.currentData()
+                text = widget.currentText().strip()
+                index = widget.currentIndex()
+                if (
+                    index >= 0
+                    and text == widget.itemText(index)
+                    and data not in (None, "")
+                ):
+                    values[field.key] = str(data)
+                else:
+                    values[field.key] = text
+            elif isinstance(widget, QSpinBox):
+                values[field.key] = str(widget.value())
+            else:
+                values[field.key] = str(widget.text())
         return values
 
     def _generate_command(self) -> None:
@@ -1349,8 +1960,8 @@ class AssistantPage(QWidget):
         if not any(line.strip() for line in commands):
             self.main.toast("先生成一条指令", "error")
             return
-        version = str(self.gen_version.currentData() or "1.21.4")
-        dialog = DatapackDialog(version, self)
+        version = self._gen_version_text() or "1.21.4"
+        dialog = DatapackDialog(version, self._version_options or MC_VERSIONS, self)
         if not dialog.exec():
             return
         try:
@@ -1476,7 +2087,7 @@ class AssistantPage(QWidget):
             self.main.toast("先写清楚要生成什么指令", "error")
             return
         config = ga.AIConfig.from_dict(self.settings.get("ai"))
-        version = str(self.gen_version.currentData() or "1.21.4")
+        version = self._gen_version_text() or "1.21.4"
         self.ai_output.setPlainText("正在请求 AI…")
         self.ai_generate_btn.setEnabled(False)
         worker = AIWorker(request, config, version, self.ai_context.text().strip(), self)
@@ -1635,8 +2246,8 @@ class AssistantPage(QWidget):
         if not commands:
             self.main.toast("先写至少一条指令", "error")
             return
-        version = str(self.gen_version.currentData() or "1.21.4")
-        dialog = DatapackDialog(version, self)
+        version = self._gen_version_text() or "1.21.4"
+        dialog = DatapackDialog(version, self._version_options or MC_VERSIONS, self)
         if not dialog.exec():
             return
         try:
@@ -1844,7 +2455,6 @@ class AssistantPage(QWidget):
         scroll, layout = self._scroll_tab()
         layout.addWidget(self._build_mcmod_card())
         layout.addWidget(self._build_link_card())
-        layout.addWidget(self._build_quick_id_card())
         layout.addWidget(self._build_version_note_card())
         layout.addStretch(1)
         return scroll
@@ -1857,39 +2467,107 @@ class AssistantPage(QWidget):
         self._card_header(
             body,
             "MC百科搜索",
-            "在启动器里直接看结果；点条目会用系统浏览器打开详情页。",
+            "按分类筛选，右边直接预览简介，再决定要不要打开详情页。",
         )
         row = QHBoxLayout()
         self.mcmod_query = QLineEdit()
-        self.mcmod_query.setPlaceholderText("搜索模组、整合包、物品、教程…")
+        self.mcmod_query.setPlaceholderText("搜索模组、整合包、资料、教程…")
         self.mcmod_query.setClearButtonEnabled(True)
-        self.mcmod_query.returnPressed.connect(self._search_mcmod)
+        self.mcmod_query.returnPressed.connect(lambda: self._search_mcmod(1))
+        self.mcmod_filter = QComboBox()
+        for label, filter_id in ga.MC_MOD_FILTERS:
+            self.mcmod_filter.addItem(label, filter_id)
+        self.mcmod_filter.currentIndexChanged.connect(lambda _i: self._search_mcmod(1))
         search = self._button("搜索", "search", "Primary")
-        search.clicked.connect(self._search_mcmod)
-        browser = self._button("浏览器打开", "external")
-        browser.clicked.connect(lambda: self._open_url(ga.mcmod_search_url(self.mcmod_query.text())))
+        search.clicked.connect(lambda: self._search_mcmod(1))
         row.addWidget(self.mcmod_query, 1)
+        row.addWidget(self.mcmod_filter)
         row.addWidget(search)
-        row.addWidget(browser)
         body.addLayout(row)
 
         self.mcmod_status = QLabel("输入关键词开始搜索。")
         self.mcmod_status.setObjectName("Tiny")
+        self.mcmod_status.setWordWrap(True)
         body.addWidget(self.mcmod_status)
+
+        area = QHBoxLayout()
+        area.setSpacing(10)
+
         self.mcmod_scroll = QScrollArea()
         self.mcmod_scroll.setWidgetResizable(True)
         self.mcmod_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        self.mcmod_scroll.setFixedHeight(250)
+        self.mcmod_scroll.setFixedHeight(400)
         self.mcmod_holder = QWidget()
         self.mcmod_list_layout = QVBoxLayout(self.mcmod_holder)
         self.mcmod_list_layout.setContentsMargins(0, 0, 4, 0)
         self.mcmod_list_layout.setSpacing(3)
         self.mcmod_list_layout.addStretch(1)
         self.mcmod_scroll.setWidget(self.mcmod_holder)
-        body.addWidget(self.mcmod_scroll)
+        area.addWidget(self.mcmod_scroll, 3)
+
+        preview = QFrame()
+        preview.setObjectName("SoftCard")
+        preview.setAttribute(Qt.WA_StyledBackground, True)
+        preview.setFixedWidth(300)
+        preview_layout = QVBoxLayout(preview)
+        preview_layout.setContentsMargins(12, 10, 12, 10)
+        preview_layout.setSpacing(6)
+        self.mcmod_preview_title = QLabel("结果预览")
+        self.mcmod_preview_title.setObjectName("H2")
+        self.mcmod_preview_title.setWordWrap(True)
+        self.mcmod_preview_meta = QLabel("点左边的条目查看简介。")
+        self.mcmod_preview_meta.setObjectName("Tiny")
+        self.mcmod_preview_meta.setWordWrap(True)
+        self.mcmod_preview_body = QLabel("")
+        self.mcmod_preview_body.setObjectName("Muted")
+        self.mcmod_preview_body.setWordWrap(True)
+        self.mcmod_preview_body.setAlignment(Qt.AlignTop | Qt.AlignLeft)
+        self.mcmod_preview_body.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        preview_layout.addWidget(self.mcmod_preview_title)
+        preview_layout.addWidget(self.mcmod_preview_meta)
+        preview_layout.addWidget(self.mcmod_preview_body, 1)
+        self.mcmod_open = self._button("打开详情", "external", "Primary")
+        self.mcmod_open.setEnabled(False)
+        self.mcmod_open.clicked.connect(self._open_mcmod_selected)
+        self.mcmod_copy = self._button("复制链接", "copy")
+        self.mcmod_copy.setEnabled(False)
+        self.mcmod_copy.clicked.connect(self._copy_mcmod_selected)
+        preview_layout.addWidget(self.mcmod_open)
+        preview_layout.addWidget(self.mcmod_copy)
+        area.addWidget(preview, 0)
+        body.addLayout(area)
+
+        pager = QHBoxLayout()
+        self.mcmod_prev = self._button("上一页", "back")
+        self.mcmod_prev.setEnabled(False)
+        self.mcmod_prev.clicked.connect(lambda: self._search_mcmod(self._current_mcmod_page() - 1))
+        self.mcmod_next = self._button("下一页", "forward")
+        self.mcmod_next.setEnabled(False)
+        self.mcmod_next.clicked.connect(lambda: self._search_mcmod(self._current_mcmod_page() + 1))
+        self.mcmod_page_label = QLabel("第 1 页")
+        self.mcmod_page_label.setObjectName("Tiny")
+        browser = self._button("浏览器打开", "globe")
+        browser.clicked.connect(
+            lambda: self._open_url(
+                ga.mcmod_search_url(
+                    self.mcmod_query.text(),
+                    int(self.mcmod_filter.currentData() or 0),
+                    self._current_mcmod_page(),
+                )
+            )
+        )
+        pager.addWidget(self.mcmod_prev)
+        pager.addWidget(self.mcmod_next)
+        pager.addWidget(self.mcmod_page_label, 1)
+        pager.addWidget(browser)
+        body.addLayout(pager)
+        self.mcmod_query_browser = browser
         return card
 
-    def _search_mcmod(self) -> None:
+    def _current_mcmod_page(self) -> int:
+        return int(self._mcmod_page.page) if self._mcmod_page is not None else 1
+
+    def _search_mcmod(self, page: int = 1) -> None:
         if self._mcmod_worker is not None:
             self.main.toast("上一次搜索还在进行", "info")
             return
@@ -1897,8 +2575,12 @@ class AssistantPage(QWidget):
         if not query:
             self.main.toast("先输入要搜索的关键词", "error")
             return
-        self.mcmod_status.setText("正在搜索 MC百科…")
-        worker = MCModWorker(query, self)
+        page = max(1, int(page or 1))
+        filter_id = int(self.mcmod_filter.currentData() or 0)
+        self.mcmod_status.setText(f"正在搜索 MC百科 第 {page} 页…")
+        self.mcmod_prev.setEnabled(False)
+        self.mcmod_next.setEnabled(False)
+        worker = MCModWorker(query, filter_id, page, self)
         self._mcmod_worker = worker
         worker.finished.connect(self._mcmod_finished)
         worker.failed.connect(self._mcmod_failed)
@@ -1911,26 +2593,69 @@ class AssistantPage(QWidget):
             if widget is not None:
                 widget.deleteLater()
 
-    def _mcmod_finished(self, results) -> None:
+    def _mcmod_finished(self, page: ga.MCModPage) -> None:
         self._mcmod_worker = None
         self._clear_mcmod_results()
-        items = list(results or [])
-        if not items:
-            self.mcmod_status.setText("没有找到结果，换个关键词或直接去浏览器搜索。")
+        self._mcmod_page = page
+        results = list(page.results) if page is not None else []
+        self._mcmod_results = results
+        self._mcmod_selected = -1
+        self.mcmod_preview_title.setText("结果预览")
+        self.mcmod_preview_meta.setText("点左边的条目查看简介。")
+        self.mcmod_preview_body.setText("")
+        self.mcmod_open.setEnabled(False)
+        self.mcmod_copy.setEnabled(False)
+        if not results:
+            self.mcmod_status.setText("没有找到结果，换个关键词或切换分类试试。")
             self.mcmod_list_layout.addStretch(1)
+            self.mcmod_prev.setEnabled(page is not None and page.page > 1)
+            self.mcmod_next.setEnabled(False)
+            self.mcmod_page_label.setText("第 1 页")
             return
-        self.mcmod_status.setText(f"找到 {len(items)} 条结果，点击打开详情。")
-        for result in items:
+        total_text = page.total_text or f"本页 {len(results)} 条"
+        self.mcmod_status.setText(f"{total_text}，本页 {len(results)} 条。")
+        for index, result in enumerate(results):
             row = MCModRow(result)
-            row.clicked.connect(self._open_url)
+            row.clicked.connect(lambda _r, i=index: self._select_mcmod(i))
             self.mcmod_list_layout.addWidget(row)
         self.mcmod_list_layout.addStretch(1)
+        total_pages = max(1, int(page.total_pages or 1))
+        self.mcmod_page_label.setText(f"第 {page.page} / {total_pages} 页")
+        self.mcmod_prev.setEnabled(page.page > 1)
+        self.mcmod_next.setEnabled(page.page < total_pages)
+        self._select_mcmod(0)
+
+    def _select_mcmod(self, index: int) -> None:
+        if not (0 <= index < len(self._mcmod_results)):
+            return
+        self._mcmod_selected = index
+        for row_index in range(self.mcmod_list_layout.count()):
+            widget = self.mcmod_list_layout.itemAt(row_index).widget()
+            if isinstance(widget, MCModRow):
+                widget.set_selected(widget.result is self._mcmod_results[index])
+        result = self._mcmod_results[index]
+        self.mcmod_preview_title.setText(result.title)
+        meta = " · ".join(part for part in (result.category, result.meta) if part)
+        self.mcmod_preview_meta.setText(meta or "MC百科")
+        self.mcmod_preview_body.setText(result.summary or "这条结果没有简介，打开详情页看吧。")
+        self.mcmod_open.setEnabled(bool(result.url))
+        self.mcmod_copy.setEnabled(bool(result.url))
+
+    def _open_mcmod_selected(self) -> None:
+        if 0 <= self._mcmod_selected < len(self._mcmod_results):
+            self._open_url(self._mcmod_results[self._mcmod_selected].url)
+
+    def _copy_mcmod_selected(self) -> None:
+        if 0 <= self._mcmod_selected < len(self._mcmod_results):
+            self._copy(self._mcmod_results[self._mcmod_selected].url, "链接已复制")
 
     def _mcmod_failed(self, message: str) -> None:
         self._mcmod_worker = None
         self._clear_mcmod_results()
         self.mcmod_status.setText("搜索失败：" + message)
         self.mcmod_list_layout.addStretch(1)
+        self.mcmod_prev.setEnabled(self._mcmod_page is not None and self._mcmod_page.page > 1)
+        self.mcmod_next.setEnabled(False)
         self.main.toast(message, "error")
 
     def _build_link_card(self) -> QWidget:
@@ -1949,30 +2674,6 @@ class AssistantPage(QWidget):
             button.clicked.connect(lambda _=False, u=url: self._open_url(u))
             grid.addWidget(button, index // 3, index % 3)
         body.addLayout(grid)
-        return card
-
-    def _build_quick_id_card(self) -> QWidget:
-        card = Card()
-        body = QVBoxLayout(card)
-        body.setContentsMargins(16, 14, 16, 14)
-        body.setSpacing(8)
-        self._card_header(body, "常用 ID 速查", "点击直接复制命名空间 ID，粘贴到指令里就能用。")
-        for title, entries in QUICK_IDS.items():
-            label = QLabel(title)
-            label.setObjectName("Tiny")
-            body.addWidget(label)
-            grid = QGridLayout()
-            grid.setHorizontalSpacing(4)
-            grid.setVerticalSpacing(4)
-            for index, (name, value) in enumerate(entries):
-                button = QPushButton(name)
-                button.setObjectName("Ghost")
-                button.setCursor(Qt.PointingHandCursor)
-                button.setToolTip(value)
-                button.setMinimumHeight(24)
-                button.clicked.connect(lambda _=False, v=value, n=name: self._copy(v, f"{n} 已复制"))
-                grid.addWidget(button, index // 5, index % 5)
-            body.addLayout(grid)
         return card
 
     def _build_version_note_card(self) -> QWidget:
@@ -1996,15 +2697,7 @@ class AssistantPage(QWidget):
         return card
 
     # ------------------------------------------------------------------
-    # 小工具
-
-    def _build_tools_tab(self) -> QWidget:
-        scroll, layout = self._scroll_tab()
-        layout.addWidget(self._build_chunk_tool_card())
-        layout.addWidget(self._build_quick_command_card())
-        layout.addWidget(self._build_fingerprint_card())
-        layout.addStretch(1)
-        return scroll
+    # 区块换算（放在种子地图页）
 
     def _build_chunk_tool_card(self) -> QWidget:
         card = Card()
@@ -2052,80 +2745,6 @@ class AssistantPage(QWidget):
             f"Z {ga.chunk_to_block(cz)}~{ga.chunk_to_block(cz) + 15}，"
             f"中心 ({ga.chunk_center(cx)}, {ga.chunk_center(cz)}){slime}"
         )
-
-    def _build_quick_command_card(self) -> QWidget:
-        card = Card()
-        body = QVBoxLayout(card)
-        body.setContentsMargins(16, 14, 16, 14)
-        body.setSpacing(8)
-        self._card_header(body, "快捷指令", "一键生成常用世界设置，再复制进游戏。")
-        presets = (
-            ("白天", "/time set day"),
-            ("夜晚", "/time set midnight"),
-            ("晴天", "/weather clear"),
-            ("雷雨", "/weather thunder 600"),
-            ("保留物品", "/gamerule keepInventory true"),
-            ("关闭昼夜", "/gamerule doDaylightCycle false"),
-            ("显示坐标", "/gamerule reducedDebugInfo false"),
-            ("开启命令方块", "/gamerule commandBlockOutput true"),
-        )
-        grid = QGridLayout()
-        grid.setHorizontalSpacing(6)
-        grid.setVerticalSpacing(6)
-        for index, (label, command) in enumerate(presets):
-            button = self._button(label, "bolt")
-            button.clicked.connect(lambda _=False, c=command: self._append_quick_command(c))
-            grid.addWidget(button, index // 4, index % 4)
-        body.addLayout(grid)
-        self.quick_output = self._output(90, "点上面的按钮，指令会累积到这里。")
-        body.addWidget(self.quick_output)
-        row = QHBoxLayout()
-        row.addStretch(1)
-        clear = self._button("清空", "trash")
-        clear.clicked.connect(lambda: self.quick_output.clear())
-        copy = self._button("复制全部", "copy", "Primary")
-        copy.clicked.connect(lambda: self._copy(self.quick_output.toPlainText(), "快捷指令已复制"))
-        row.addWidget(clear)
-        row.addWidget(copy)
-        body.addLayout(row)
-        return card
-
-    def _append_quick_command(self, command: str) -> None:
-        current = self.quick_output.toPlainText().strip()
-        self.quick_output.setPlainText((current + "\n" + command).strip())
-        self.main.toast("已加入快捷指令", "success")
-
-    def _build_fingerprint_card(self) -> QWidget:
-        card = Card()
-        body = QVBoxLayout(card)
-        body.setContentsMargins(16, 14, 16, 14)
-        body.setSpacing(9)
-        self._card_header(body, "种子指纹", "用 SHA-256 前 16 位做一个短指纹，方便在截图或聊天里核对种子。")
-        row = QHBoxLayout()
-        self.fingerprint_input = QLineEdit()
-        self.fingerprint_input.setPlaceholderText("输入种子，支持数字/文本/0x")
-        calc = self._button("生成指纹", "sparkles", "Primary")
-        calc.clicked.connect(self._calc_fingerprint)
-        row.addWidget(self.fingerprint_input, 1)
-        row.addWidget(calc)
-        body.addLayout(row)
-        self.fingerprint_result = QLabel("等待计算。")
-        self.fingerprint_result.setObjectName("Muted")
-        self.fingerprint_result.setTextInteractionFlags(Qt.TextSelectableByMouse)
-        body.addWidget(self.fingerprint_result)
-        return card
-
-    def _calc_fingerprint(self) -> None:
-        try:
-            info = ga.parse_seed(self.fingerprint_input.text())
-        except ValueError as error:
-            self.fingerprint_result.setText(f"解析失败：{error}")
-            return
-        fingerprint = ga.seed_fingerprint(info.value)
-        self.fingerprint_result.setText(
-            f"种子数值 {info.value} · 指纹 {fingerprint}"
-        )
-        self._copy(fingerprint, "种子指纹已复制")
 
     # ------------------------------------------------------------------
     # 生命周期

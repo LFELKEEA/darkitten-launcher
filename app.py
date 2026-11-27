@@ -76,8 +76,8 @@ def main() -> int:
             return 0
 
     config = Config.load()
-    theme.set_current(config.theme)
-    app.setStyleSheet(theme.stylesheet(config.theme))
+    theme.set_current(config.theme, config.theme_palette)
+    app.setStyleSheet(theme.stylesheet(config.theme, config.theme_palette))
 
     shot = _arg_value("--screenshot")
     use_splash = not shot and "--no-splash" not in sys.argv
@@ -94,6 +94,13 @@ def main() -> int:
 
     _debug("building main window")
     window = MainWindow(config)
+
+    # 后台提前握手 CurseForge 镜像：镜像 TLS 握手要 1.5-2 秒，先把连接
+    # 放进连接池，用户点开 Mod 搜索时就不用再等这一步。
+    if not shot and os.environ.get("QT_QPA_PLATFORM", "").lower() != "offscreen":
+        from darkitten import curseforge
+
+        curseforge.warm_up()
 
     # 工坊联动桥：只在正常运行时启动，截图/离屏模式不写 bridge.json。
     bridge: BridgeServer | None = None

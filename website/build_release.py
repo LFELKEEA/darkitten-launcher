@@ -30,10 +30,16 @@ MAX_PAGES_FILE_BYTES = 30 * 1024 * 1024
 EXCLUDED_NAMES = {
     "config.json",
     "social.json",
+    "assistant.json",
     "frpc.exe",
+    # 本机运行时数据：OC 的 API Key、记忆与审判战进度不能进发布包。
+    "judgement.json",
+    "oc_ai.json",
+    "oc_memory.json",
 }
 EXCLUDED_PARTS = {
     "__pycache__",
+    ".writing",
     "cache",
     # EasyTier 联机组件由启动器首次开房时按需下载，不随包分发。
     "easytier",

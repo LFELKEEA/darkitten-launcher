@@ -45,14 +45,16 @@ class SakuraError(Exception):
 
 def _friendly_api_error(code: int, message: str) -> str:
     text = str(message or "").strip()
+    # 隧道数量超限时接口也可能返回 403，必须先于“实名/认证”判断，
+    # 否则会把“隧道已满”误导成账户认证问题。
+    if "隧道" in text and ("上限" in text or "数量" in text or "限制" in text):
+        return "隧道数量已达上限，请先在樱花穿透面板删除不用的隧道。"
     if code == 401 or "访问密钥" in text or "token" in text.lower():
         return "樱花穿透访问密钥无效，请在管理面板重新复制访问密钥。"
     if code == 403 or "实名" in text or "认证" in text:
         return f"樱花穿透账户认证未完成：{text or '请先在管理面板完成实名认证。'}"
     if code == 429 or "频繁" in text:
         return "请求过于频繁，请稍后再试。"
-    if "隧道" in text and ("上限" in text or "数量" in text or "限制" in text):
-        return "隧道数量已达上限，请先在樱花穿透面板删除不用的隧道。"
     if "节点" in text and ("不可用" in text or "满载" in text or "离线" in text):
         return f"节点当前不可用：{text}"
     return f"樱花穿透接口返回错误：{text or f'HTTP {code}'}"

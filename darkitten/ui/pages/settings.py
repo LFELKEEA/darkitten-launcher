@@ -44,7 +44,7 @@ from ...workers import (
     SnapshotCreateWorker,
     SnapshotRestoreWorker,
 )
-from .. import icons
+from .. import icons, theme, wallpaper
 from ..account_dialog import BrowserLoginDialog, MicrosoftLoginDialog
 from ..dialogs import ConfirmDialog
 from ..littleskin_dialog import LittleSkinLoginDialog
@@ -624,6 +624,100 @@ class SettingsPage(QWidget):
         theme_layout.addWidget(self.theme_seg)
         layout.addWidget(
             self._row("界面主题", "切换启动器的浅色或深色外观。", theme_box)
+        )
+        layout.addWidget(hline())
+
+        palette_box = QWidget()
+        palette_layout = QHBoxLayout(palette_box)
+        palette_layout.setContentsMargins(0, 0, 0, 0)
+        palette_layout.setSpacing(6)
+        self.palette_group = []
+        for palette_id in theme.palette_ids():
+            button = QPushButton(theme.palette_name(palette_id))
+            button.setObjectName("Ghost")
+            button.setCheckable(True)
+            button.setCursor(Qt.PointingHandCursor)
+            button.setChecked(palette_id == self.main.config.theme_palette)
+            swatch = theme.colors(self.main.config.theme, palette_id)["accent"]
+            button.setStyleSheet(
+                f"QPushButton {{ border: 1px solid {swatch}; }}"
+                f"QPushButton:checked {{ background: {swatch}; color: #FFFFFF; }}"
+            )
+            button.clicked.connect(
+                lambda _checked=False, name=palette_id: self._save_palette(name)
+            )
+            self.palette_group.append((palette_id, button))
+            palette_layout.addWidget(button)
+        palette_layout.addStretch(1)
+        layout.addWidget(
+            self._row(
+                "主题配色",
+                "换一套强调色与主视觉配色，不改动布局；随时可以切回樱花。",
+                palette_box,
+            )
+        )
+        layout.addWidget(hline())
+
+        wallpaper_box = QWidget()
+        wallpaper_layout = QHBoxLayout(wallpaper_box)
+        wallpaper_layout.setContentsMargins(0, 0, 0, 0)
+        wallpaper_layout.setSpacing(6)
+        self.wallpaper_label = QLabel(self._wallpaper_text())
+        self.wallpaper_label.setObjectName("Tiny")
+        self.wallpaper_label.setMinimumWidth(140)
+        pick_btn = QPushButton("选择图片")
+        pick_btn.setObjectName("Secondary")
+        pick_btn.setCursor(Qt.PointingHandCursor)
+        pick_btn.clicked.connect(self._pick_wallpaper)
+        clear_btn = QPushButton("清除")
+        clear_btn.setObjectName("Ghost")
+        clear_btn.setCursor(Qt.PointingHandCursor)
+        clear_btn.clicked.connect(self._clear_wallpaper)
+        self.wallpaper_mode_combo = QComboBox()
+        for key, label in wallpaper.MODES.items():
+            self.wallpaper_mode_combo.addItem(label, key)
+        index = self.wallpaper_mode_combo.findData(
+            getattr(self.main.config, "background_mode", "cover")
+        )
+        self.wallpaper_mode_combo.setCurrentIndex(max(0, index))
+        self.wallpaper_mode_combo.currentIndexChanged.connect(self._save_wallpaper_mode)
+        self.wallpaper_opacity = QSlider(Qt.Horizontal)
+        self.wallpaper_opacity.setRange(0, 100)
+        self.wallpaper_opacity.setValue(
+            int(getattr(self.main.config, "background_opacity", 28))
+        )
+        self.wallpaper_opacity.setFixedWidth(110)
+        self.wallpaper_opacity.valueChanged.connect(self._save_wallpaper_opacity)
+        wallpaper_layout.addWidget(pick_btn)
+        wallpaper_layout.addWidget(clear_btn)
+        wallpaper_layout.addWidget(self.wallpaper_mode_combo)
+        wallpaper_layout.addWidget(self.wallpaper_opacity)
+        wallpaper_layout.addWidget(self.wallpaper_label, 1)
+        layout.addWidget(
+            self._row(
+                "自定义背景",
+                "上传自己的图片当启动器背景（PNG / JPG / WebP）；右侧滑块控制原图可见度。",
+                wallpaper_box,
+            )
+        )
+        layout.addWidget(hline())
+
+        game_bg_box = QWidget()
+        game_bg_layout = QHBoxLayout(game_bg_box)
+        game_bg_layout.setContentsMargins(0, 0, 0, 0)
+        self.launch_bg_switch = Switch()
+        self.launch_bg_switch.setChecked(
+            bool(getattr(self.main.config, "launch_background", True))
+        )
+        self.launch_bg_switch.toggled.connect(self._save_launch_background)
+        game_bg_layout.addWidget(self.launch_bg_switch)
+        layout.addWidget(
+            self._row(
+                "游戏后台优化",
+                "游戏窗口出现后自动降低它的进程与磁盘优先级，"
+                "切出去看网页、写文档时更跟手；下次启动生效。",
+                game_bg_box,
+            )
         )
         layout.addWidget(hline())
 
@@ -1556,7 +1650,96 @@ class SettingsPage(QWidget):
             return
         self.main.config.theme = theme_value
         self.main.config.save()
-        self.main.apply_theme(theme_value)
+        self.main.apply_theme(theme_value, self.main.config.theme_palette)
+        self._sync_palette_swatches()
+
+    def _sync_palette_swatches(self) -> None:
+        for palette_id, button in getattr(self, "palette_group", []):
+            swatch = theme.colors(
+                self.main.config.theme, palette_id
+            )["accent"]
+            button.setStyleSheet(
+                f"QPushButton {{ border: 1px solid {swatch}; }}"
+                f"QPushButton:checked {{ background: {swatch}; color: #FFFFFF; }}"
+            )
+            button.setChecked(palette_id == self.main.config.theme_palette)
+
+    def _save_palette(self, palette_id: str) -> None:
+        if palette_id == self.main.config.theme_palette:
+            self._sync_palette_swatches()
+            return
+        self.main.config.theme_palette = palette_id
+        self.main.config.save()
+        self.main.apply_theme(self.main.config.theme, palette_id)
+        self._sync_palette_swatches()
+        self.main.toast(f"已切换到「{theme.palette_name(palette_id)}」配色", "success")
+
+    def _wallpaper_text(self) -> str:
+        path = str(getattr(self.main.config, "background_image", "") or "").strip()
+        if not path:
+            return "未设置"
+        hint = getattr(self.main, "_bg_hint", "")
+        if hint:
+            return hint
+        return Path(path).name
+
+    def _refresh_wallpaper_text(self) -> None:
+        if hasattr(self, "wallpaper_label"):
+            self.wallpaper_label.setText(self._wallpaper_text())
+            self.wallpaper_label.setToolTip(
+                str(getattr(self.main.config, "background_image", "") or "")
+            )
+
+    def _pick_wallpaper(self) -> None:
+        path, _filter = QFileDialog.getOpenFileName(
+            self,
+            "选择背景图",
+            str(Path.home()),
+            "图片 (*.png *.jpg *.jpeg *.webp *.bmp *.gif)",
+        )
+        if not path:
+            return
+        if not wallpaper.is_supported(path):
+            self.main.toast("这个格式不支持，请选择 PNG / JPG / WebP 图片", "warning")
+            return
+        if wallpaper.load_image(path) is None:
+            self.main.toast("这张图片无法读取，请换一张", "warning")
+            return
+        self.main.config.background_image = path
+        self.main.config.save()
+        self.main.apply_background()
+        self._refresh_wallpaper_text()
+        self.main.toast("背景已更新", "success")
+
+    def _clear_wallpaper(self) -> None:
+        if not str(getattr(self.main.config, "background_image", "") or "").strip():
+            return
+        self.main.config.background_image = ""
+        self.main.config.save()
+        self.main.apply_background()
+        self._refresh_wallpaper_text()
+        self.main.toast("已恢复纯色背景", "info")
+
+    def _save_wallpaper_mode(self, _index: int = -1) -> None:
+        mode = str(self.wallpaper_mode_combo.currentData() or "cover")
+        if mode == getattr(self.main.config, "background_mode", "cover"):
+            return
+        self.main.config.background_mode = mode
+        self.main.config.save()
+        self.main.apply_background()
+
+    def _save_wallpaper_opacity(self, value: int) -> None:
+        if int(getattr(self.main.config, "background_opacity", 28)) == int(value):
+            return
+        self.main.config.background_opacity = int(value)
+        self.main.config.save()
+        self.main.apply_background()
+
+    def _save_launch_background(self, checked: bool) -> None:
+        if bool(getattr(self.main.config, "launch_background", True)) == bool(checked):
+            return
+        self.main.config.launch_background = bool(checked)
+        self.main.config.save()
 
     def _save_auto(self, checked: bool) -> None:
         if bool(self.main.config.auto_complete) == bool(checked):

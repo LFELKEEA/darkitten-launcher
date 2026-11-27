@@ -58,7 +58,9 @@ from .curseforge import (
     fetch_mod_versions as fetch_curseforge_mod_versions,
     fetch_project as fetch_curseforge_project,
     fetch_projects as fetch_curseforge_projects,
+    fetch_server_addon_versions as fetch_curseforge_server_addon_versions,
     search_mods as search_curseforge_mods,
+    search_server_addons as search_curseforge_server_addons,
 )
 from .servers import ServerInfo, install_server
 from .server_pack import (
@@ -91,6 +93,7 @@ from .sakura import (
     SakuraNode,
     SakuraTunnel,
     config_server_addr,
+    detect_game_lan_ports,
     ensure_frpc,
     room_code_for_address,
     tunnel_public_address,
@@ -99,6 +102,13 @@ from .sakura import (
 )
 from .skins import change_skin, fetch_account_skin, reset_skin
 from .littleskin import LittleSkinAccount, fetch_skin, login as littleskin_login
+from .world_import import (
+    WorldImportCancelled,
+    WorldSource,
+    import_dimensions_into_server,
+    import_into_server,
+    import_world,
+)
 
 
 class InstallWorker(QObject):
@@ -181,6 +191,7 @@ class LaunchWorker(QObject):
         server_address: str = "",
         parent: QObject | None = None,
         instance_id: str = "",
+        quick_world: str = "",
     ) -> None:
         super().__init__(parent)
         self.game_dir = Path(game_dir)
@@ -190,6 +201,7 @@ class LaunchWorker(QObject):
         self.installs = list(installs or [])
         self.account = copy.deepcopy(account)
         self.server_address = str(server_address or "")
+        self.quick_world = str(quick_world or "")
         self.cancel_event = threading.Event()
 
     def start(self) -> None:
@@ -249,6 +261,7 @@ class LaunchWorker(QObject):
                 self.installs,
                 account=account,
                 server_address=self.server_address,
+                singleplayer_world=self.quick_world,
                 instance_id=self.instance_id,
                 status_cb=self.status.emit,
             )
@@ -1833,11 +1846,13 @@ class ModUpdateCheckWorker(QObject):
         game_version: str = "",
         loader: str = "",
         parent: QObject | None = None,
+        content_type: str = "mod",
     ) -> None:
         super().__init__(parent)
         self.mods = list(mods)
         self.game_version = str(game_version or "")
         self.loader = str(loader or "")
+        self.content_type = str(content_type or "mod").lower()
         self.cancel_event = threading.Event()
 
     def start(self) -> None:
@@ -1849,6 +1864,7 @@ class ModUpdateCheckWorker(QObject):
                 self.mods,
                 self.game_version,
                 self.loader,
+                content_type=self.content_type,
                 progress_cb=lambda done, total, name: self.progress.emit(
                     done, total, name
                 ),
@@ -1873,11 +1889,13 @@ class ModUpdateApplyWorker(QObject):
         mods_dir: Path,
         threads: int = 8,
         parent: QObject | None = None,
+        label: str = "Mod",
     ) -> None:
         super().__init__(parent)
         self.updates = list(updates)
         self.mods_dir = Path(mods_dir)
         self.threads = max(1, min(16, int(threads)))
+        self.label = str(label or "Mod")
         self.cancel_event = threading.Event()
 
     def start(self) -> None:
@@ -1909,7 +1927,7 @@ class ModUpdateApplyWorker(QObject):
             return
         self.finished.emit(
             True,
-            f"已更新 {len(paths)} 个 Mod",
+            f"已更新 {len(paths)} 个{self.label}",
             paths[-1].name if paths else "",
         )
 
@@ -2052,6 +2070,7 @@ class ServerAddonSearchWorker(QObject):
         offset: int = 0,
         limit: int = 20,
         parent=None,
+        source: str = "modrinth",
     ) -> None:
         super().__init__(parent)
         self.query = query
@@ -2059,19 +2078,29 @@ class ServerAddonSearchWorker(QObject):
         self.game_version = game_version
         self.offset = offset
         self.limit = limit
+        self.source = str(source or "modrinth").strip().lower()
 
     def start(self) -> None:
         threading.Thread(target=self._run, daemon=True).start()
 
     def _run(self) -> None:
         try:
-            data = search_server_addons(
-                self.query,
-                server_type=self.server_type,
-                game_version=self.game_version,
-                limit=self.limit,
-                offset=self.offset,
-            )
+            if self.source == "curseforge":
+                data = search_curseforge_server_addons(
+                    self.query,
+                    server_type=self.server_type,
+                    game_version=self.game_version,
+                    limit=self.limit,
+                    offset=self.offset,
+                )
+            else:
+                data = search_server_addons(
+                    self.query,
+                    server_type=self.server_type,
+                    game_version=self.game_version,
+                    limit=self.limit,
+                    offset=self.offset,
+                )
         except Exception as exc:
             self.ready.emit(None, str(exc), self.offset)
         else:
@@ -2087,20 +2116,27 @@ class ServerAddonVersionsWorker(QObject):
         server_type: str,
         game_version: str,
         parent=None,
+        source: str = "modrinth",
     ) -> None:
         super().__init__(parent)
         self.project_id = project_id
         self.server_type = server_type
         self.game_version = game_version
+        self.source = str(source or "modrinth").strip().lower()
 
     def start(self) -> None:
         threading.Thread(target=self._run, daemon=True).start()
 
     def _run(self) -> None:
         try:
-            data = fetch_server_addon_versions(
-                self.project_id, self.server_type, self.game_version
-            )
+            if self.source == "curseforge":
+                data = fetch_curseforge_server_addon_versions(
+                    self.project_id, self.server_type, self.game_version
+                )
+            else:
+                data = fetch_server_addon_versions(
+                    self.project_id, self.server_type, self.game_version
+                )
         except Exception as exc:
             self.ready.emit([], str(exc))
         else:
@@ -2270,8 +2306,32 @@ class SakuraLoginWorker(QObject):
             )
 
 
+class LanPortWorker(QObject):
+    """在后台读取游戏进程监听的端口，避免轮询 netstat 时卡住界面。"""
+
+    ready = Signal(object)
+
+    def __init__(self, pid: int, parent=None) -> None:
+        super().__init__(parent)
+        self.pid = int(pid or 0)
+
+    def start(self) -> None:
+        threading.Thread(target=self._run, daemon=True).start()
+
+    def _run(self) -> None:
+        try:
+            ports = detect_game_lan_ports(self.pid)
+        except Exception:
+            ports = []
+        self.ready.emit(ports)
+
+
 class SakuraRoomWorker(QObject):
-    """准备（复用/创建）隧道、下载 frpc 并生成房间号。"""
+    """准备（复用/创建）隧道、下载 frpc 并生成房间号。
+
+    房间页用它生成房间号；服务端页把 ``make_room_code`` 设为 False，
+    只返回可以直接填进多人游戏的公网地址。
+    """
 
     progress = Signal(int, str)
     log_line = Signal(str)
@@ -2286,13 +2346,19 @@ class SakuraRoomWorker(QObject):
         preferred_tunnel_id: int = 0,
         frpc_path: str = "",
         parent=None,
+        tunnel_name: str = ROOM_TUNNEL_NAME,
+        make_room_code: bool = True,
+        avoid_tunnel_id: int = 0,
     ) -> None:
         super().__init__(parent)
         self._token = str(token or "").strip()
         self.local_port = int(local_port)
         self.node_id = int(node_id or 0)
         self.preferred_tunnel_id = int(preferred_tunnel_id or 0)
+        self.avoid_tunnel_id = int(avoid_tunnel_id or 0)
         self.frpc_path = str(frpc_path or "").strip()
+        self.tunnel_name = str(tunnel_name or ROOM_TUNNEL_NAME).strip()
+        self.make_room_code = bool(make_room_code)
         self.cancel_event = threading.Event()
 
     def start(self) -> None:
@@ -2309,21 +2375,48 @@ class SakuraRoomWorker(QObject):
         if message and not self.cancel_event.is_set():
             self.log_line.emit(message)
 
+    @staticmethod
+    def _usable_tunnel(tunnel: SakuraTunnel) -> bool:
+        return str(tunnel.type or "").lower() == "tcp" and tunnel.status != 2
+
     def _pick_tunnel(
         self, tunnels: list[SakuraTunnel]
     ) -> tuple[SakuraTunnel | None, bool]:
+        """优先进入已有隧道，只有一条可用隧道都没有时才新建。"""
+        usable = [tunnel for tunnel in tunnels if self._usable_tunnel(tunnel)]
         if self.preferred_tunnel_id:
-            for tunnel in tunnels:
+            for tunnel in usable:
                 if tunnel.id == self.preferred_tunnel_id:
                     return tunnel, True
-        candidates = [
+
+        def rank(tunnel: SakuraTunnel) -> tuple[int, int]:
+            name = tunnel.name.lower()
+            hint = 0
+            if tunnel.local_port == self.local_port:
+                hint += 4
+            if any(
+                word in name
+                for word in ("darkitten", "minecraft", "我的世界", "服务器", "server")
+            ):
+                hint += 3
+            if tunnel.online:
+                hint += 1
+            return hint, tunnel.id
+
+        same_name = [
             tunnel
-            for tunnel in tunnels
-            if tunnel.name.startswith(ROOM_TUNNEL_NAME) and tunnel.type == "tcp"
+            for tunnel in usable
+            if tunnel.name.startswith(self.tunnel_name)
         ]
-        if candidates:
-            return max(candidates, key=lambda item: item.id), True
-        return None, False
+        if same_name:
+            return max(same_name, key=rank), True
+        if not usable:
+            return None, False
+        # 另一功能（房间/服务端）已经占用的隧道尽量留给它，只有别无选择时才共用。
+        pool = [
+            tunnel for tunnel in usable if tunnel.id != self.avoid_tunnel_id
+        ] or usable
+        return max(pool, key=rank), True
 
     def _pick_node(
         self,
@@ -2367,7 +2460,7 @@ class SakuraRoomWorker(QObject):
             if reused and tunnel is not None:
                 if tunnel.node not in nodes:
                     raise Exception(
-                        "现有 DarkittenRoom 隧道所在节点已不存在，"
+                        f"现有隧道 {tunnel.name}（#{tunnel.id}）所在节点已不存在，"
                         "请到樱花穿透面板迁移或删除该隧道后重试。"
                     )
                 node = nodes[tunnel.node]
@@ -2377,10 +2470,16 @@ class SakuraRoomWorker(QObject):
                 raise Exception(f"节点“{node.label}”当前离线，请换一个节点。")
 
             if tunnel is not None:
-                if tunnel.type != "tcp":
-                    raise Exception("现有 DarkittenRoom 隧道不是 TCP 类型，请到面板改为 TCP。")
+                if str(tunnel.type or "").lower() != "tcp":
+                    raise Exception(
+                        f"现有隧道 {tunnel.name}（#{tunnel.id}）不是 TCP 类型，"
+                        "请到面板改为 TCP。"
+                    )
                 if tunnel.status == 2:
-                    raise Exception("现有 DarkittenRoom 隧道已被封禁，请到樱花穿透面板处理。")
+                    raise Exception(
+                        f"现有隧道 {tunnel.name}（#{tunnel.id}）已被封禁，"
+                        "请到樱花穿透面板处理。"
+                    )
                 self._log(
                     f"复用隧道 {tunnel.name}（#{tunnel.id}）· 节点 {node.label}"
                 )
@@ -2394,9 +2493,9 @@ class SakuraRoomWorker(QObject):
             else:
                 if not node.can_create:
                     raise Exception(f"节点“{node.label}”当前无法创建隧道，请换一个节点。")
-                self._progress(20, "正在创建 DarkittenRoom 隧道…")
+                self._progress(20, f"正在创建 {self.tunnel_name} 隧道…")
                 created = client.create_tunnel(
-                    ROOM_TUNNEL_NAME, node.id, self.local_port
+                    self.tunnel_name, node.id, self.local_port
                 )
                 warning = str(created.get("important_warning_for_ai") or "").strip()
                 if warning:
@@ -2405,7 +2504,7 @@ class SakuraRoomWorker(QObject):
                 self._log(f"已创建隧道 #{tunnel_id} · 节点 {node.label}")
                 tunnel = SakuraTunnel(
                     id=tunnel_id,
-                    name=str(created.get("name") or ROOM_TUNNEL_NAME),
+                    name=str(created.get("name") or self.tunnel_name),
                     type="tcp",
                     node=node.id,
                     remote=str(created.get("remote") or ""),
@@ -2449,15 +2548,18 @@ class SakuraRoomWorker(QObject):
             if not server_addr and not node.host:
                 raise Exception("隧道配置里没有服务器地址，请稍后重试。")
 
-            self._progress(92, "正在生成房间号…")
             room_code = ""
             code_error = ""
             direct_address = address
-            try:
-                room_code, direct_address = room_code_for_address(address)
-            except Exception as exc:
-                code_error = str(exc)
-                self._log(code_error)
+            if self.make_room_code:
+                self._progress(92, "正在生成房间号…")
+                try:
+                    room_code, direct_address = room_code_for_address(address)
+                except Exception as exc:
+                    code_error = str(exc)
+                    self._log(code_error)
+            else:
+                self._progress(92, "正在准备公网地址…")
 
             payload = {
                 "room_code": room_code,
@@ -2832,3 +2934,83 @@ class EasyTierJoinWorker(QObject):
                 session.stop()
             else:
                 self.ready.emit(session, "")
+
+
+class WorldImportWorker(QObject):
+    """在后台把完整世界导入服务端或启动器存档目录。"""
+
+    progress = Signal(int, str)
+    finished = Signal(bool, str, object)
+
+    def __init__(
+        self,
+        source: WorldSource | Path,
+        *,
+        dest_parent: Path | None = None,
+        folder_name: str = "",
+        server_info: ServerInfo | None = None,
+        dimensions: list[str] | None = None,
+        parent: QObject | None = None,
+    ) -> None:
+        super().__init__(parent)
+        self.source = source
+        self.dest_parent = Path(dest_parent) if dest_parent is not None else None
+        self.folder_name = folder_name
+        self.server_info = server_info
+        self.dimensions = list(dimensions) if dimensions else None
+        self.cancel_event = threading.Event()
+        self._thread: threading.Thread | None = None
+
+    def start(self) -> None:
+        self._thread = threading.Thread(target=self._run, daemon=True)
+        self._thread.start()
+
+    def cancel(self) -> None:
+        self.cancel_event.set()
+
+    def _progress(self, percent: int, message: str) -> None:
+        self.progress.emit(max(0, min(100, int(percent))), str(message))
+
+    def _run(self) -> None:
+        try:
+            if self.server_info is not None:
+                if self.dimensions:
+                    result = import_dimensions_into_server(
+                        self.server_info,
+                        self.source,
+                        dimensions=self.dimensions,
+                        level_name=self.folder_name or "world",
+                        progress_cb=self._progress,
+                        cancel_event=self.cancel_event,
+                    )
+                else:
+                    result = import_into_server(
+                        self.server_info,
+                        self.source,
+                        level_name=self.folder_name or "world",
+                        progress_cb=self._progress,
+                        cancel_event=self.cancel_event,
+                    )
+            else:
+                if self.dest_parent is None:
+                    raise ValueError("没有指定导入目标")
+                result = import_world(
+                    self.source,
+                    self.dest_parent,
+                    folder_name=self.folder_name,
+                    progress_cb=self._progress,
+                    cancel_event=self.cancel_event,
+                )
+        except WorldImportCancelled:
+            self.finished.emit(False, "导入已取消", None)
+        except Exception as exc:
+            if self.cancel_event.is_set():
+                self.finished.emit(False, "导入已取消", None)
+            else:
+                self.finished.emit(False, str(exc) or "导入失败", None)
+        else:
+            if result.dimensions:
+                message = f"已导入{result.dimension_text}，来源世界「{result.source.name}」"
+            else:
+                message = f"已导入「{result.source.name}」"
+            self.finished.emit(True, message, result)

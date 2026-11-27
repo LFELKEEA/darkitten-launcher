@@ -292,6 +292,9 @@ class WorldManagerDialog(StyledDialog):
         self.scroll.setWidget(self.holder)
         self.body.addWidget(self.scroll, 1)
 
+        self.import_world_btn = self.add_button(
+            "导入存档", "Soft", self._import_world
+        )
         self.new_world_btn = self.add_button("新建存档", "Primary", self._create_world)
         self.add_server_btn = self.add_button("添加服务器", "Primary", self._add_server)
         self.add_button("关闭", "Secondary", self.reject)
@@ -309,6 +312,7 @@ class WorldManagerDialog(StyledDialog):
             self._toast(message, "success")
 
     def _update_footer(self) -> None:
+        self.import_world_btn.setVisible(self._tab == "saves")
         self.new_world_btn.setVisible(self._tab == "saves")
         self.add_server_btn.setVisible(self._tab == "servers")
 
@@ -392,6 +396,29 @@ class WorldManagerDialog(StyledDialog):
             self.list_layout.insertWidget(self.list_layout.count() - 1, row)
 
     # ------------------------------------------------------------------
+    def _import_world(self) -> None:
+        if getattr(self.main, "game_running", False):
+            self._toast("游戏正在运行，请先退出游戏再导入存档", "error")
+            return
+        from .world_import_dialog import WorldImportDialog
+
+        dialog = WorldImportDialog(
+            self,
+            target_text=(
+                f"把其他游戏版本的完整存档导入版本 {self.version_id} 的 saves 目录。"
+                "所有维度、玩家数据和物品栏都会原样保留，"
+                "跨版本升级由 Minecraft 首次打开世界时完成。"
+            ),
+            default_name="",
+            name_label="导入后的文件夹名",
+            dest_parent=self.game_dir / "saves",
+            target_version=self.version_id,
+        )
+        dialog.exec()
+        if dialog.import_result is not None:
+            self._toast(f"已导入存档「{dialog.import_result.source.name}」", "success")
+            self._reload()
+
     def _create_world(self) -> None:
         dialog = WorldCreateDialog(self, self.version_id)
         if dialog.exec() != QDialog.Accepted:

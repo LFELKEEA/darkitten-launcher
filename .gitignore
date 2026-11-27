@@ -1,0 +1,12 @@
+__pycache__/
+*.pyc
+*.pyo
+
+config.json
+assistant.json
+social.json
+
+cache/
+.writing/
+logs/
+servers/

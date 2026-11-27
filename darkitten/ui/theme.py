@@ -70,23 +70,167 @@ DARK = {
 
 _current = "light"
 _current_colors = LIGHT
+_current_palette = "sakura"
 
 
-def colors(theme: str | None = None) -> dict[str, str]:
-    if theme is None:
+# 个性化配色：在 LIGHT / DARK 底色上替换强调色与主视觉色，
+# 其余中性色沿用原调色板，保证对比度和可读性不跑偏。
+PALETTES: dict[str, dict[str, dict[str, str] | str]] = {
+    "sakura": {"name": "樱花", "light": {}, "dark": {}},
+    "midnight": {
+        "name": "暗夜",
+        "light": {
+            "accent": "#3B5BD9",
+            "accent_hover": "#2E4AC0",
+            "accent_soft": "#E9EEFD",
+            "accent_border": "#C3D0F8",
+            "hero_a": "#0B1030",
+            "hero_b": "#152056",
+            "hero_c": "#101A3A",
+        },
+        "dark": {
+            "accent": "#6E8CF7",
+            "accent_hover": "#8AA4FF",
+            "accent_soft": "#18213F",
+            "accent_border": "#2C3C6E",
+            "hero_a": "#0A1029",
+            "hero_b": "#14204A",
+            "hero_c": "#0C1533",
+        },
+    },
+    "ocean": {
+        "name": "深海",
+        "light": {
+            "accent": "#0E7C86",
+            "accent_hover": "#0A646D",
+            "accent_soft": "#E2F6F7",
+            "accent_border": "#B7E4E7",
+            "hero_a": "#052B33",
+            "hero_b": "#0A4C55",
+            "hero_c": "#04323C",
+        },
+        "dark": {
+            "accent": "#38C8D4",
+            "accent_hover": "#55DCE7",
+            "accent_soft": "#0D2E36",
+            "accent_border": "#1A4A56",
+            "hero_a": "#04222A",
+            "hero_b": "#073E48",
+            "hero_c": "#04303A",
+        },
+    },
+    "forest": {
+        "name": "森林",
+        "light": {
+            "accent": "#2E7D46",
+            "accent_hover": "#256639",
+            "accent_soft": "#E7F5EB",
+            "accent_border": "#BFE3C9",
+            "hero_a": "#0D2415",
+            "hero_b": "#174525",
+            "hero_c": "#0E2C1A",
+        },
+        "dark": {
+            "accent": "#63C97F",
+            "accent_hover": "#7FD998",
+            "accent_soft": "#14301C",
+            "accent_border": "#265038",
+            "hero_a": "#0A1D11",
+            "hero_b": "#12381F",
+            "hero_c": "#0B2515",
+        },
+    },
+    "amber": {
+        "name": "琥珀",
+        "light": {
+            "accent": "#B7711A",
+            "accent_hover": "#9A5C12",
+            "accent_soft": "#FDF1DF",
+            "accent_border": "#F2D8AE",
+            "hero_a": "#2B1B06",
+            "hero_b": "#4D3110",
+            "hero_c": "#2A1D0A",
+        },
+        "dark": {
+            "accent": "#F0A83C",
+            "accent_hover": "#FFBE5C",
+            "accent_soft": "#33240D",
+            "accent_border": "#5A3D17",
+            "hero_a": "#231703",
+            "hero_b": "#3E2A0C",
+            "hero_c": "#261A07",
+        },
+    },
+    "mono": {
+        "name": "素白",
+        "light": {
+            "accent": "#3A3A3A",
+            "accent_hover": "#242424",
+            "accent_soft": "#F0F0F0",
+            "accent_border": "#D8D8D8",
+            "hero_a": "#1A1A1A",
+            "hero_b": "#2E2E2E",
+            "hero_c": "#202020",
+        },
+        "dark": {
+            "accent": "#D5D5D5",
+            "accent_hover": "#ECECEC",
+            "accent_soft": "#2A2A2A",
+            "accent_border": "#454545",
+            "hero_a": "#151515",
+            "hero_b": "#2A2A2A",
+            "hero_c": "#1C1C1C",
+        },
+    },
+}
+
+
+def palette_ids() -> list[str]:
+    return list(PALETTES)
+
+
+def palette_name(palette: str) -> str:
+    entry = PALETTES.get(str(palette or ""))
+    if not entry:
+        return PALETTES["sakura"]["name"]
+    return str(entry["name"])
+
+
+def _with_palette(base: dict[str, str], theme: str, palette: str) -> dict[str, str]:
+    entry = PALETTES.get(str(palette or ""))
+    if not entry:
+        return dict(base)
+    overrides = entry.get(theme) or {}
+    merged = dict(base)
+    merged.update(overrides)  # type: ignore[arg-type]
+    return merged
+
+
+def colors(theme: str | None = None, palette: str | None = None) -> dict[str, str]:
+    if theme is None and palette is None:
         return _current_colors
-    return DARK if theme == "dark" else LIGHT
+    name = _current if theme is None else ("dark" if theme == "dark" else "light")
+    base = DARK if name == "dark" else LIGHT
+    return _with_palette(base, name, palette or _current_palette)
 
 
-def set_current(theme: str) -> None:
-    global _current, _current_colors
+def set_current(theme: str, palette: str | None = None) -> None:
+    global _current, _current_colors, _current_palette
     _current = "dark" if theme == "dark" else "light"
-    _current_colors = DARK if _current == "dark" else LIGHT
+    if palette is not None:
+        _current_palette = palette if palette in PALETTES else "sakura"
+    _current_colors = _with_palette(
+        DARK if _current == "dark" else LIGHT, _current, _current_palette
+    )
 
 
-def stylesheet(theme: str) -> str:
-    c = colors(theme)
-    set_current(theme)
+def current_palette() -> str:
+    return _current_palette
+
+
+def stylesheet(theme: str, palette: str | None = None) -> str:
+    c = colors(theme, palette)
+    set_current(theme, palette)
     return f"""
 * {{
     font-family: "Microsoft YaHei UI", "Segoe UI", "PingFang SC", sans-serif;
@@ -348,6 +492,18 @@ QComboBox {{
 QComboBox::drop-down {{
     border: none;
     width: 26px;
+}}
+QComboBox#ChoiceCombo {{
+    padding-right: 40px;
+}}
+QComboBox#ChoiceCombo::drop-down {{
+    border: none;
+    width: 32px;
+}}
+QComboBox#ChoiceCombo::down-arrow {{
+    image: none;
+    width: 0;
+    height: 0;
 }}
 QComboBox QAbstractItemView {{
     background: {c['card']};

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import ctypes
+import re
 import shlex
 import subprocess
 import sys
@@ -18,6 +19,7 @@ from .accounts import Account, offline_uuid, valid_player_name
 from .config import APP_NAME, APP_VERSION, Config
 from .java import JavaInfo, detect_java_installs, pick_java
 from .paths import version_game_dir
+from . import proc_tune
 from .versions import (
     OS_NAME,
     ResolvedVersion,
@@ -57,6 +59,8 @@ class LaunchPlan:
     log_file: str = ""
     warnings: list[str] = field(default_factory=list)
     cleanup: Any = None
+    # 游戏窗口出现后自动降优先级，让启动器与前台应用保持响应。
+    background_tune: bool = False
 
     @property
     def command_line(self) -> str:
@@ -188,6 +192,36 @@ def _java_info_for(
     return chosen
 
 
+def _mc_version_tuple(value: str) -> tuple[int, ...]:
+    """把 1.21.4 / 1.20.6 之类的版本号转成可比较的元组。"""
+    parts: list[int] = []
+    for chunk in str(value or "").split("."):
+        match = re.match(r"\d+", chunk.strip())
+        if not match:
+            break
+        parts.append(int(match.group()))
+    return tuple(parts)
+
+
+def _server_launch_args(host: str, port: int, mc_version: str) -> list[str]:
+    """1.20+ 用 quickPlay 直接进服；旧版本退回 --server/--port。"""
+    host = str(host or "").strip()
+    if host.startswith("[") and host.endswith("]"):
+        host = host[1:-1]
+    if _mc_version_tuple(mc_version) >= (1, 20):
+        address = f"[{host}]:{port}" if ":" in host else f"{host}:{port}"
+        return ["--quickPlayMultiplayer", address]
+    return ["--server", host, "--port", str(port)]
+
+
+def _singleplayer_launch_args(level_id: str, mc_version: str) -> list[str]:
+    """1.20+ 支持用 quickPlay 直接进入指定存档。"""
+    level = str(level_id or "").strip()
+    if not level or _mc_version_tuple(mc_version) < (1, 20):
+        return []
+    return ["--quickPlaySingleplayer", level]
+
+
 def _check_files(game_dir: Path, resolved: ResolvedVersion) -> list[str]:
     missing = check_installation(game_dir, resolved, check_assets=False)
     for native in active_natives(resolved):
@@ -204,6 +238,7 @@ def prepare_launch(
     java_info: JavaInfo | None = None,
     account: Account | None = None,
     server_address: str = "",
+    singleplayer_world: str = "",
     instance_id: str = "",
     status_cb: Callable[[str], None] | None = None,
 ) -> LaunchPlan:
@@ -392,7 +427,13 @@ def prepare_launch(
         from .sakura import parse_server_address
 
         server_host, server_port = parse_server_address(server_address)
-        command.extend(["--server", server_host, "--port", str(server_port)])
+        command.extend(
+            _server_launch_args(server_host, server_port, resolved.game_version)
+        )
+    elif str(singleplayer_world or "").strip():
+        command.extend(
+            _singleplayer_launch_args(singleplayer_world, resolved.game_version)
+        )
 
     run_dir.mkdir(parents=True, exist_ok=True)
     (run_dir / "mods").mkdir(parents=True, exist_ok=True)
@@ -438,6 +479,7 @@ def prepare_launch(
         log_file=log_config,
         warnings=warnings,
         cleanup=offline_runtime,
+        background_tune=bool(getattr(cfg, "launch_background", False)),
     )
 
 
@@ -488,6 +530,8 @@ class GameProcess(QObject):
 
         process = self._process
         self.started_ok.emit(process.pid)
+        if self.plan.background_tune:
+            self._start_background_tune(process.pid)
 
         # 输出读取必须和进程等待分开：某些子进程（如 Forge 安装器或游戏内
         # 拉起的辅助进程）会继承 stdout 管道，父进程退出后管道仍被占住。
@@ -507,6 +551,23 @@ class GameProcess(QObject):
         # 给读取线程一点时间把缓冲区里剩余的日志吐完，然后立刻通知界面。
         reader.join(0.25)
         self._finish(code)
+
+    def _start_background_tune(self, pid: int) -> None:
+        """等游戏真正建好窗口后再降优先级，避免拖慢 JVM 冷启动。"""
+        def run() -> None:
+            deadline = time.time() + 60
+            window = 0
+            while time.time() < deadline:
+                window = proc_tune.window_handle(pid)
+                if window:
+                    break
+                time.sleep(1.0)
+            # 再等一会儿：窗口出现时资源加载才刚开始，立刻降优先级不划算。
+            time.sleep(3.0)
+            proc_tune.set_background(pid)
+            self.output.emit("[后台优化] 已降低游戏进程优先级与 IO 优先级")
+
+        threading.Thread(target=run, daemon=True).start()
 
     def _pump_output(self, process: subprocess.Popen[str]) -> None:
         stream = process.stdout

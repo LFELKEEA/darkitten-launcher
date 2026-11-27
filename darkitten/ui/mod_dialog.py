@@ -4,7 +4,7 @@ import re
 import urllib.parse
 from pathlib import Path
 
-from PySide6.QtCore import QRectF, Qt, QTimer, QUrl, Signal
+from PySide6.QtCore import QPoint, QRectF, Qt, QTimer, QUrl, Signal
 from PySide6.QtGui import (
     QColor,
     QDesktopServices,
@@ -16,6 +16,7 @@ from PySide6.QtGui import (
 from PySide6.QtWidgets import (
     QApplication,
     QComboBox,
+    QFileDialog,
     QFrame,
     QHBoxLayout,
     QLabel,
@@ -29,6 +30,7 @@ from PySide6.QtWidgets import (
 )
 
 from ..config import APP_DIR
+from ..mc_versions import release_versions
 from ..descriptions import (
     category_labels,
     project_zh_intro,
@@ -46,6 +48,7 @@ from . import icons
 from .dialogs import StyledDialog
 from .download_center import TASK_CANCELLED, TASK_SUCCESS, DownloadTask
 from .loader_dialog import LoaderDialog
+from .version_picker import VersionPickerDialog
 from .widgets import (
     DependencyBar,
     SegmentedControl,
@@ -55,17 +58,6 @@ from .widgets import (
     repolish,
     transparent_children,
 )
-
-COMMON_VERSIONS = [
-    "1.21.1",
-    "1.21",
-    "1.20.6",
-    "1.20.4",
-    "1.20.1",
-    "1.19.4",
-    "1.18.2",
-    "1.16.5",
-]
 
 LOADER_LABELS = {"fabric": "Fabric", "neoforge": "NeoForge", "forge": "Forge"}
 CONTENT_LABELS = {
@@ -85,7 +77,9 @@ MODRINTH_PATHS = {
     "resourcepack": "resourcepack",
     "shader": "shader",
 }
-PAGE_SIZE = 5
+PAGE_SIZE = 20
+# 界面上可选的每页条数。CurseForge 侧会把大页拆成多段并发拉取。
+PAGE_SIZE_OPTIONS = (20, 40, 60, 80)
 FORUM_HOME = "https://klpbbs.com/"
 _MAX_CACHE = 80
 _IMAGE_CACHE: dict[str, QImage] = {}
@@ -350,10 +344,11 @@ class ModResultRow(QFrame):
 
 
 class ModBrowserDialog(StyledDialog):
-    def __init__(self, main) -> None:
+    def __init__(self, main, initial: dict | None = None) -> None:
         super().__init__(main, "下载 Mod", "cube", icon_color="#7152E8", width=960)
         self.main = main
         self.body.setSpacing(8)
+        self._initial = dict(initial or {})
         self._search_worker: ModSearchWorker | None = None
         self._project_worker: ModProjectWorker | None = None
         self._versions_worker: ModVersionsWorker | None = None
@@ -364,7 +359,7 @@ class ModBrowserDialog(StyledDialog):
         self._hits: list[dict] = []
         self._rows: list[ModResultRow] = []
         self._page = 0
-        self._page_size = PAGE_SIZE
+        self._page_size = self._preferred_page_size()
         self._total = 0
         self._polling = False
         self._source = "modrinth"
@@ -374,6 +369,8 @@ class ModBrowserDialog(StyledDialog):
         self._project: dict | None = None
         self._hit: dict | None = None
         self._target_version_id = ""
+        self._target_mode = "installed"
+        self._custom_target_dir: Path | None = None
         self._gallery: list[dict] = []
         self._gallery_index = 0
         self._gallery_url = ""
@@ -396,7 +393,30 @@ class ModBrowserDialog(StyledDialog):
         self.mc_combo.lineEdit().editingFinished.connect(self._on_context_changed)
         self.loader_tabs.changed.connect(lambda _: self._on_context_changed())
         self._apply_content_mode()
-        QTimer.singleShot(0, lambda: self._search(0))
+        if self._initial:
+            self.title_label.setText("内容详情")
+            QTimer.singleShot(0, self._open_initial_project)
+        else:
+            QTimer.singleShot(0, lambda: self._search(0))
+
+    def _open_initial_project(self) -> None:
+        hit = dict(self._initial)
+        if str(hit.get("source") or "") == "curseforge":
+            self._source = "curseforge"
+            self.source_tabs.set_value("curseforge")
+        project_id = str(hit.get("project_id") or hit.get("id") or "")
+        if not project_id:
+            return
+        self._select_project(project_id, hit)
+
+    def keyPressEvent(self, event) -> None:
+        # 在搜索框里按回车只触发搜索，不要被对话框当成“确定”直接关掉。
+        if event.key() in (Qt.Key_Return, Qt.Key_Enter) and isinstance(
+            self.focusWidget(), (QLineEdit, QComboBox)
+        ):
+            event.accept()
+            return
+        super().keyPressEvent(event)
 
     def _downloading(self) -> bool:
         return self._download_task is not None and self._download_task.running
@@ -444,9 +464,15 @@ class ModBrowserDialog(StyledDialog):
         self.mc_combo = QComboBox()
         self.mc_combo.setEditable(True)
         self.mc_combo.setMinimumWidth(132)
+        self.mc_combo.setMaxVisibleItems(20)
         self.mc_combo.setInsertPolicy(QComboBox.NoInsert)
         row.addWidget(mc_label)
         row.addWidget(self.mc_combo)
+        self.mc_pick_btn = QPushButton("选择…")
+        self.mc_pick_btn.setObjectName("Ghost")
+        self.mc_pick_btn.setCursor(Qt.PointingHandCursor)
+        self.mc_pick_btn.clicked.connect(self._pick_mc_version)
+        row.addWidget(self.mc_pick_btn)
 
         loader_label = QLabel("加载器")
         loader_label.setFixedWidth(46)
@@ -476,11 +502,76 @@ class ModBrowserDialog(StyledDialog):
         row.addWidget(self.forum_btn)
         context_layout.addLayout(row)
 
+        self.target_box = QWidget()
+        target_layout = QVBoxLayout(self.target_box)
+        target_layout.setContentsMargins(0, 0, 0, 0)
+        target_layout.setSpacing(4)
+        target_row = QHBoxLayout()
+        target_row.setSpacing(8)
+        target_caption = QLabel("安装位置")
+        target_caption.setFixedWidth(68)
+        target_caption.setStyleSheet("font-weight: 700; font-size: 12px;")
+        self.target_tabs = SegmentedControl()
+        self.target_tabs.add_item("已安装版本", "installed")
+        self.target_tabs.add_item("仅下载文件", "folder")
+        self.target_tabs.changed.connect(self._set_target_mode)
+        target_row.addWidget(target_caption)
+        target_row.addWidget(self.target_tabs)
+
+        self.target_version_combo = QComboBox()
+        self.target_version_combo.setMinimumWidth(230)
+        self.target_version_combo.setSizePolicy(
+            QSizePolicy.Expanding, QSizePolicy.Fixed
+        )
+        self.target_version_combo.currentIndexChanged.connect(
+            lambda _: self._on_target_version_changed()
+        )
+        target_row.addWidget(self.target_version_combo, 1)
+
+        self.dest_edit = QLineEdit()
+        self.dest_edit.setReadOnly(True)
+        self.dest_edit.setMinimumWidth(240)
+        self.dest_edit.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self.dest_edit.setPlaceholderText("默认保存到下载目录")
+        target_row.addWidget(self.dest_edit, 1)
+        self.dest_btn = QPushButton("选择文件夹")
+        self.dest_btn.setObjectName("Ghost")
+        self.dest_btn.setCursor(Qt.PointingHandCursor)
+        self.dest_btn.clicked.connect(self._choose_destination)
+        target_row.addWidget(self.dest_btn)
+        target_layout.addLayout(target_row)
+        self.target_hint = QLabel("")
+        self.target_hint.setObjectName("Tiny")
+        self.target_hint.setWordWrap(True)
+        target_layout.addWidget(self.target_hint)
+        context_layout.addWidget(self.target_box)
+        self._sync_target_widgets()
+
         self.context_label = QLabel("")
         self.context_label.setObjectName("Tiny")
         self.context_label.setWordWrap(True)
         context_layout.addWidget(self.context_label)
         self.body.addWidget(context)
+
+    def _preferred_page_size(self) -> int:
+        config = getattr(self.main, "config", None)
+        try:
+            size = int(getattr(config, "mod_page_size", PAGE_SIZE))
+        except (TypeError, ValueError):
+            size = PAGE_SIZE
+        return size if size in PAGE_SIZE_OPTIONS else PAGE_SIZE
+
+    def _set_page_size(self, size: int) -> None:
+        size = int(size)
+        if size not in PAGE_SIZE_OPTIONS or size == self._page_size:
+            return
+        self._page_size = size
+        config = getattr(self.main, "config", None)
+        if config is not None:
+            config.mod_page_size = size
+            config.save()
+        self._page = 0
+        self._search(0)
 
     def _build_search(self) -> None:
         type_row = QHBoxLayout()
@@ -523,6 +614,26 @@ class ModBrowserDialog(StyledDialog):
         self.search_btn.setCursor(Qt.PointingHandCursor)
         self.search_btn.clicked.connect(lambda: self._search(0))
         search_row.addWidget(self.search, 1)
+
+        per_label = QLabel("每页")
+        per_label.setObjectName("Tiny")
+        self.page_size_combo = QComboBox()
+        for size in PAGE_SIZE_OPTIONS:
+            self.page_size_combo.addItem(f"{size} 条", size)
+        self.page_size_combo.setCurrentIndex(
+            max(0, self.page_size_combo.findData(self._page_size))
+        )
+        self.page_size_combo.setToolTip(
+            "每页显示的 Mod 条数；条数越多，一页能看到的内容越多"
+        )
+        self.page_size_combo.currentIndexChanged.connect(
+            lambda _: self._set_page_size(
+                int(self.page_size_combo.currentData() or PAGE_SIZE)
+            )
+        )
+        search_row.addWidget(per_label)
+        search_row.addWidget(self.page_size_combo)
+
         search_row.addWidget(self.search_btn)
         self.body.addLayout(search_row)
 
@@ -927,9 +1038,150 @@ class ModBrowserDialog(StyledDialog):
                 items.append(key)
         return items
 
+    def _sync_target_widgets(self) -> None:
+        installed = self._target_mode == "installed"
+        is_pack = self._content_type == "modpack"
+        self.target_box.setVisible(not is_pack)
+        self.target_version_combo.setVisible(installed)
+        self.dest_edit.setVisible(not installed)
+        self.dest_btn.setVisible(not installed)
+        if not installed:
+            self.dest_edit.setText(str(self._destination_dir()))
+        if is_pack:
+            self.target_hint.setText("")
+        elif installed:
+            self.target_hint.setText(
+                "选择已安装的游戏版本，文件会直接放进该版本的对应文件夹。"
+            )
+        else:
+            self.target_hint.setText(
+                "只下载文件，不写入任何游戏版本；可以放到桌面、U 盘或服务端目录。"
+            )
+
+    def _set_target_mode(self, mode: str) -> None:
+        mode = "folder" if str(mode) == "folder" else "installed"
+        self.target_tabs.set_value(mode)
+        if self._target_mode == mode:
+            return
+        self._target_mode = mode
+        self._update_context()
+
+    def _destination_dir(self) -> Path:
+        folder = CONTENT_FOLDERS.get(self._content_type, "mods")
+        if self._custom_target_dir is not None:
+            return Path(self._custom_target_dir)
+        mc = self.mc_combo.currentText().strip() or "未指定版本"
+        loader = self.loader_tabs.current() if self._content_type == "mod" else ""
+        base = Path.home() / "Downloads" / mc
+        if loader:
+            base = base / LOADER_LABELS.get(loader, loader)
+        return base / folder
+
+    def _choose_destination(self) -> None:
+        start = str(self._custom_target_dir or self._destination_dir())
+        folder = QFileDialog.getExistingDirectory(self, "选择下载文件夹", start)
+        if not folder:
+            return
+        self._custom_target_dir = Path(folder)
+        self.dest_edit.setText(str(self._custom_target_dir))
+        self._update_context()
+
+    def _reload_target_versions(self) -> None:
+        versions = self._installed_versions()
+        current = self.target_version_combo.currentData() or self.main.selected_version
+        self.target_version_combo.blockSignals(True)
+        self.target_version_combo.clear()
+        for base, loader, version_id in versions:
+            alias = self.main.config.version_name(version_id)
+            label = alias or version_id
+            if loader:
+                label += f" · {LOADER_LABELS.get(loader, loader)}"
+            if base and base != version_id:
+                label += f"（MC {base}）"
+            self.target_version_combo.addItem(label, version_id)
+            if alias:
+                index = self.target_version_combo.count() - 1
+                self.target_version_combo.setItemData(
+                    index, f"内部版本：{version_id}", Qt.ToolTipRole
+                )
+        if versions:
+            index = self.target_version_combo.findData(current)
+            if index < 0:
+                index = self.target_version_combo.findData(self._target_version_id)
+            if index < 0:
+                index = 0
+            self.target_version_combo.setCurrentIndex(index)
+        else:
+            self.target_version_combo.addItem("还没有安装游戏版本", "")
+        self.target_version_combo.blockSignals(False)
+
+    def _on_target_version_changed(self) -> None:
+        if self._target_mode != "installed":
+            return
+        version_id = str(self.target_version_combo.currentData() or "")
+        if not version_id:
+            self._update_context()
+            return
+        for base, loader, installed_id in self._installed_versions():
+            if installed_id != version_id:
+                continue
+            self.mc_combo.blockSignals(True)
+            self.mc_combo.setEditText(base or version_id)
+            self.mc_combo.blockSignals(False)
+            if self._content_type == "mod" and loader:
+                self.loader_tabs.blockSignals(True)
+                self.loader_tabs.set_value(loader)
+                self.loader_tabs.blockSignals(False)
+            break
+        self._target_version_id = version_id
+        self._update_context()
+        self._reset_and_search()
+
+    def _match_target_to_context(self) -> None:
+        """切换搜索条件时，把目标版本对齐到当前 MC 与加载器。"""
+        if self._target_mode != "installed":
+            return
+        mc = self.mc_combo.currentText().strip()
+        loader_id = ""
+        if self._content_type == "mod":
+            loader_id = str(self.loader_tabs.current() or "").lower()
+        current = str(self.target_version_combo.currentData() or "")
+        for base, loader, version_id in self._installed_versions():
+            if version_id == current:
+                if base == mc and (not loader_id or loader.lower() == loader_id):
+                    return
+                break
+        matches = [
+            version_id
+            for base, loader, version_id in self._installed_versions()
+            if base == mc and (not loader_id or loader.lower() == loader_id)
+        ]
+        if not matches:
+            return
+        index = self.target_version_combo.findData(matches[0])
+        if index >= 0:
+            self.target_version_combo.blockSignals(True)
+            self.target_version_combo.setCurrentIndex(index)
+            self.target_version_combo.blockSignals(False)
+
+    def _reset_and_search(self) -> None:
+        self._page = 0
+        self._selected_project = ""
+        self._project = None
+        self._hit = None
+        self._gallery = []
+        self._hits = []
+        self._nav_stack.clear()
+        self._pending_project_id = ""
+        self._pending_version_id = ""
+        self.dep_bar.clear()
+        self._render_results(loading=True)
+        self._clear_detail()
+        self._search(0)
+
     def _reload_bases(self) -> None:
         current = self.mc_combo.currentText().strip()
-        bases: list[str] = []
+        installed: list[str] = []
         preferred = ""
         selected = next(
             (v for v in self.main.versions if v.id == self.main.selected_version),
@@ -945,11 +1197,9 @@ class ModBrowserDialog(StyledDialog):
             except Exception:
                 preferred = selected.id
         for base, _loader, _version_id in self._installed_versions():
-            if base not in bases:
-                bases.append(base)
-        for version in COMMON_VERSIONS:
-            if version not in bases:
-                bases.append(version)
+            if base not in installed:
+                installed.append(base)
+        bases = release_versions(installed)
 
         self.mc_combo.blockSignals(True)
         self.mc_combo.clear()
@@ -971,11 +1221,28 @@ class ModBrowserDialog(StyledDialog):
             loader, "fabric"
         )
         self.loader_tabs.set_value(loader)
+        self._reload_target_versions()
         self._update_context()
+
+    def _pick_mc_version(self) -> None:
+        installed = [base for base, _loader, _vid in self._installed_versions()]
+        dialog = VersionPickerDialog(
+            self,
+            self.mc_combo.currentText().strip(),
+            installed,
+        )
+        if not dialog.exec():
+            return
+        version = dialog.value().strip()
+        if not version or version == self.mc_combo.currentText().strip():
+            return
+        self.mc_combo.setEditText(version)
+        self._on_context_changed()
 
     def _update_context(self) -> None:
         mc = self.mc_combo.currentText().strip()
         kind = self._content_type
+        self._sync_target_widgets()
         if kind == "modpack":
             self._target_version_id = ""
             self.context_label.setText(
@@ -983,95 +1250,46 @@ class ModBrowserDialog(StyledDialog):
                 "加载器与整合包文件由清单自动决定，不会覆盖现有版本。"
             )
             self.context_label.setStyleSheet(f"color: {colors()['green']};")
-        elif kind in ("resourcepack", "shader"):
-            folder = CONTENT_FOLDERS[kind]
-            label = CONTENT_LABELS[kind]
-            matches = [
-                version_id
-                for base, _name, version_id in self._installed_versions()
-                if base == mc
-            ]
-            if matches:
-                target = (
-                    self.main.selected_version
-                    if self.main.selected_version in matches
-                    else matches[0]
-                )
+        elif self._target_mode == "folder":
+            self._target_version_id = ""
+            folder = CONTENT_FOLDERS.get(kind, "mods")
+            path = self._destination_dir()
+            self.dest_edit.setText(str(path))
+            self.context_label.setText(
+                f"只下载 {folder} 文件，不会写入任何游戏版本。"
+                f"保存到：{path}"
+            )
+            self.context_label.setStyleSheet(f"color: {colors()['green']};")
+        else:
+            folder = CONTENT_FOLDERS.get(kind, "mods")
+            label = CONTENT_LABELS.get(kind, "内容")
+            target = str(self.target_version_combo.currentData() or "")
+            if target:
                 self._target_version_id = target
                 if self.main.config.version_isolation:
                     self.context_label.setText(
-                        f"将下载到版本 {target} 的独立 {folder} 文件夹："
+                        f"将安装到版本 {target} 的 {folder} 文件夹："
                         f"versions/{target}/{folder}"
                     )
                 else:
                     self.context_label.setText(
-                        f"本地已有 Minecraft {mc}。版本隔离已关闭，"
-                        f"{label}会放入公共 {folder} 文件夹。"
+                        f"版本隔离已关闭，{label}会放入公共 {folder} 文件夹。"
                     )
                 self.context_label.setStyleSheet(f"color: {colors()['green']};")
             else:
                 self._target_version_id = ""
                 self.context_label.setText(
-                    f"本地还没有 Minecraft {mc} 的游戏版本，"
-                    f"无法确定 {folder} 目录。请先在“下载”页面安装游戏版本。"
+                    "还没有安装可用的游戏版本。可以切到“仅下载文件”，"
+                    "选择文件夹后直接保存，不会写入游戏目录。"
                 )
-                self.context_label.setStyleSheet(f"color: {colors()['orange']};")
-        else:
-            loader = self.loader_tabs.current()
-            loader_name = LOADER_LABELS.get(loader, loader)
-            matches = [
-                version_id
-                for base, name, version_id in self._installed_versions()
-                if base == mc and name == loader_name
-            ]
-            if matches:
-                target = (
-                    self.main.selected_version
-                    if self.main.selected_version in matches
-                    else matches[0]
-                )
-                self._target_version_id = target
-                if self.main.config.version_isolation:
-                    self.context_label.setText(
-                        f"将下载到版本 {target} 的独立 mods 文件夹：versions/{target}/mods"
-                    )
-                else:
-                    self.context_label.setText(
-                        f"本地已有 Minecraft {mc} · {loader_name}。"
-                        "版本隔离已关闭，Mod 会放入公共 mods 文件夹。"
-                    )
-                self.context_label.setStyleSheet(f"color: {colors()['green']};")
-            else:
-                self._target_version_id = ""
-                if self.main.config.version_isolation:
-                    self.context_label.setText(
-                        f"本地还没有 Minecraft {mc} 的 {loader_name} 版本，"
-                        "无法确定独立 mods 目录。请先到“加载器”页面安装并绑定加载器。"
-                    )
-                else:
-                    self.context_label.setText(
-                        f"本地还没有 Minecraft {mc} 的 {loader_name} 版本。"
-                        "可以先安装加载器，否则下载的 Mod 不会被加载。"
-                    )
                 self.context_label.setStyleSheet(f"color: {colors()['orange']};")
         if hasattr(self, "download_btn"):
             self._sync_download_button()
 
     def _on_context_changed(self) -> None:
+        self._match_target_to_context()
         self._update_context()
-        self._page = 0
-        self._selected_project = ""
-        self._project = None
-        self._hit = None
-        self._gallery = []
-        self._hits = []
-        self._nav_stack.clear()
-        self._pending_project_id = ""
-        self._pending_version_id = ""
-        self.dep_bar.clear()
-        self._render_results(loading=True)
-        self._clear_detail()
-        self._search(0)
+        self._reset_and_search()
 
     def _open_loader_dialog(self) -> None:
         dialog = LoaderDialog(self.main)
@@ -1088,6 +1306,8 @@ class ModBrowserDialog(StyledDialog):
             return False
         if self._content_type == "modpack":
             return True
+        if self._target_mode == "folder":
+            return True
         if self.main.config.version_isolation and not self._target_version_id:
             return False
         return True
@@ -1100,6 +1320,8 @@ class ModBrowserDialog(StyledDialog):
             self.download_btn.setEnabled(self._can_download())
 
     def _target_dir(self) -> Path:
+        if self._target_mode == "folder":
+            return self._destination_dir()
         target = self._target_version_id or self.main.selected_version
         if self._content_type == "resourcepack":
             return self.main.config.resourcepacks_path(target)
@@ -1637,7 +1859,21 @@ class ModBrowserDialog(StyledDialog):
             return
         self._show_gallery(0)
 
-    def _show_gallery(self, index: int) -> None:
+    def _scroll_to_preview(self) -> None:
+        """把详情面板滚到预览图顶部，翻面后能完整看到整张图。"""
+        holder = getattr(self, "detail_holder", None)
+        preview = getattr(self, "gallery_preview", None)
+        scroll = getattr(self, "detail_scroll", None)
+        if holder is None or preview is None or scroll is None:
+            return
+        try:
+            y = preview.mapTo(holder, QPoint(0, 0)).y()
+        except RuntimeError:
+            return
+        bar = scroll.verticalScrollBar()
+        bar.setValue(max(0, min(bar.maximum(), y)))
+
+    def _show_gallery(self, index: int, scroll_to_top: bool = False) -> None:
         if not self._gallery:
             return
         index = max(0, min(len(self._gallery) - 1, int(index)))
@@ -1653,6 +1889,7 @@ class ModBrowserDialog(StyledDialog):
         self.gallery_flip.setEnabled(len(self._gallery) > 1)
         self.gallery_open_btn.setEnabled(bool(url))
         self.gallery_preview.set_message("正在加载预览图…")
+        self._gallery_scroll_pending = scroll_to_top
         self.gallery_caption_label.setText(_short(caption, 42) if caption else "")
         self.gallery_caption_label.setToolTip(caption)
         if not url:
@@ -1666,6 +1903,9 @@ class ModBrowserDialog(StyledDialog):
                 url,
                 lambda image, expected=url: self._gallery_image_ready(expected, image),
             )
+        if self._gallery_url == url and getattr(self, "_gallery_scroll_pending", False):
+            self._gallery_scroll_pending = False
+            QTimer.singleShot(0, self._scroll_to_preview)
         if index + 1 < len(self._gallery):
             next_url = str(self._gallery[index + 1].get("url") or "")
             if next_url and next_url not in _IMAGE_CACHE:
@@ -1674,7 +1914,7 @@ class ModBrowserDialog(StyledDialog):
     def _flip_gallery(self) -> None:
         if len(self._gallery) <= 1:
             return
-        self._show_gallery((self._gallery_index + 1) % len(self._gallery))
+        self._show_gallery((self._gallery_index + 1) % len(self._gallery), scroll_to_top=True)
 
     def _gallery_image_ready(self, url: str, image: QImage | None) -> None:
         if url != self._gallery_url:
@@ -1954,6 +2194,8 @@ class ModBrowserDialog(StyledDialog):
     def _download_button_text(self) -> str:
         if self._content_type == "modpack":
             return "下载并导入整合包"
+        if self._target_mode == "folder":
+            return "下载到自选文件夹"
         folder = CONTENT_FOLDERS.get(self._content_type, "mods")
         return f"下载到 {folder}"
 
@@ -2044,14 +2286,22 @@ class ModBrowserDialog(StyledDialog):
             target_dir = APP_DIR / "cache" / "packs"
             progress_text = "准备下载整合包…"
         else:
-            if self.main.config.version_isolation and not self._target_version_id:
+            if (
+                self._target_mode != "folder"
+                and self.main.config.version_isolation
+                and not self._target_version_id
+            ):
                 self.main.toast(
-                    f"请先准备一个 Minecraft {self.mc_combo.currentText().strip()} "
-                    "游戏版本，再下载",
+                    "请先选择已安装的游戏版本，或切到“仅下载文件”选择文件夹",
                     "error",
                 )
                 return
             target_dir = self._target_dir()
+            try:
+                target_dir.mkdir(parents=True, exist_ok=True)
+            except OSError as exc:
+                self.main.toast(f"无法创建下载文件夹：{exc}", "error")
+                return
             progress_text = (
                 f"准备下载到 {target_dir.parent.name}/{target_dir.name}…"
             )

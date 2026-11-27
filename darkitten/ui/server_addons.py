@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtWidgets import (
     QComboBox,
+    QFileDialog,
     QFrame,
     QHBoxLayout,
     QLabel,
@@ -14,6 +17,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from ..descriptions import project_zh_intro
 from ..modrinth import primary_file, required_dependencies
 from ..servers import ServerInfo, addons_dir
 from ..workers import (
@@ -35,15 +39,21 @@ from .mod_dialog import (
     _plain_excerpt,
     _short,
 )
-from .widgets import DependencyBar, badge, colors, repolish
+from .widgets import (
+    DependencyBar,
+    SegmentedControl,
+    badge,
+    colors,
+    repolish,
+)
 
-PAGE_SIZE = 6
+PAGE_SIZE = 20
 
 
 class ServerAddonDialog(StyledDialog):
     installed = Signal(str)
 
-    def __init__(self, main, server: ServerInfo) -> None:
+    def __init__(self, main, server: ServerInfo, initial: dict | None = None) -> None:
         super().__init__(
             main,
             f"下载{server.addon_label}",
@@ -53,6 +63,9 @@ class ServerAddonDialog(StyledDialog):
         )
         self.main = main
         self.server = server
+        self._initial = dict(initial or {})
+        initial_source = str(self._initial.get("source") or "").strip().lower()
+        self._source = "curseforge" if initial_source == "curseforge" else "modrinth"
         self._search_worker: ServerAddonSearchWorker | None = None
         self._project_worker: ModProjectWorker | None = None
         self._versions_worker: ServerAddonVersionsWorker | None = None
@@ -73,6 +86,9 @@ class ServerAddonDialog(StyledDialog):
         self._selected_project = ""
         self._project: dict | None = None
         self._hit: dict | None = None
+        self._target_mode = "server"
+        self._target_version_id = ""
+        self._custom_target_dir: Path | None = None
 
         intro = QLabel(
             f"{server.type_name} {server.mc_version} · "
@@ -83,8 +99,63 @@ class ServerAddonDialog(StyledDialog):
         intro.setWordWrap(True)
         self.body.addWidget(intro)
 
+        target_box = QFrame()
+        target_box.setObjectName("SoftCard")
+        target_box.setAttribute(Qt.WA_StyledBackground, True)
+        target_layout = QVBoxLayout(target_box)
+        target_layout.setContentsMargins(12, 8, 12, 8)
+        target_layout.setSpacing(4)
+        target_row = QHBoxLayout()
+        target_row.setSpacing(8)
+        target_caption = QLabel("下载位置")
+        target_caption.setStyleSheet("font-weight: 700; font-size: 12px;")
+        self.target_tabs = SegmentedControl()
+        self.target_tabs.add_item("当前服务端", "server")
+        if not server.is_plugin_server:
+            self.target_tabs.add_item("已安装版本", "version")
+        self.target_tabs.add_item("仅下载文件", "folder")
+        self.target_tabs.changed.connect(self._set_target_mode)
+        target_row.addWidget(target_caption)
+        target_row.addWidget(self.target_tabs)
+
+        self.target_version_combo = QComboBox()
+        self.target_version_combo.setMinimumWidth(210)
+        self.target_version_combo.setVisible(False)
+        self.target_version_combo.currentIndexChanged.connect(
+            lambda _: self._on_target_version_changed()
+        )
+        target_row.addWidget(self.target_version_combo, 1)
+
+        self.dest_edit = QLineEdit()
+        self.dest_edit.setReadOnly(True)
+        self.dest_edit.setMinimumWidth(230)
+        self.dest_edit.setVisible(False)
+        self.dest_edit.setPlaceholderText("默认保存到下载目录")
+        target_row.addWidget(self.dest_edit, 1)
+        self.dest_btn = QPushButton("选择文件夹")
+        self.dest_btn.setObjectName("Ghost")
+        self.dest_btn.setCursor(Qt.PointingHandCursor)
+        self.dest_btn.setVisible(False)
+        self.dest_btn.clicked.connect(self._choose_destination)
+        target_row.addWidget(self.dest_btn)
+        target_row.addStretch(0)
+        target_layout.addLayout(target_row)
+        self.target_hint = QLabel("")
+        self.target_hint.setObjectName("Tiny")
+        self.target_hint.setWordWrap(True)
+        target_layout.addWidget(self.target_hint)
+        self.body.addWidget(target_box)
+        self._populate_target_versions()
+        self._sync_target_widgets()
+
         search_row = QHBoxLayout()
         search_row.setSpacing(8)
+        self.source_tabs = SegmentedControl()
+        self.source_tabs.add_item("Modrinth", "modrinth")
+        self.source_tabs.add_item("CurseForge", "curseforge")
+        self.source_tabs.set_value(self._source)
+        self.source_tabs.changed.connect(self._set_source)
+        search_row.addWidget(self.source_tabs)
         self.search = QLineEdit()
         self.search.setPlaceholderText(
             f"搜索服务端{server.addon_label}名称、作者或关键词，留空浏览热门项目…"
@@ -270,7 +341,24 @@ class ServerAddonDialog(StyledDialog):
 
         self.results_scroll.setMinimumHeight(330)
         self.detail_panel.setMinimumHeight(330)
-        QTimer.singleShot(0, lambda: self._search(0))
+        if self._initial:
+            QTimer.singleShot(0, self._open_initial_project)
+        else:
+            QTimer.singleShot(0, lambda: self._search(0))
+
+    def _open_initial_project(self) -> None:
+        hit = dict(self._initial)
+        project_id = str(hit.get("project_id") or hit.get("id") or "")
+        if project_id:
+            self._select_project(project_id, hit)
+
+    def keyPressEvent(self, event) -> None:
+        if event.key() in (Qt.Key_Return, Qt.Key_Enter) and isinstance(
+            self.focusWidget(), (QLineEdit, QComboBox)
+        ):
+            event.accept()
+            return
+        super().keyPressEvent(event)
 
     def reject(self) -> None:
         worker = self._download_worker
@@ -299,6 +387,152 @@ class ServerAddonDialog(StyledDialog):
         return value
 
     # ------------------------------------------------------------------
+    def _installed_versions(self) -> list[tuple[str, str, str]]:
+        items: list[tuple[str, str, str]] = []
+        for summary in self.main.game_version_summaries():
+            loader = summary.loader
+            if not loader:
+                profile = self.main.loader_profile_for(summary.id)
+                loader = profile.loader if profile else ""
+            items.append((summary.id, loader, summary.id))
+        return items
+
+    def _populate_target_versions(self) -> None:
+        versions = self._installed_versions()
+        current = str(self.main.selected_version or "")
+        self.target_version_combo.blockSignals(True)
+        self.target_version_combo.clear()
+        for version_id, loader, _ in versions:
+            alias = self.main.config.version_name(version_id)
+            label = alias or version_id
+            if loader:
+                label += f" · {loader}"
+            self.target_version_combo.addItem(label, version_id)
+            if alias:
+                index = self.target_version_combo.count() - 1
+                self.target_version_combo.setItemData(
+                    index, f"内部版本：{version_id}", Qt.ToolTipRole
+                )
+        if versions:
+            index = self.target_version_combo.findData(current)
+            if index < 0:
+                index = 0
+            self.target_version_combo.setCurrentIndex(index)
+            self._target_version_id = str(
+                self.target_version_combo.currentData() or ""
+            )
+        else:
+            self.target_version_combo.addItem("还没有安装游戏版本", "")
+            self._target_version_id = ""
+        self.target_version_combo.blockSignals(False)
+
+    def _destination_dir(self) -> Path:
+        if self._custom_target_dir is not None:
+            return Path(self._custom_target_dir)
+        base = Path.home() / "Downloads" / "Darkitten"
+        tag = f"{self.server.kind}-{self.server.mc_version}"
+        return base / tag / self.server.addon_dir_name
+
+    def _choose_destination(self) -> None:
+        start = str(self._custom_target_dir or self._destination_dir())
+        folder = QFileDialog.getExistingDirectory(self, "选择下载文件夹", start)
+        if not folder:
+            return
+        self._custom_target_dir = Path(folder)
+        self.dest_edit.setText(str(self._custom_target_dir))
+        self._update_target_hint()
+        self._set_download_button(False)
+
+    def _set_target_mode(self, mode: str) -> None:
+        mode = str(mode or "server")
+        if mode not in ("server", "version", "folder"):
+            mode = "server"
+        if mode == "version" and self.server.is_plugin_server:
+            mode = "server"
+        self.target_tabs.set_value(mode)
+        if self._target_mode == mode:
+            return
+        self._target_mode = mode
+        self._sync_target_widgets()
+        self._set_download_button(False)
+
+    def _on_target_version_changed(self) -> None:
+        self._target_version_id = str(
+            self.target_version_combo.currentData() or ""
+        )
+        self._update_target_hint()
+        self._set_download_button(False)
+
+    def _sync_target_widgets(self) -> None:
+        mode = self._target_mode
+        self.target_version_combo.setVisible(mode == "version")
+        self.dest_edit.setVisible(mode == "folder")
+        self.dest_btn.setVisible(mode == "folder")
+        if mode == "folder":
+            self.dest_edit.setText(str(self._destination_dir()))
+        self._update_target_hint()
+
+    def _update_target_hint(self) -> None:
+        if self._target_mode == "server":
+            self.target_hint.setText(
+                f"文件会安装到当前服务端：{addons_dir(self.server)}"
+            )
+        elif self._target_mode == "version":
+            version_id = str(self.target_version_combo.currentData() or "")
+            self.target_hint.setText(
+                f"文件会放入客户端版本 {version_id} 的 mods 文件夹。"
+                "搜索结果仍按当前服务端的类型与版本筛选。"
+            )
+        else:
+            self.target_hint.setText(
+                f"只下载文件，不写入服务端或游戏版本。保存到：{self._destination_dir()}"
+            )
+
+    def _target_dir(self) -> Path:
+        if self._target_mode == "version":
+            version_id = str(
+                self.target_version_combo.currentData()
+                or self.main.selected_version
+                or ""
+            )
+            return self.main.config.mods_path(version_id)
+        if self._target_mode == "folder":
+            return self._destination_dir()
+        return addons_dir(self.server)
+
+    def _source_label(self) -> str:
+        return "CurseForge" if self._source == "curseforge" else "Modrinth"
+
+    def _set_source(self, source: str) -> None:
+        source = str(source or "modrinth").strip().lower()
+        if source not in ("modrinth", "curseforge"):
+            source = "modrinth"
+        if source == self._source:
+            return
+        if self._download_worker is not None:
+            self.source_tabs.set_value(self._source)
+            self.main.toast("请先等待当前下载结束，再切换来源", "info")
+            return
+        self._source = source
+        self.source_tabs.set_value(source)
+        # 丢弃旧来源的搜索结果：旧 worker 的回调会因为不再是当前 worker 而被忽略。
+        self._search_worker = None
+        self._polling = False
+        self.search_btn.setEnabled(True)
+        self._hits = []
+        self._rows = []
+        self._total = 0
+        self._page = 0
+        self._selected_project = ""
+        self._project = None
+        self._hit = None
+        self._dep_projects = {}
+        self._dep_projects_pending = set()
+        self._nav_stack = []
+        self._clear_detail()
+        self._search(0)
+
+    # ------------------------------------------------------------------
     def _search(self, page: int = 0) -> None:
         if self._polling:
             return
@@ -316,6 +550,7 @@ class ServerAddonDialog(StyledDialog):
             offset,
             PAGE_SIZE,
             self,
+            source=self._source,
         )
         self._search_worker = worker
         worker.ready.connect(
@@ -356,7 +591,7 @@ class ServerAddonDialog(StyledDialog):
         self._rows.clear()
 
         if loading:
-            hint = QLabel("正在搜索 Modrinth…")
+            hint = QLabel(f"正在搜索 {self._source_label()}…")
             hint.setObjectName("Tiny")
             hint.setAlignment(Qt.AlignCenter)
             self.results_layout.insertWidget(0, hint)
@@ -374,7 +609,12 @@ class ServerAddonDialog(StyledDialog):
             self.results_layout.insertWidget(0, hint)
         else:
             for hit in self._hits:
-                row = ModResultRow(hit, self.server.kind)
+                row = ModResultRow(
+                    hit,
+                    self.server.kind,
+                    source_label=self._source_label(),
+                    content_type="plugin" if self.server.is_plugin_server else "mod",
+                )
                 row.clicked.connect(
                     lambda project_id, h=hit: self._select_project(project_id, h)
                 )
@@ -433,7 +673,7 @@ class ServerAddonDialog(StyledDialog):
         same = self._project is not None and str(self._project.get("id") or "") == project_id
         if not same:
             self._project = None
-            worker = ModProjectWorker(project_id, self)
+            worker = ModProjectWorker(project_id, self, source=self._source)
             self._project_worker = worker
             worker.ready.connect(self._project_ready)
             worker.start()
@@ -446,7 +686,7 @@ class ServerAddonDialog(StyledDialog):
             meta_parts.append(f"作者：{author}")
         if categories:
             meta_parts.append(f"分类：{', '.join(categories[:3])}")
-        self.detail_author.setText(" · ".join(meta_parts) or "Modrinth")
+        self.detail_author.setText(" · ".join(meta_parts) or self._source_label())
         self.detail_desc.setText(str(hit.get("description") or ""))
         self.downloads_badge.setText(f"{_human_number(hit.get('downloads'))} 下载")
         self.followers_badge.setText("0 关注")
@@ -471,7 +711,11 @@ class ServerAddonDialog(StyledDialog):
         self._set_detail_icon(str(hit.get("icon_url") or ""))
 
         versions_worker = ServerAddonVersionsWorker(
-            project_id, self.server.kind, self.server.mc_version, self
+            project_id,
+            self.server.kind,
+            self.server.mc_version,
+            self,
+            source=self._source,
         )
         self._versions_worker = versions_worker
         versions_worker.ready.connect(
@@ -631,7 +875,7 @@ class ServerAddonDialog(StyledDialog):
         if not ids:
             return
         self._dep_projects_pending.update(ids)
-        worker = ModProjectsWorker(ids, self)
+        worker = ModProjectsWorker(ids, self, source=self._source)
         self._dep_projects_worker = worker
         worker.ready.connect(
             lambda data, error, w=worker: self._dep_projects_ready(w, data, error)
@@ -807,6 +1051,14 @@ class ServerAddonDialog(StyledDialog):
                 isinstance(self.version_combo.currentData(), dict)
             )
 
+    def _download_button_text(self) -> str:
+        if self._target_mode == "version":
+            version_id = str(self.target_version_combo.currentData() or "")
+            return f"下载到 {version_id} 的 mods"
+        if self._target_mode == "folder":
+            return "下载到自选文件夹"
+        return f"下载到 {self.server.addon_dir_name}"
+
     def _set_download_button(self, downloading: bool) -> None:
         if downloading:
             self.download_btn.setObjectName("Danger")
@@ -815,10 +1067,44 @@ class ServerAddonDialog(StyledDialog):
             self.download_btn.setEnabled(True)
         else:
             self.download_btn.setObjectName("Primary")
-            self.download_btn.setText(f"下载到 {self.server.addon_dir_name}")
+            self.download_btn.setText(self._download_button_text())
             self.download_btn.setIcon(icons.icon("download", "#FFFFFF", 15))
             self._sync_download_button()
         repolish(self.download_btn)
+
+    def _download_metadata(self, version: dict) -> dict:
+        """保存项目来源和中文介绍，安装后列表里也能打开详情。"""
+        project = dict(self._project or {})
+        hit = dict(self._hit or {})
+        merged = {**hit, **{key: value for key, value in project.items() if value}}
+        asset = primary_file(version) or {}
+        hashes = asset.get("hashes") if isinstance(asset.get("hashes"), dict) else {}
+        content_type = "plugin" if self.server.is_plugin_server else "mod"
+        return {
+            "title": str(merged.get("title") or merged.get("slug") or ""),
+            "project_id": str(
+                merged.get("project_id") or merged.get("id") or self._selected_project
+            ),
+            "slug": str(merged.get("slug") or ""),
+            "source": self._source,
+            "source_label": self._source_label(),
+            "content_type": content_type,
+            "description": str(merged.get("description") or ""),
+            "description_zh": project_zh_intro(
+                merged,
+                content_type=content_type,
+                loader=self.server.kind,
+                game_version=self.server.mc_version,
+            ),
+            "project_url": str(merged.get("project_url") or ""),
+            "icon_url": str(merged.get("icon_url") or ""),
+            "game_version": self.server.mc_version,
+            "loader": self.server.kind,
+            "version_id": str(version.get("id") or ""),
+            "file_id": str(version.get("id") or ""),
+            "file_name": str(asset.get("filename") or ""),
+            "sha1": str(hashes.get("sha1") or ""),
+        }
 
     def _download(self) -> None:
         if self._download_worker is not None:
@@ -829,15 +1115,22 @@ class ServerAddonDialog(StyledDialog):
         version = self.version_combo.currentData()
         if not isinstance(version, dict):
             return
-        target = addons_dir(self.server)
+        target = self._target_dir()
+        try:
+            target.mkdir(parents=True, exist_ok=True)
+        except OSError as exc:
+            self.main.toast(f"无法创建下载文件夹：{exc}", "error")
+            return
         self.progress.setValue(0)
-        self.progress_text.setText(f"准备下载到 {self.server.addon_dir_name}…")
+        self.progress_text.setText(f"准备下载到 {target}…")
         self.progress_box.setVisible(True)
         worker = ModDownloadWorker(
             version,
             target,
             threads=self.main.config.download_threads,
             parent=self.main,
+            source=self._source,
+            metadata=self._download_metadata(version),
         )
         self._download_worker = worker
         worker.progress.connect(self._on_progress)
@@ -854,12 +1147,24 @@ class ServerAddonDialog(StyledDialog):
         self._set_download_button(False)
         if success:
             self.progress.setValue(100)
-            self.progress_text.setText(f"已安装 {filename}")
-            self.main.toast(f"{filename} 已下载到 {self.server.addon_dir_name}", "success")
-            self.installed.emit(filename)
-            page = getattr(self.main, "server_page", None)
-            if page is not None:
-                page.refresh_addons()
+            mode = self._target_mode
+            if mode == "server":
+                self.progress_text.setText(f"已安装 {filename}")
+                self.main.toast(
+                    f"{filename} 已下载到 {self.server.addon_dir_name}", "success"
+                )
+                self.installed.emit(filename)
+                page = getattr(self.main, "server_page", None)
+                if page is not None:
+                    page.refresh_addons()
+            elif mode == "version":
+                self.progress_text.setText(f"已下载 {filename}")
+                self.main.toast(f"{filename} 已放入客户端版本 mods", "success")
+                if hasattr(self.main, "mods_page"):
+                    self.main.mods_page.refresh_mods()
+            else:
+                self.progress_text.setText(f"已保存 {filename}")
+                self.main.toast(f"{filename} 已保存到自选文件夹", "success")
         elif "取消" in str(message):
             self.progress_text.setText("下载已取消")
             self.main.toast("已取消下载，临时文件已清理", "info")
@@ -868,7 +1173,7 @@ class ServerAddonDialog(StyledDialog):
             self.main.toast(f"下载失败：{message}", "error")
 
     def _open_folder(self) -> None:
-        path = addons_dir(self.server)
+        path = self._target_dir()
         try:
             path.mkdir(parents=True, exist_ok=True)
         except OSError as exc:

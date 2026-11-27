@@ -20,6 +20,7 @@ from typing import Any, Callable
 from PySide6.QtCore import QObject, Signal
 
 from .config import APP_DIR
+from .downloader import DownloadCancelled, download_to_file
 from .installer import (
     BMCL_MAVEN,
     CENTRAL_MAVEN,
@@ -36,6 +37,13 @@ from .loaders import (
     _installer_urls,
     _patch_installer,
     _preseed_libraries,
+)
+from .mods import (
+    META_DIR_NAME,
+    load_mod_meta,
+    mod_meta_icon_path,
+    mod_meta_json_path,
+    write_mod_meta,
 )
 from .versions import maven_path
 
@@ -105,6 +113,7 @@ class ServerInfo:
     memory_mb: int = 4096
     port: int = 25565
     online_mode: bool = False
+    seed: str = ""
     eula: bool = False
     installed: bool = False
     install_error: str = ""
@@ -286,6 +295,9 @@ def update_server_properties(
             "online-mode": "true" if info.online_mode else "false",
         }
     )
+    seed = str(getattr(info, "seed", "") or "").strip()
+    if seed:
+        values["level-seed"] = seed
     for key, value in (updates or {}).items():
         values[str(key)] = str(value)
 
@@ -334,6 +346,9 @@ def required_java_major(mc_version: str) -> int:
         return 21
     major, minor = pieces[0], pieces[1]
     patch = pieces[2] if len(pieces) > 2 else 0
+    # 2026 年起 Mojang 改用年份版本号（26.x），Paper 与官方服务端最低要求 Java 25。
+    if major >= 26:
+        return 25
     if major > 1 or (major == 1 and minor >= 21):
         return 21
     if (major, minor, patch) >= (1, 20, 5):
@@ -752,6 +767,122 @@ def _install_spigot(
     cancel_event: threading.Event | None,
     process_cb: ProcessCallback | None,
 ) -> None:
+    # 先试现成构建：hub.spigotmc.org 已对匿名用户关闭源码 Git（BuildTools
+    # 编译必然失败），getbukkit 上还有官方构建的 jar，秒级就能拿到。
+    if _install_spigot_prebuilt(info, progress_cb=progress_cb, log_cb=log_cb, cancel_event=cancel_event):
+        return
+    log_cb("没有找到现成的 Spigot 构建，改用 BuildTools 现场编译（耗时较长）。")
+    _build_spigot(
+        info,
+        java_path=java_path,
+        progress_cb=progress_cb,
+        log_cb=log_cb,
+        cancel_event=cancel_event,
+        process_cb=process_cb,
+    )
+
+
+def _install_spigot_prebuilt(
+    info: ServerInfo,
+    *,
+    progress_cb: ProgressCallback,
+    log_cb: LogCallback,
+    cancel_event: threading.Event | None,
+) -> bool:
+    """从 getbukkit 下载现成的 Spigot jar，成功返回 True。"""
+    version = str(info.mc_version or "").strip()
+    if not version:
+        return False
+    dest = info.path / "server.jar"
+    urls = spigot_build_urls(version)
+    for url in urls:
+        progress_cb(6, f"正在下载 Spigot {version}（现成构建，约 70 MB）…")
+        # getbukkit 会不定时掐断连接，但下载器会保留 .part 分段和元数据，
+        # 对同一地址重试能接着上次的进度继续，不会从头再来。换地址则会
+        # 因为 URL 变化丢弃断点，所以先把同一个地址试满再换。
+        for attempt in range(4):
+            try:
+                download_to_file(
+                    url,
+                    dest,
+                    cancel_event=cancel_event,
+                    progress_cb=lambda done, total: progress_cb(
+                        _spigot_percent(done, total),
+                        f"正在下载 Spigot {version} · "
+                        f"{done / 1048576:.1f}/{total / 1048576:.1f} MB",
+                    )
+                    if total
+                    else None,
+                    # getbukkit 单连接只有几 KB/s，分段并发能跑到 100-200 KB/s；
+                    # 连接开太多会被限流，8 是实测的平衡点。
+                    connections=8,
+                    timeout=30,
+                )
+            except DownloadCancelled:
+                raise
+            except Exception as exc:
+                log_cb(f"下载中断（第 {attempt + 1}/4 次）：{exc}")
+                if cancel_event is not None and cancel_event.is_set():
+                    raise DownloadCancelled() from exc
+                continue
+            break
+        if dest.is_file() and _is_server_jar(dest):
+            info.launch_kind = "jar"
+            info.launch_target = "server.jar"
+            progress_cb(92, "Spigot 服务端已就绪")
+            log_cb(f"Spigot 服务端：官方构建 {version}")
+            return True
+        if dest.is_file():
+            log_cb(f"{url} 下载的内容不是有效的 jar，已丢弃")
+            try:
+                dest.unlink()
+            except OSError:
+                pass
+        for leftover in dest.parent.glob(dest.name + ".part*"):
+            try:
+                leftover.unlink()
+            except OSError:
+                pass
+    return False
+
+
+def _is_server_jar(path: Path) -> bool:
+    """确认下载到的是真正的 jar，而不是 CDN 的错误页。"""
+    try:
+        if path.stat().st_size < 1024:
+            return False
+        with zipfile.ZipFile(path) as archive:
+            return "META-INF/MANIFEST.MF" in archive.namelist()
+    except (OSError, zipfile.BadZipFile):
+        return False
+
+
+def _spigot_percent(done: int, total: int) -> int:
+    if not total:
+        return 6
+    return max(6, min(90, 6 + int(done * 84 / total)))
+
+
+def spigot_build_urls(mc_version: str) -> list[str]:
+    """getbukkit 的 Spigot 构建地址；两个 CDN 都试一遍。"""
+    version = str(mc_version or "").strip()
+    if not version:
+        return []
+    return [
+        f"https://download.getbukkit.org/spigot/spigot-{version}.jar",
+        f"https://cdn.getbukkit.org/spigot/spigot-{version}.jar",
+    ]
+
+
+def _build_spigot(
+    info: ServerInfo,
+    *,
+    java_path: str,
+    progress_cb: ProgressCallback,
+    log_cb: LogCallback,
+    cancel_event: threading.Event | None,
+    process_cb: ProcessCallback | None,
+) -> None:
     git = _find_git()
     build_dir = SERVER_CACHE / "spigot" / _safe_folder(info.mc_version)
     build_dir.mkdir(parents=True, exist_ok=True)
@@ -783,7 +914,10 @@ def _install_spigot(
     if existing:
         log_cb(f"复用缓存中的 {existing.name}")
     else:
-        log_cb("Spigot 首次构建需要 Git 和较长时间（通常 10-30 分钟），请耐心等待。")
+        log_cb(
+            "Spigot 首次构建需要 Git 和较长时间（通常 10-30 分钟）；"
+            "如果官方源码 Git 拒绝匿名访问，构建会失败，这时建议改用 Paper。"
+        )
         env = os.environ.copy()
         env["PATH"] = str(Path(git).parent) + os.pathsep + env.get("PATH", "")
         progress_cb(10, "BuildTools 正在编译 Spigot（耗时较长）…")
@@ -814,8 +948,10 @@ def _install_spigot(
         if code != 0:
             if network_error:
                 raise ServerError(
-                    "Spigot BuildTools 无法访问 hub.spigotmc.org（Java 网络受限）。"
-                    "请检查网络或代理后重试；也可以改用 Paper 服务端，它兼容 Spigot 插件。"
+                    "Spigot BuildTools 无法访问 hub.spigotmc.org"
+                    "（官方源码 Git 已不再对匿名用户开放，或当前网络受限）。"
+                    "建议改用 Paper 服务端，它可以直接兼容 Spigot 插件；"
+                    "也可以检查网络或代理后重试。"
                 )
             raise ServerError(f"Spigot BuildTools 退出代码 {code}，请查看日志")
         existing = find_jar()
@@ -1705,6 +1841,20 @@ class AddonFile:
     filename: str
     size: int
     enabled: bool
+    version: str = ""
+    loader: str = ""
+    project_id: str = ""
+    source: str = ""
+    source_label: str = ""
+    project_url: str = ""
+    description: str = ""
+    description_zh: str = ""
+    icon_bytes: bytes = b""
+    sha1: str = ""
+
+    @property
+    def intro(self) -> str:
+        return self.description_zh or self.description
 
     @property
     def size_text(self) -> str:
@@ -1716,6 +1866,8 @@ class AddonFile:
 
 
 def list_addons(info: ServerInfo) -> list[AddonFile]:
+    from .mods import read_mod
+
     directory = addons_dir(info)
     if not directory.exists():
         return []
@@ -1727,28 +1879,49 @@ def list_addons(info: ServerInfo) -> list[AddonFile]:
     for path in files:
         name = path.name
         lower = name.lower()
-        if lower.endswith(".jar"):
-            enabled = True
-            display = name[:-4]
-        elif lower.endswith(".jar.disabled"):
-            enabled = False
-            display = name[: -len(".jar.disabled")]
-        else:
+        if not (lower.endswith(".jar") or lower.endswith(".jar.disabled")):
             continue
         try:
-            size = path.stat().st_size
-        except OSError:
-            size = 0
+            mod = read_mod(path)
+        except Exception:  # noqa: BLE001 - 损坏的 jar 退回文件名
+            mod = None
+        if mod is None:
+            enabled = lower.endswith(".jar")
+            display = name[:-4] if enabled else name[: -len(".jar.disabled")]
+            try:
+                size = path.stat().st_size
+            except OSError:
+                size = 0
+            result.append(
+                AddonFile(
+                    path=path,
+                    name=display,
+                    filename=name,
+                    size=size,
+                    enabled=enabled,
+                )
+            )
+            continue
         result.append(
             AddonFile(
                 path=path,
-                name=display,
+                name=mod.name or name,
                 filename=name,
-                size=size,
-                enabled=enabled,
+                size=mod.size,
+                enabled=mod.enabled,
+                version=mod.version,
+                loader=mod.loader,
+                project_id=mod.project_id,
+                source=mod.source,
+                source_label=mod.source_label,
+                project_url=mod.project_url,
+                description=mod.description,
+                description_zh=mod.description_zh,
+                icon_bytes=mod.icon_bytes,
+                sha1=mod.sha1,
             )
         )
-    result.sort(key=lambda item: item.name.lower())
+    result.sort(key=lambda item: (not item.enabled, item.name.lower()))
     return result
 
 
@@ -1764,6 +1937,198 @@ def toggle_addon(addon: AddonFile) -> Path:
         raise ServerError(f"目标文件已存在：{dest.name}")
     os.replace(addon.path, dest)
     return dest
+
+
+def delete_addon(addon: AddonFile) -> tuple[bool, str]:
+    """把插件/Mod 文件移入回收站，并清理对应的下载元数据。"""
+    path = Path(addon.path)
+    if not path.is_file():
+        return False, "文件不存在"
+    ok, message = send_to_recycle_bin(path)
+    if not ok:
+        return False, message
+    try:
+        names = [path.name]
+        if path.name.lower().endswith(".disabled"):
+            names.append(path.name[: -len(".disabled")])
+        for name in names:
+            for meta in (
+                mod_meta_json_path(path.parent, name),
+                mod_meta_icon_path(path.parent, name),
+            ):
+                try:
+                    if meta.is_file():
+                        meta.unlink()
+                except OSError:
+                    pass
+    except Exception:  # noqa: BLE001 - 元数据清理失败不影响卸载
+        pass
+    return True, message
+
+
+ADDON_SUFFIXES = (".jar", ".jar.disabled")
+
+
+def is_addon_path(path: Path) -> bool:
+    return Path(path).name.lower().endswith(ADDON_SUFFIXES)
+
+
+def scan_addon_paths(paths: list[Path]) -> tuple[list[Path], list[Path]]:
+    """从选中的路径里挑出可以直接导入的 jar 文件。
+
+    只接受文件，不会递归扫描文件夹；文件夹或非 jar 文件会放进
+    ignored，交给界面提示。
+    """
+    found: list[Path] = []
+    ignored: list[Path] = []
+    seen: set[str] = set()
+    for raw in paths:
+        path = Path(raw)
+        try:
+            if not path.is_file():
+                ignored.append(path)
+                continue
+        except OSError:
+            ignored.append(path)
+            continue
+        try:
+            key = str(path.resolve()).lower()
+        except OSError:
+            key = str(path).lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        if is_addon_path(path):
+            found.append(path)
+        else:
+            ignored.append(path)
+    found.sort(key=lambda p: str(p).lower())
+    return found, ignored
+
+
+def _addon_sha1(path: Path) -> str:
+    digest = hashlib.sha1()
+    try:
+        with Path(path).open("rb") as fp:
+            while True:
+                chunk = fp.read(1024 * 1024)
+                if not chunk:
+                    break
+                digest.update(chunk)
+    except OSError:
+        return ""
+    return digest.hexdigest()
+
+
+def _same_addon_content(left: Path, right: Path) -> bool:
+    try:
+        if Path(left).stat().st_size != Path(right).stat().st_size:
+            return False
+    except OSError:
+        return False
+    return _addon_sha1(left) == _addon_sha1(right)
+
+
+@dataclass
+class AddonImportResult:
+    imported: list[Path] = field(default_factory=list)
+    skipped: list[tuple[Path, str]] = field(default_factory=list)
+    errors: list[str] = field(default_factory=list)
+    replaced: list[Path] = field(default_factory=list)
+
+
+def addon_import_conflicts(sources: list[Path], target_dir: Path) -> list[Path]:
+    """返回会覆盖目标目录里同名且内容不同的源文件。"""
+    target_dir = Path(target_dir)
+    conflicts: list[Path] = []
+    seen: set[str] = set()
+    for raw in sources:
+        source = Path(raw)
+        dest = target_dir / source.name
+        key = dest.name.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        try:
+            if not dest.is_file():
+                continue
+            if source.resolve() == dest.resolve():
+                continue
+            if _same_addon_content(source, dest):
+                continue
+        except OSError:
+            continue
+        conflicts.append(source)
+    return conflicts
+
+
+def _backup_addon_file(path: Path, backup_root: Path) -> Path:
+    backup_root.mkdir(parents=True, exist_ok=True)
+    target = backup_root / path.name
+    index = 2
+    while target.exists():
+        target = backup_root / f"{path.stem}-{index}{path.suffix}"
+        index += 1
+    shutil.move(str(path), str(target))
+    return target
+
+
+def import_addon_files(
+    sources: list[Path],
+    target_dir: Path,
+    *,
+    overwrite: bool = False,
+) -> AddonImportResult:
+    """把 jar 复制进服务端的 mods/plugins 目录。
+
+    overwrite=False 时同名且内容不同的文件会被跳过；overwrite=True
+    时旧文件先移到 .dkl-meta/backups/addons/<时间>，再复制新文件。
+    源目录里的 .dkl-meta 下载记录会一并带过来，方便继续检查更新。
+    """
+    target_dir = Path(target_dir)
+    result = AddonImportResult()
+    try:
+        target_dir.mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        result.errors.append(f"无法创建目录：{exc}")
+        return result
+    stamp = time.strftime("%Y%m%d-%H%M%S")
+    backup_root = target_dir / META_DIR_NAME / "backups" / "addons" / stamp
+    for raw in sources:
+        source = Path(raw)
+        dest = target_dir / source.name
+        try:
+            if dest.exists():
+                if source.resolve() == dest.resolve():
+                    result.skipped.append((source, "已在目标目录中"))
+                    continue
+                if _same_addon_content(source, dest):
+                    result.skipped.append((source, "文件内容相同"))
+                    continue
+                if not overwrite:
+                    result.skipped.append((source, "同名文件已存在"))
+                    continue
+                result.replaced.append(_backup_addon_file(dest, backup_root))
+            shutil.copy2(source, dest)
+        except OSError as exc:
+            result.errors.append(f"{source.name}：{exc}")
+            continue
+
+        meta = load_mod_meta(source.parent, source.name)
+        if meta:
+            icon = b""
+            try:
+                icon_path = mod_meta_icon_path(source.parent, source.name)
+                if icon_path.is_file():
+                    icon = icon_path.read_bytes()
+            except OSError:
+                icon = b""
+            try:
+                write_mod_meta(target_dir, dest.name, dict(meta), icon)
+            except OSError:
+                pass
+        result.imported.append(dest)
+    return result
 
 
 # ---------------------------------------------------------------------------

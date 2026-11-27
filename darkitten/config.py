@@ -15,7 +15,7 @@ APP_SHORT_NAME = "DKL"
 APP_TAGLINE = "恶魔小猫的秘密基地"
 APP_AUTHOR = "LFELKEEA"
 APP_EMAIL = "lfel278623@outlook.com"
-APP_VERSION = "1.13.0"
+APP_VERSION = "1.18.0"
 APP_ID = "DarkittenLauncher"
 DEFAULT_UPDATE_URL = "https://lfelkeea.github.io/darkitten-launcher/update.json"
 
@@ -34,6 +34,17 @@ def default_game_dir() -> str:
     return str(APP_DIR / "minecraft")
 
 
+# 个性化主题配色。ID 与 ui/theme.py 的调色板一一对应。
+THEME_PALETTES = {
+    "sakura": "樱花",
+    "midnight": "暗夜",
+    "ocean": "深海",
+    "forest": "森林",
+    "amber": "琥珀",
+    "mono": "素白",
+}
+
+
 @dataclass
 class Config:
     game_dir: str = ""
@@ -46,6 +57,15 @@ class Config:
     download_source: str = "auto"
     download_threads: int = 8
     theme: str = "dark"
+    # 模组搜索每页条数；镜像单请求限速，页越大越依赖并发分段。
+    mod_page_size: int = 20
+    # 个性化：主题配色（内置方案 ID）、背景图路径与显示方式。
+    theme_palette: str = "sakura"
+    background_image: str = ""
+    background_mode: str = "cover"
+    background_opacity: int = 28
+    # 游戏启动后降低优先级、限制工作集，让启动器和系统保持响应。
+    launch_background: bool = True
     last_version: str = ""
     player_name: str = "Steve"
     window_width: int = 1180
@@ -67,6 +87,9 @@ class Config:
     sakura_frpc_path: str = ""
     sakura_node_id: int = 0
     sakura_tunnel_id: int = 0
+    # 服务端公网联机使用独立的隧道，避免和房间号隧道互相改端口。
+    sakura_server_node_id: int = 0
+    sakura_server_tunnel_id: int = 0
     # EasyTier P2P 联机：不需要账户，房间号同时包含网络名与密钥。
     easytier_machine_id: str = ""
     easytier_direct_only: bool = False
@@ -82,6 +105,8 @@ class Config:
     developer_page_token: str = ""
     # 游戏版本 -> 纯加载器配置。没有条目表示原版启动。
     version_loaders: dict[str, str] = field(default_factory=dict)
+    # 游戏版本 -> 用户自定义显示名称。内部目录和 ID 保持不变。
+    version_names: dict[str, str] = field(default_factory=dict)
     # 1.9.14 之前加载器版本直接出现在首页。首次运行时把旧选择迁移成绑定，
     # 之后尊重用户手动选择的“原版启动”，不再自动改回来。
     loaders_migrated: bool = False
@@ -126,6 +151,19 @@ class Config:
         if key in self.version_jvm_args:
             return str(self.version_jvm_args.get(key) or "")
         return str(self.jvm_args or "")
+
+    def version_name(self, version_id: str) -> str:
+        return str(self.version_names.get(str(version_id or "")) or "").strip()
+
+    def set_version_name(self, version_id: str, name: str) -> None:
+        version_id = str(version_id or "").strip()
+        name = str(name or "").strip()
+        if not version_id:
+            return
+        if name and name != version_id:
+            self.version_names[version_id] = name
+        else:
+            self.version_names.pop(version_id, None)
 
     def bind_loader(self, version_id: str, loader_id: str) -> None:
         version_id = str(version_id or "").strip()
@@ -191,6 +229,16 @@ class Config:
             cfg.sakura_tunnel_id = max(0, int(cfg.sakura_tunnel_id))
         except Exception:
             cfg.sakura_tunnel_id = 0
+        try:
+            cfg.sakura_server_node_id = max(0, int(cfg.sakura_server_node_id))
+        except Exception:
+            cfg.sakura_server_node_id = 0
+        try:
+            cfg.sakura_server_tunnel_id = max(
+                0, int(cfg.sakura_server_tunnel_id)
+            )
+        except Exception:
+            cfg.sakura_server_tunnel_id = 0
         cfg.easytier_machine_id = str(cfg.easytier_machine_id or "").strip()
         if not cfg.easytier_machine_id:
             # 只在房间里用来区分玩家，不包含可识别的硬件信息。
@@ -230,6 +278,13 @@ class Config:
             for key, value in cfg.version_loaders.items()
             if str(key).strip() and str(value).strip()
         }
+        if not isinstance(cfg.version_names, dict):
+            cfg.version_names = {}
+        cfg.version_names = {
+            str(key): str(value).strip()
+            for key, value in cfg.version_names.items()
+            if str(key).strip() and str(value).strip()
+        }
         if not isinstance(cfg.version_memory, dict):
             cfg.version_memory = {}
         clean_memory: dict[str, int] = {}
@@ -249,6 +304,22 @@ class Config:
             if str(key).strip()
         }
         cfg.loaders_migrated = bool(cfg.loaders_migrated)
+        if cfg.theme not in ("light", "dark"):
+            cfg.theme = "dark"
+        try:
+            cfg.mod_page_size = max(10, min(100, int(cfg.mod_page_size)))
+        except Exception:
+            cfg.mod_page_size = 20
+        if cfg.theme_palette not in THEME_PALETTES:
+            cfg.theme_palette = "sakura"
+        cfg.background_image = str(cfg.background_image or "").strip()
+        if cfg.background_mode not in ("cover", "contain", "tile"):
+            cfg.background_mode = "cover"
+        try:
+            cfg.background_opacity = max(0, min(100, int(cfg.background_opacity)))
+        except Exception:
+            cfg.background_opacity = 28
+        cfg.launch_background = bool(cfg.launch_background)
         return cfg
 
     @property

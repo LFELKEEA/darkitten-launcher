@@ -1,13 +1,16 @@
 from __future__ import annotations
 
+import ctypes
+import sys
 import time
 from datetime import datetime
 from pathlib import Path
 
-from PySide6.QtCore import Qt, QTimer, QUrl, Signal
+from PySide6.QtCore import QEvent, Qt, QTimer, QUrl, Signal
 from PySide6.QtGui import (
     QDesktopServices,
     QImage,
+    QKeyEvent,
     QPainter,
     QPainterPath,
     QPixmap,
@@ -15,6 +18,7 @@ from PySide6.QtGui import (
 from PySide6.QtWidgets import (
     QApplication,
     QComboBox,
+    QFileDialog,
     QFrame,
     QHBoxLayout,
     QLabel,
@@ -31,6 +35,8 @@ from PySide6.QtWidgets import (
 )
 
 from ...java import pick_java
+from ...mods import list_mods
+from ...server_config import read_server_properties
 from ...servers import (
     EULA_URL,
     SERVER_BADGE,
@@ -38,9 +44,13 @@ from ...servers import (
     ServerError,
     ServerInfo,
     ServerProcess,
+    addon_import_conflicts,
     addons_dir,
     check_port,
+    delete_addon,
+    import_addon_files,
     list_addons,
+    scan_addon_paths,
     required_java_major,
     save_server,
     scan_servers,
@@ -49,9 +59,24 @@ from ...servers import (
     update_server_properties,
     write_eula,
 )
-from ...workers import ServerInstallWorker
+from ...sakura import (
+    SAKURA_PANEL,
+    SakuraNode,
+    SakuraTunnel,
+    SakuraTunnelProcess,
+    SakuraUser,
+    remove_tunnel_config,
+)
+from ...workers import (
+    ModUpdateApplyWorker,
+    ModUpdateCheckWorker,
+    SakuraLoginWorker,
+    SakuraRoomWorker,
+    ServerInstallWorker,
+)
 from .. import icons
-from ..dialogs import ConfirmDialog, NoticeDialog
+from ..dialogs import ConfirmDialog, NoticeDialog, TextInputDialog
+from ..mod_update_dialog import ModUpdatesDialog
 from ..server_addons import ServerAddonDialog
 from ..server_config_dialog import ServerConfigDialog
 from ..server_dialog import ServerCreateDialog
@@ -64,6 +89,7 @@ from ..widgets import (
     colors,
     hline,
     icon_button,
+    local_transfer_paths,
     repolish,
     transparent_children,
 )
@@ -87,6 +113,52 @@ STATE_BADGE = {
     "running": "green",
     "stopping": "orange",
 }
+
+
+def _caps_lock_on() -> bool:
+    if sys.platform != "win32":
+        return False
+    try:
+        return bool(ctypes.windll.user32.GetKeyState(0x14) & 1)
+    except Exception:
+        return False
+
+
+def _shifted_key_event(event: QKeyEvent) -> QKeyEvent | None:
+    """按住 Shift 或开启 CapsLock 时，把投递成小写的单个字母改回大写。
+
+    Windows 上部分键盘布局或输入法会把 Shift+字母作为小写 text 交给
+    QLineEdit，导致服务端指令里的大写（玩家名、say 内容等）输不进去。
+    这里只在大小写与修饰键不一致时修正，中文输入法组合不受影响。
+    """
+    if event.type() != QEvent.KeyPress:
+        return None
+    text = event.text()
+    if (
+        len(text) != 1
+        or not text.isascii()
+        or not text.isalpha()
+        or not text.islower()
+    ):
+        return None
+    shift = bool(event.modifiers() & Qt.ShiftModifier)
+    if not (shift ^ _caps_lock_on()):
+        return None
+    return QKeyEvent(
+        event.type(),
+        event.key(),
+        event.modifiers(),
+        text.upper(),
+        event.isAutoRepeat(),
+        event.count(),
+    )
+
+
+class ConsoleCommandEdit(QLineEdit):
+    """服务端控制台指令输入框，保证 Shift/CapsLock 能输入大写。"""
+
+    def keyPressEvent(self, event: QKeyEvent) -> None:
+        super().keyPressEvent(_shifted_key_event(event) or event)
 
 
 class _ElidedLabel(QLabel):
@@ -117,6 +189,26 @@ class _ElidedLabel(QLabel):
 
 
 SERVER_ICON_NAMES = ("server-icon.png", "icon.png")
+SERVER_ICON_SIZE = 64
+
+
+def _fit_server_icon(image: QImage) -> QImage:
+    """居中裁剪成正方形并缩放到 64×64，Minecraft 服务端只认这个尺寸。"""
+    if image.isNull():
+        return image
+    side = min(image.width(), image.height())
+    cropped = image.copy(
+        max(0, (image.width() - side) // 2),
+        max(0, (image.height() - side) // 2),
+        side,
+        side,
+    )
+    return cropped.scaled(
+        SERVER_ICON_SIZE,
+        SERVER_ICON_SIZE,
+        Qt.IgnoreAspectRatio,
+        Qt.SmoothTransformation,
+    )
 
 
 def _server_icon_pixmap(
@@ -254,6 +346,8 @@ class ServerRow(QFrame):
 
 class AddonRow(QFrame):
     toggled = Signal(object, bool)
+    details_requested = Signal(object)
+    delete_requested = Signal(object)
 
     def __init__(
         self, addon: AddonFile, is_plugin: bool, parent: QWidget | None = None
@@ -271,13 +365,21 @@ class AddonRow(QFrame):
         icon = QLabel()
         icon.setFixedSize(30, 30)
         icon.setAlignment(Qt.AlignCenter)
-        icon.setPixmap(
-            icons.pixmap(
-                "plug" if is_plugin else "cube",
-                colors()["purple"] if is_plugin else colors()["accent"],
-                18,
+        pixmap = QPixmap()
+        if addon.icon_bytes and pixmap.loadFromData(addon.icon_bytes):
+            icon.setPixmap(
+                pixmap.scaled(
+                    30, 30, Qt.KeepAspectRatio, Qt.SmoothTransformation
+                )
             )
-        )
+        else:
+            icon.setPixmap(
+                icons.pixmap(
+                    "plug" if is_plugin else "cube",
+                    colors()["purple"] if is_plugin else colors()["accent"],
+                    18,
+                )
+            )
         layout.addWidget(icon)
 
         info_layout = QVBoxLayout()
@@ -285,10 +387,33 @@ class AddonRow(QFrame):
         name = _ElidedLabel(addon.name)
         name.setStyleSheet("font-weight: 600; font-size: 12px;")
         info_layout.addWidget(name)
-        meta = _ElidedLabel(f"{addon.filename} · {addon.size_text}")
+        meta_bits = [addon.filename, addon.size_text]
+        if addon.version:
+            meta_bits.insert(0, f"v{addon.version}")
+        if addon.loader:
+            meta_bits.insert(
+                1 if addon.version else 0, addon.loader
+            )
+        meta = _ElidedLabel(" · ".join(meta_bits))
         meta.setObjectName("Tiny")
         info_layout.addWidget(meta)
         layout.addLayout(info_layout, 1)
+        tips = [addon.filename]
+        if addon.version:
+            tips.append(f"版本 {addon.version}")
+        if addon.loader:
+            tips.append(addon.loader)
+        self.setToolTip(" · ".join(tips))
+
+        info_btn = icon_button("message", "查看介绍", colors()["accent"], 28, 14)
+        info_btn.clicked.connect(lambda _=False: self.details_requested.emit(self.addon))
+        layout.addWidget(info_btn)
+
+        delete_btn = icon_button("trash", "卸载并移入回收站", colors()["muted"], 28, 14)
+        delete_btn.clicked.connect(
+            lambda _=False: self.delete_requested.emit(self.addon)
+        )
+        layout.addWidget(delete_btn)
 
         self.switch = Switch()
         self.switch.setChecked(addon.enabled)
@@ -297,6 +422,108 @@ class AddonRow(QFrame):
             lambda checked: self.toggled.emit(self.addon, checked)
         )
         layout.addWidget(self.switch)
+
+
+class AddonDropArea(QScrollArea):
+    """支持把 .jar 文件直接拖进服务端插件/Mod 列表。"""
+
+    files_dropped = Signal(list)
+
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setAcceptDrops(True)
+        self.setProperty("dklAddonDrop", True)
+        self._hint = QLabel("松开鼠标，把 jar 放进这个服务端", self.viewport())
+        self._hint.setAlignment(Qt.AlignCenter)
+        self._hint.setAttribute(Qt.WA_TransparentForMouseEvents, True)
+        self._hint.setStyleSheet(
+            "background: rgba(20, 12, 18, 225);"
+            f" border: 2px dashed {colors()['accent']};"
+            " border-radius: 10px; color: #F8E9EF;"
+            " font-size: 12px; font-weight: 700;"
+        )
+        self._hint.hide()
+
+    @staticmethod
+    def _local_paths(mime) -> list[Path]:
+        result: list[Path] = []
+        try:
+            candidates = local_transfer_paths(mime)
+        except Exception:
+            return result
+        for path in candidates:
+            try:
+                if path.is_file() and path.name.lower().endswith(
+                    (".jar", ".jar.disabled")
+                ):
+                    result.append(path)
+            except OSError:
+                continue
+        return result
+
+    def _set_drag_active(self, active: bool) -> None:
+        if active:
+            self._position_hint()
+            self._hint.show()
+            self._hint.raise_()
+        else:
+            self._hint.hide()
+
+    def _position_hint(self) -> None:
+        width = max(80, self.viewport().width() - 24)
+        self._hint.setGeometry(12, 10, width, 34)
+
+    def viewportEvent(self, event) -> bool:
+        # QAbstractScrollArea 的 viewport 默认接收拖放，事件不会直接到
+        # 滚动区域本身，这里转给下面的处理函数。
+        etype = event.type()
+        if etype == QEvent.DragEnter:
+            self.dragEnterEvent(event)
+            return True
+        if etype == QEvent.DragMove:
+            self.dragMoveEvent(event)
+            return True
+        if etype == QEvent.DragLeave:
+            self.dragLeaveEvent(event)
+            return True
+        if etype == QEvent.Drop:
+            self.dropEvent(event)
+            return True
+        return super().viewportEvent(event)
+
+    def dragEnterEvent(self, event) -> None:
+        if self._local_paths(event.mimeData()):
+            event.setDropAction(Qt.CopyAction)
+            event.accept()
+            self._set_drag_active(True)
+            return
+        event.ignore()
+
+    def dragMoveEvent(self, event) -> None:
+        if self._local_paths(event.mimeData()):
+            event.setDropAction(Qt.CopyAction)
+            event.accept()
+            return
+        event.ignore()
+
+    def dragLeaveEvent(self, event) -> None:
+        self._set_drag_active(False)
+        super().dragLeaveEvent(event)
+
+    def dropEvent(self, event) -> None:
+        paths = self._local_paths(event.mimeData())
+        self._set_drag_active(False)
+        if not paths:
+            event.ignore()
+            return
+        event.setDropAction(Qt.CopyAction)
+        event.accept()
+        self.files_dropped.emit(paths)
+
+    def resizeEvent(self, event) -> None:
+        super().resizeEvent(event)
+        if self._hint.isVisible():
+            self._position_hint()
 
 
 class ServerPage(QWidget):
@@ -311,6 +538,16 @@ class ServerPage(QWidget):
         self._expected_stop: set[str] = set()
         self._install_worker: ServerInstallWorker | None = None
         self._install_folder = ""
+        self._addon_update_worker: ModUpdateCheckWorker | None = None
+        self._sakura_login_worker: SakuraLoginWorker | None = None
+        self._sakura_worker: SakuraRoomWorker | None = None
+        self._sakura_tunnel: SakuraTunnelProcess | None = None
+        self._sakura_payload: dict | None = None
+        self._sakura_user: SakuraUser | None = None
+        self._sakura_nodes: dict[int, SakuraNode] = {}
+        self._sakura_tunnels: list[SakuraTunnel] = []
+        self._sakura_busy = False
+        self._online_closing = False
         self._build()
         self.main.java_installs_changed.connect(self._refresh_java_sources)
         self.main.ensure_java_detected()
@@ -483,9 +720,39 @@ class ServerPage(QWidget):
         self.folder_btn.clicked.connect(self._open_server_folder)
         header.addWidget(self.folder_btn)
 
+        self.icon_edit_btn = icon_button(
+            "image",
+            "修改服务器图标（自动生成 64×64 的 server-icon.png）",
+            size=32,
+            icon_size=16,
+        )
+        self.icon_edit_btn.clicked.connect(self.change_server_icon)
+        header.addWidget(self.icon_edit_btn)
+
+        self.rename_icon_btn = icon_button(
+            "edit", "重命名服务端", size=32, icon_size=16
+        )
+        self.rename_icon_btn.clicked.connect(self.rename_server)
+        header.addWidget(self.rename_icon_btn)
+
+        self.public_btn = icon_button(
+            "globe",
+            "公网联机：用樱花穿透把服务端分享给朋友（无需房间号）",
+            size=32,
+            icon_size=16,
+        )
+        self.public_btn.clicked.connect(self.open_online_tab)
+        header.addWidget(self.public_btn)
+
         self.pack_icon_btn = icon_button("package", "打包服务端", size=32, icon_size=16)
         self.pack_icon_btn.clicked.connect(self.export_server_pack)
         header.addWidget(self.pack_icon_btn)
+
+        self.uninstall_icon_btn = icon_button(
+            "trash", "卸载服务端（整个文件夹移入回收站）", size=32, icon_size=16
+        )
+        self.uninstall_icon_btn.clicked.connect(self.delete_server)
+        header.addWidget(self.uninstall_icon_btn)
 
         self.start_btn = QPushButton("启动")
         self.start_btn.setObjectName("Primary")
@@ -524,6 +791,7 @@ class ServerPage(QWidget):
         self.tabs.add_item("控制台", "console")
         self.tabs.add_item("插件", "addons")
         self.tabs.add_item("设置", "settings")
+        self.tabs.add_item("公网联机", "online")
         self.tabs.changed.connect(self._on_tab_changed)
         tabs_row.addWidget(self.tabs)
         tabs_row.addStretch(1)
@@ -536,6 +804,7 @@ class ServerPage(QWidget):
         self.tab_stack.addWidget(self._build_console_tab())
         self.tab_stack.addWidget(self._build_addons_tab())
         self.tab_stack.addWidget(self._build_settings_tab())
+        self.tab_stack.addWidget(self._build_online_tab())
         layout.addWidget(self.tab_stack, 1)
         return content
 
@@ -562,6 +831,27 @@ class ServerPage(QWidget):
         info_row.addWidget(self.copy_address_btn)
         layout.addLayout(info_row)
 
+        self.console_banner = QFrame()
+        self.console_banner.setObjectName("SoftCard")
+        self.console_banner.setAttribute(Qt.WA_StyledBackground, True)
+        banner_layout = QHBoxLayout(self.console_banner)
+        banner_layout.setContentsMargins(10, 7, 10, 7)
+        banner_layout.setSpacing(7)
+        banner_icon = QLabel()
+        banner_icon.setPixmap(icons.pixmap("globe", colors()["accent"], 16))
+        banner_layout.addWidget(banner_icon, 0, Qt.AlignTop)
+        self.console_banner_label = QLabel("")
+        self.console_banner_label.setObjectName("Tiny")
+        self.console_banner_label.setWordWrap(True)
+        banner_layout.addWidget(self.console_banner_label, 1)
+        self.console_banner_btn = QPushButton("打开公网联机")
+        self.console_banner_btn.setObjectName("Soft")
+        self.console_banner_btn.setCursor(Qt.PointingHandCursor)
+        self.console_banner_btn.clicked.connect(self.open_online_tab)
+        banner_layout.addWidget(self.console_banner_btn)
+        self.console_banner.setVisible(False)
+        layout.addWidget(self.console_banner)
+
         self.console = QPlainTextEdit()
         self.console.setReadOnly(True)
         self.console.setMaximumBlockCount(4000)
@@ -570,7 +860,7 @@ class ServerPage(QWidget):
 
         command_row = QHBoxLayout()
         command_row.setSpacing(6)
-        self.command_edit = QLineEdit()
+        self.command_edit = ConsoleCommandEdit()
         self.command_edit.setPlaceholderText("输入控制台命令，例如 list、say 你好、stop…")
         self.command_edit.returnPressed.connect(self.send_command)
         command_row.addWidget(self.command_edit, 1)
@@ -625,17 +915,40 @@ class ServerPage(QWidget):
         self.addon_open_btn.setIcon(icons.icon("folder", colors()["text2"], 14))
         self.addon_open_btn.clicked.connect(self._open_addons_folder)
         top.addWidget(self.addon_open_btn)
+        layout.addLayout(top)
+
+        actions = QHBoxLayout()
+        actions.setSpacing(6)
+        drop_tip = QLabel("把 .jar 拖进列表即可添加")
+        drop_tip.setObjectName("Tiny")
+        actions.addWidget(drop_tip)
+        actions.addStretch(1)
+        self.addon_check_btn = QPushButton("检查更新")
+        self.addon_check_btn.setObjectName("Ghost")
+        self.addon_check_btn.setCursor(Qt.PointingHandCursor)
+        self.addon_check_btn.setIcon(icons.icon("refresh", colors()["text2"], 14))
+        self.addon_check_btn.setToolTip("检查已安装插件/Mod 是否有新版本")
+        self.addon_check_btn.clicked.connect(self._check_addon_updates)
+        actions.addWidget(self.addon_check_btn)
+        self.addon_import_btn = QPushButton("添加内容")
+        self.addon_import_btn.setObjectName("Secondary")
+        self.addon_import_btn.setCursor(Qt.PointingHandCursor)
+        self.addon_import_btn.setIcon(icons.icon("plus", colors()["text2"], 14))
+        self.addon_import_btn.setToolTip("从文件管理器选择 .jar 添加")
+        self.addon_import_btn.clicked.connect(self._import_addon_files)
+        actions.addWidget(self.addon_import_btn)
         self.addon_download_btn = QPushButton("下载插件")
         self.addon_download_btn.setObjectName("Soft")
         self.addon_download_btn.setCursor(Qt.PointingHandCursor)
         self.addon_download_btn.setIcon(icons.icon("download", colors()["accent"], 14))
         self.addon_download_btn.clicked.connect(self.open_addon_dialog)
-        top.addWidget(self.addon_download_btn)
-        layout.addLayout(top)
+        actions.addWidget(self.addon_download_btn)
+        layout.addLayout(actions)
 
-        self.addon_scroll = QScrollArea()
+        self.addon_scroll = AddonDropArea()
         self.addon_scroll.setWidgetResizable(True)
         self.addon_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.addon_scroll.files_dropped.connect(self._import_addon_paths)
         self.addon_holder = QWidget()
         self.addon_layout = QVBoxLayout(self.addon_holder)
         self.addon_layout.setContentsMargins(0, 0, 3, 0)
@@ -683,7 +996,7 @@ class ServerPage(QWidget):
         online_row.addWidget(self._form_label("正版验证"))
         self.settings_online = Switch()
         online_row.addWidget(self.settings_online)
-        self.settings_online.toggled.connect(lambda _: self._update_online_hint())
+        self.settings_online.toggled.connect(self._settings_online_toggled)
         self.online_hint = QLabel("")
         self.online_hint.setObjectName("Tiny")
         self.online_hint.setWordWrap(True)
@@ -759,6 +1072,17 @@ class ServerPage(QWidget):
         self.pack_btn.clicked.connect(self.export_server_pack)
         actions.addWidget(self.pack_btn)
 
+        self.import_world_btn = QPushButton("导入存档")
+        self.import_world_btn.setObjectName("Soft")
+        self.import_world_btn.setCursor(Qt.PointingHandCursor)
+        self.import_world_btn.setIcon(icons.icon("globe", colors()["accent"], 14))
+        self.import_world_btn.setToolTip(
+            "把其他游戏版本的存档导入这个服务端，可以只导入主世界、下界或末地；"
+            "只选部分维度时合并，未选维度和玩家数据保持原样"
+        )
+        self.import_world_btn.clicked.connect(self.import_world_dialog)
+        actions.addWidget(self.import_world_btn)
+
         self.reinstall_btn = QPushButton("重新安装")
         self.reinstall_btn.setObjectName("Soft")
         self.reinstall_btn.setCursor(Qt.PointingHandCursor)
@@ -767,9 +1091,10 @@ class ServerPage(QWidget):
         actions.addWidget(self.reinstall_btn)
         actions.addStretch(1)
 
-        self.delete_btn = QPushButton("删除服务端")
+        self.delete_btn = QPushButton("卸载服务端")
         self.delete_btn.setObjectName("Danger")
         self.delete_btn.setCursor(Qt.PointingHandCursor)
+        self.delete_btn.setToolTip("把整个服务端文件夹移入回收站")
         self.delete_btn.clicked.connect(self.delete_server)
         actions.addWidget(self.delete_btn)
         layout.addLayout(actions)
@@ -781,6 +1106,214 @@ class ServerPage(QWidget):
         note.setObjectName("Tiny")
         note.setWordWrap(True)
         layout.addWidget(note)
+        layout.addStretch(1)
+        return scroll
+
+    def _build_online_tab(self) -> QWidget:
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        page = QWidget()
+        scroll.setWidget(page)
+        layout = QVBoxLayout(page)
+        layout.setContentsMargins(2, 2, 8, 8)
+        layout.setSpacing(9)
+
+        intro = QLabel(
+            "把当前服务端的端口通过樱花穿透暴露到公网。这里不需要房间号："
+            "朋友在多人游戏里添加服务器，填写下面的公网地址即可进入。"
+        )
+        intro.setObjectName("Muted")
+        intro.setWordWrap(True)
+        layout.addWidget(intro)
+
+        token_box = QFrame()
+        token_box.setObjectName("SoftCard")
+        token_box.setAttribute(Qt.WA_StyledBackground, True)
+        token_layout = QVBoxLayout(token_box)
+        token_layout.setContentsMargins(12, 10, 12, 10)
+        token_layout.setSpacing(6)
+        token_head = QHBoxLayout()
+        token_title = QLabel("樱花穿透账户")
+        token_title.setStyleSheet("font-weight: 700; font-size: 12px;")
+        token_head.addWidget(token_title)
+        token_head.addStretch(1)
+        self.online_account_badge = badge("未连接", "gray")
+        token_head.addWidget(self.online_account_badge)
+        token_layout.addLayout(token_head)
+
+        token_row = QHBoxLayout()
+        token_row.setSpacing(6)
+        self.online_token_edit = QLineEdit()
+        self.online_token_edit.setPlaceholderText("樱花穿透访问密钥")
+        self.online_token_edit.setEchoMode(QLineEdit.EchoMode.Password)
+        self.online_token_edit.setClearButtonEnabled(True)
+        self.online_token_edit.returnPressed.connect(self.login_sakura)
+        token_row.addWidget(self.online_token_edit, 1)
+        self.online_show_btn = QPushButton("显示")
+        self.online_show_btn.setObjectName("Ghost")
+        self.online_show_btn.setFixedWidth(48)
+        self.online_show_btn.setCursor(Qt.PointingHandCursor)
+        self.online_show_btn.clicked.connect(self._toggle_online_token)
+        token_row.addWidget(self.online_show_btn)
+        self.online_login_btn = QPushButton("验证并连接")
+        self.online_login_btn.setObjectName("Soft")
+        self.online_login_btn.setCursor(Qt.PointingHandCursor)
+        self.online_login_btn.clicked.connect(self.login_sakura)
+        token_row.addWidget(self.online_login_btn)
+        token_layout.addLayout(token_row)
+        token = self.main.config.sakura_access_token
+        if token:
+            self.online_token_edit.setText(token)
+            self.online_token_edit.setPlaceholderText("已保存访问密钥（已加密）")
+        self.online_account_line = QLabel("尚未连接樱花穿透账户。")
+        self.online_account_line.setObjectName("Tiny")
+        self.online_account_line.setWordWrap(True)
+        token_layout.addWidget(self.online_account_line)
+        get_key_btn = QPushButton("获取访问密钥")
+        get_key_btn.setObjectName("Ghost")
+        get_key_btn.setCursor(Qt.PointingHandCursor)
+        get_key_btn.setIcon(icons.icon("external", colors()["text2"], 13))
+        get_key_btn.clicked.connect(
+            lambda: QDesktopServices.openUrl(QUrl(SAKURA_PANEL))
+        )
+        token_layout.addWidget(get_key_btn, 0, Qt.AlignLeft)
+        layout.addWidget(token_box)
+
+        node_box = QFrame()
+        node_box.setObjectName("SoftCard")
+        node_box.setAttribute(Qt.WA_StyledBackground, True)
+        node_layout = QVBoxLayout(node_box)
+        node_layout.setContentsMargins(12, 10, 12, 10)
+        node_layout.setSpacing(6)
+        node_row = QHBoxLayout()
+        node_row.setSpacing(7)
+        node_title = QLabel("穿透节点")
+        node_title.setStyleSheet("font-weight: 700; font-size: 12px;")
+        node_row.addWidget(node_title)
+        self.online_node_combo = QComboBox()
+        self.online_node_combo.setMinimumWidth(260)
+        node_row.addWidget(self.online_node_combo, 1)
+        self.online_node_refresh = icon_button("refresh", "刷新节点列表")
+        self.online_node_refresh.clicked.connect(
+            lambda: self.login_sakura(silent=True)
+        )
+        node_row.addWidget(self.online_node_refresh)
+        node_layout.addLayout(node_row)
+        node_hint = QLabel(
+            "公开宣传服务器时必须选择带“多线”标记的专用节点；"
+            "普通节点只适合朋友之间私下使用。"
+        )
+        node_hint.setObjectName("Tiny")
+        node_hint.setWordWrap(True)
+        node_layout.addWidget(node_hint)
+        layout.addWidget(node_box)
+
+        access_box = QFrame()
+        access_box.setObjectName("SoftCard")
+        access_box.setAttribute(Qt.WA_StyledBackground, True)
+        access_layout = QVBoxLayout(access_box)
+        access_layout.setContentsMargins(12, 10, 12, 10)
+        access_layout.setSpacing(6)
+        offline_row = QHBoxLayout()
+        offline_row.setSpacing(8)
+        offline_title = QLabel("正版验证")
+        offline_title.setStyleSheet("font-weight: 700; font-size: 12px;")
+        offline_row.addWidget(offline_title)
+        self.online_offline_badge = badge("仅正版账户", "gray")
+        offline_row.addWidget(self.online_offline_badge)
+        self.online_offline_hint = QLabel("")
+        self.online_offline_hint.setObjectName("Tiny")
+        self.online_offline_hint.setWordWrap(True)
+        offline_row.addWidget(self.online_offline_hint, 1)
+        self.online_settings_btn = QPushButton("去设置修改")
+        self.online_settings_btn.setObjectName("Ghost")
+        self.online_settings_btn.setCursor(Qt.PointingHandCursor)
+        self.online_settings_btn.clicked.connect(self._show_online_settings_tab)
+        offline_row.addWidget(self.online_settings_btn)
+        access_layout.addLayout(offline_row)
+        note = QLabel(
+            "这里的值和“设置”页的正版验证开关是同一个配置，修改请到“设置”页操作；"
+            "保存后需要重启服务端才会生效。"
+        )
+        note.setObjectName("Tiny")
+        note.setWordWrap(True)
+        access_layout.addWidget(note)
+        layout.addWidget(access_box)
+
+        action_row = QHBoxLayout()
+        action_row.setSpacing(7)
+        self.online_start_btn = QPushButton("启动公网隧道")
+        self.online_start_btn.setObjectName("Primary")
+        self.online_start_btn.setCursor(Qt.PointingHandCursor)
+        self.online_start_btn.setIcon(icons.icon("globe", "#FFFFFF", 15))
+        self.online_start_btn.clicked.connect(self.start_online_tunnel)
+        action_row.addWidget(self.online_start_btn)
+        self.online_close_btn = QPushButton("关闭隧道")
+        self.online_close_btn.setObjectName("Danger")
+        self.online_close_btn.setCursor(Qt.PointingHandCursor)
+        self.online_close_btn.clicked.connect(self.close_online_tunnel)
+        self.online_close_btn.setVisible(False)
+        action_row.addWidget(self.online_close_btn)
+        action_row.addStretch(1)
+        layout.addLayout(action_row)
+
+        self.online_status = QLabel("连接樱花账户后即可启动公网隧道。")
+        self.online_status.setObjectName("Tiny")
+        self.online_status.setWordWrap(True)
+        layout.addWidget(self.online_status)
+
+        self.online_progress = QProgressBar()
+        self.online_progress.setRange(0, 100)
+        self.online_progress.setTextVisible(False)
+        self.online_progress.setFixedHeight(6)
+        self.online_progress.setVisible(False)
+        layout.addWidget(self.online_progress)
+
+        address_box = QFrame()
+        address_box.setObjectName("SoftCard")
+        address_box.setAttribute(Qt.WA_StyledBackground, True)
+        address_layout = QVBoxLayout(address_box)
+        address_layout.setContentsMargins(12, 9, 12, 9)
+        address_layout.setSpacing(4)
+        address_caption = QLabel("公网服务器地址")
+        address_caption.setObjectName("Tiny")
+        address_layout.addWidget(address_caption)
+        address_row = QHBoxLayout()
+        address_row.setSpacing(7)
+        self.online_address = QLabel("隧道启动后显示")
+        self.online_address.setStyleSheet(
+            "font-size: 16px; font-weight: 800; letter-spacing: 0.5px;"
+        )
+        self.online_address.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        self.online_address.setWordWrap(True)
+        address_row.addWidget(self.online_address, 1)
+        self.online_copy_btn = QPushButton("复制地址")
+        self.online_copy_btn.setObjectName("Soft")
+        self.online_copy_btn.setCursor(Qt.PointingHandCursor)
+        self.online_copy_btn.setIcon(icons.icon("copy", colors()["accent"], 14))
+        self.online_copy_btn.clicked.connect(self._copy_public_address)
+        address_row.addWidget(self.online_copy_btn)
+        address_layout.addLayout(address_row)
+        address_hint = QLabel(
+            "朋友打开 Minecraft → 多人游戏 → 添加服务器，把这个地址填进去即可。"
+        )
+        address_hint.setObjectName("Tiny")
+        address_hint.setWordWrap(True)
+        address_layout.addWidget(address_hint)
+        self.online_address_box = address_box
+        address_box.setVisible(False)
+        layout.addWidget(address_box)
+
+        self.online_log = QPlainTextEdit()
+        self.online_log.setObjectName("SoftLog")
+        self.online_log.setReadOnly(True)
+        self.online_log.setMaximumBlockCount(300)
+        self.online_log.setFixedHeight(110)
+        self.online_log.setPlaceholderText("内置 frpc 的连接日志会显示在这里")
+        self.online_log.setVisible(False)
+        layout.addWidget(self.online_log)
+
         layout.addStretch(1)
         return scroll
 
@@ -934,6 +1467,12 @@ class ServerPage(QWidget):
         )
         self.addon_download_btn.setText(
             "下载插件" if info.is_plugin_server else "下载 Mod"
+        )
+        self.addon_check_btn.setToolTip(
+            f"检查已安装{info.addon_label}是否有新版本"
+        )
+        self.addon_import_btn.setToolTip(
+            f"从文件管理器选择{info.addon_label} .jar 添加"
         )
         self.addon_path_label.setText(str(addons_dir(info)))
         self.address_label.setText(f"localhost:{info.port}")
@@ -1190,8 +1729,15 @@ class ServerPage(QWidget):
         name = info.name if info else folder
         self._append_console(folder, "服务端已就绪")
         self.toast(f"{name} 已就绪，可以连接了", "success")
+        if self._sakura_payload is None:
+            self.toast(
+                "想让朋友从公网进入，请到“公网联机”启动樱花穿透"
+                "（无需房间号，直接分享服务器地址）",
+                "info",
+            )
         self._update_controls()
         self._refresh_rows_state()
+        self._update_console_banner()
 
     def _on_process_state(self, folder: str, state: str) -> None:
         if folder == self._selected_folder:
@@ -1270,6 +1816,13 @@ class ServerPage(QWidget):
         self.reinstall_btn.setEnabled(not running and not installing)
         self.pack_btn.setEnabled(not running and not installing)
         self.pack_icon_btn.setEnabled(not running and not installing)
+        self.uninstall_icon_btn.setEnabled(not running and not installing)
+        self.uninstall_icon_btn.setToolTip(
+            "服务端运行中，先停止再卸载"
+            if running
+            else "卸载服务端（整个文件夹移入回收站）"
+        )
+        self._sync_online_controls()
 
     # ------------------------------------------------------------------
     # 插件
@@ -1295,8 +1848,9 @@ class ServerPage(QWidget):
         addons = list_addons(info)
         if not addons:
             self.addon_empty.setText(
-                f"还没有{info.addon_label}。点击右上角“下载{info.addon_label}”"
-                f"从 Modrinth 获取适配 {info.mc_version} 的项目。"
+                f"还没有{info.addon_label}。点击“下载{info.addon_label}”从 "
+                f"Modrinth 或 CurseForge 获取适配 {info.mc_version} 的项目，"
+                "也可以把 .jar 直接拖进这个列表，或点击“添加内容”从文件管理器选择。"
             )
             self.addon_empty.setVisible(True)
             return
@@ -1306,9 +1860,53 @@ class ServerPage(QWidget):
             row.toggled.connect(
                 lambda item, checked, i=info: self._toggle_addon(i, item, checked)
             )
+            row.details_requested.connect(
+                lambda item, i=info: self._show_addon_info(i, item)
+            )
+            row.delete_requested.connect(
+                lambda item, i=info: self._delete_addon(i, item)
+            )
             self.addon_layout.insertWidget(self.addon_layout.count() - 1, row)
         self.addon_layout.activate()
         self.addon_holder.setMinimumHeight(self.addon_layout.sizeHint().height())
+
+    def _show_addon_info(self, info: ServerInfo, addon: AddonFile) -> None:
+        if addon.project_id:
+            hit = {
+                "project_id": addon.project_id,
+                "title": addon.name,
+                "description": addon.description,
+                "project_url": addon.project_url,
+                "source": addon.source or "modrinth",
+                "source_label": addon.source_label,
+                "content_type": "mod",
+                "categories": [],
+                "downloads": 0,
+                "icon_url": "",
+            }
+            ServerAddonDialog(self.main, info, hit).exec()
+            return
+        text = addon.intro
+        if not text:
+            details = [addon.filename]
+            if addon.version:
+                details.append(f"版本 {addon.version}")
+            if addon.loader:
+                details.append(addon.loader)
+            text = (
+                f"{addon.name}\n\n"
+                + " · ".join(details)
+                + "\n\nJAR 内没有可读取的简介，也没有记录在线来源。"
+                "文件仍可正常启用、禁用或卸载。"
+            )
+        else:
+            header = [addon.name]
+            if addon.version:
+                header.append(f"v{addon.version}")
+            if addon.loader:
+                header.append(addon.loader)
+            text = f"{' · '.join(header)}\n\n{text}"
+        NoticeDialog(self, addon.name, text, icon_name="cube").exec()
 
     def _toggle_addon(
         self, info: ServerInfo, addon: AddonFile, checked: bool
@@ -1327,6 +1925,43 @@ class ServerPage(QWidget):
             self.toast("需要重启服务端后生效", "info")
         self.refresh_addons()
 
+    def _delete_addon(self, info: ServerInfo, addon: AddonFile) -> None:
+        running = info.folder in self._processes
+        dialog = ConfirmDialog(
+            self,
+            f"卸载{info.addon_label}",
+            f"确定卸载 {addon.name} 吗？",
+            primary_text="移入回收站",
+            secondary_text="取消",
+            icon_name="trash",
+            icon_color=colors()["red"],
+            details=(
+                f"文件会移动到回收站，下载记录和图标也会一并清理：\n"
+                f"{addon.path}"
+                + (
+                    "\n\n服务端正在运行，卸载后需要重启才能生效。"
+                    if running
+                    else ""
+                )
+            ),
+        )
+        if not dialog.exec():
+            return
+        ok, message = delete_addon(addon)
+        if not ok:
+            NoticeDialog(
+                self,
+                "卸载失败",
+                f"无法移动{info.addon_label}文件：{message}",
+                button_text="知道了",
+                icon_name="warning",
+            ).exec()
+            return
+        self.toast(f"{addon.name} 已移入回收站", "success")
+        if running:
+            self.toast("需要重启服务端后生效", "info")
+        self.refresh_addons()
+
     def open_addon_dialog(self) -> None:
         info = self._current_info()
         if info is None:
@@ -1334,6 +1969,200 @@ class ServerPage(QWidget):
         dialog = ServerAddonDialog(self.main, info)
         dialog.installed.connect(lambda _: self.refresh_addons())
         dialog.exec()
+        self.refresh_addons()
+
+    # ------------------------------------------------------------------
+    # 插件检查更新与本地导入
+
+    def _check_addon_updates(self) -> None:
+        info = self._current_info()
+        if info is None:
+            return
+        if self._addon_update_worker is not None:
+            self.toast("正在检查更新，请稍候", "info")
+            return
+        mods = list_mods(addons_dir(info))
+        if not mods:
+            self.toast(f"当前服务端还没有安装{info.addon_label}", "info")
+            return
+        content_type = "plugin" if info.is_plugin_server else "mod"
+        self.addon_check_btn.setEnabled(False)
+        self.addon_check_btn.setText("检查中…")
+        worker = ModUpdateCheckWorker(
+            mods,
+            info.mc_version,
+            info.kind,
+            self,
+            content_type=content_type,
+        )
+        self._addon_update_worker = worker
+        worker.progress.connect(self._on_addon_update_progress)
+        worker.finished.connect(
+            lambda updates, errors, folder=info.folder, total=len(mods): (
+                self._on_addon_updates_checked(folder, updates, errors, total)
+            )
+        )
+        worker.start()
+
+    def _on_addon_update_progress(self, done: int, total: int, _name: str) -> None:
+        self.addon_check_btn.setText(f"检查中 {done}/{total}")
+
+    def _on_addon_updates_checked(
+        self, folder: str, updates, errors, total: int = 0
+    ) -> None:
+        self._addon_update_worker = None
+        self.addon_check_btn.setEnabled(True)
+        self.addon_check_btn.setText("检查更新")
+        info = self._current_info()
+        if info is None or info.folder != folder:
+            return
+        found = list(updates or [])
+        checked = f"已检查 {total or len(found)} 个{info.addon_label}"
+        detail = ""
+        if errors:
+            detail = "；".join(str(item) for item in list(errors)[:2])
+        if not found:
+            if detail:
+                self.toast(f"{checked}，检查未完成：{detail}", "info")
+            else:
+                self.toast(
+                    f"{checked}，都是最新版本或没有找到在线来源",
+                    "success",
+                )
+            return
+        if detail:
+            self.toast(f"{checked}，{len(found)} 个可更新，部分检查失败：{detail}", "info")
+        dialog = ModUpdatesDialog(
+            self,
+            found,
+            label=info.addon_label,
+            folder_name=info.addon_dir_name,
+        )
+        if dialog.exec():
+            self._apply_addon_updates(info, dialog.selected)
+
+    def _apply_addon_updates(self, info: ServerInfo, updates) -> None:
+        updates = list(updates or [])
+        if not updates:
+            return
+        if info.folder in self._processes:
+            self.toast("服务端正在运行，请先停止再更新", "error")
+            return
+        target = addons_dir(info)
+        worker = ModUpdateApplyWorker(
+            updates,
+            target,
+            threads=self.main.config.download_threads,
+            parent=self,
+            label=info.addon_label,
+        )
+        worker.finished.connect(
+            lambda success, message, filename, i=info: self._on_addon_updates_applied(
+                i, success, message, filename
+            )
+        )
+        title = (
+            f"更新 {len(updates)} 个{info.addon_label}"
+            if len(updates) > 1
+            else f"更新{info.addon_label}：{updates[0].mod.name}"
+        )
+        self.main.download_center.start_worker(
+            worker,
+            title=title,
+            content_type="mod-update",
+            target=target,
+            source="mixed",
+        )
+        self.toast("更新已加入下载中心，关闭页面也会继续", "info")
+
+    def _on_addon_updates_applied(
+        self, info: ServerInfo, success: bool, message: str, _filename: str
+    ) -> None:
+        self.refresh_addons()
+        self.main.toast(message, "success" if success else "error")
+        if success and info.folder in self._processes:
+            self.toast("需要重启服务端后生效", "info")
+
+    def _import_addon_files(self) -> None:
+        info = self._current_info()
+        if info is None:
+            return
+        start = addons_dir(info)
+        if not start.is_dir():
+            start = info.path
+        files, _selected = QFileDialog.getOpenFileNames(
+            self,
+            f"选择要添加的{info.addon_label}",
+            str(start),
+            f"{info.addon_label} (*.jar *.jar.disabled);;所有文件 (*.*)",
+        )
+        if not files:
+            return
+        self._import_addon_paths(files, info)
+
+    def _import_addon_paths(self, paths, info: ServerInfo | None = None) -> None:
+        info = info or self._current_info()
+        if info is None:
+            self.toast("请先选择一个服务端", "info")
+            return
+        sources, _ignored = scan_addon_paths([Path(item) for item in paths])
+        label = info.addon_label
+        if not sources:
+            NoticeDialog(
+                self,
+                "没有可导入的文件",
+                f"没有找到 .jar 或 .jar.disabled 文件。\n\n"
+                f"可以把 jar 直接拖进列表，或点击“添加内容”重新选择。",
+                button_text="知道了",
+                icon_name="warning",
+            ).exec()
+            return
+        target = addons_dir(info)
+        try:
+            target.mkdir(parents=True, exist_ok=True)
+        except OSError as exc:
+            self.toast(f"无法创建目录：{exc}", "error")
+            return
+
+        conflicts = addon_import_conflicts(sources, target)
+        overwrite = False
+        if conflicts:
+            names = "\n".join(f"· {Path(item).name}" for item in conflicts[:8])
+            if len(conflicts) > 8:
+                names += f"\n…另有 {len(conflicts) - 8} 个"
+            dialog = ConfirmDialog(
+                self,
+                f"发现同名{label}",
+                f"{len(conflicts)} 个文件与现有文件同名，要覆盖吗？",
+                primary_text="覆盖旧文件",
+                secondary_text="跳过同名",
+                icon_name="warning",
+                details=(
+                    names + "\n\n覆盖前会把旧文件备份到 "
+                    ".dkl-meta/backups/addons，不会直接删除。"
+                ),
+            )
+            overwrite = bool(dialog.exec())
+
+        result = import_addon_files(sources, target, overwrite=overwrite)
+        if result.imported:
+            self.toast(f"已导入 {len(result.imported)} 个{label}", "success")
+        if result.replaced:
+            self.toast(f"已覆盖 {len(result.replaced)} 个旧文件并完成备份", "info")
+        if result.skipped:
+            self.toast(
+                f"跳过 {len(result.skipped)} 个文件（内容相同或同名）", "info"
+            )
+        if result.errors:
+            NoticeDialog(
+                self,
+                "部分文件导入失败",
+                "\n".join(result.errors[:8]),
+                button_text="知道了",
+                icon_name="warning",
+            ).exec()
+        if result.imported and info.folder in self._processes:
+            self.toast("需要重启服务端后生效", "info")
         self.refresh_addons()
 
     def _open_addons_folder(self) -> None:
@@ -1398,7 +2227,9 @@ class ServerPage(QWidget):
         self.settings_name.setText(info.name)
         self.settings_memory.setValue(max(1024, min(32768, info.memory_mb)))
         self.settings_port.setValue(max(1024, min(65535, info.port)))
+        self.settings_online.blockSignals(True)
         self.settings_online.setChecked(info.online_mode)
+        self.settings_online.blockSignals(False)
         self._populate_java_combo(info)
         self._update_eula_badge(info)
         self._update_online_hint()
@@ -1412,6 +2243,7 @@ class ServerPage(QWidget):
             self.install_error_label.setVisible(True)
         else:
             self.install_error_label.setVisible(False)
+        self._load_online_settings(info)
 
     def save_settings(self) -> None:
         info = self._current_info()
@@ -1468,6 +2300,7 @@ class ServerPage(QWidget):
     def delete_server(self) -> None:
         info = self._current_info()
         if info is None:
+            self.toast("先选一个服务端，再点卸载", "info")
             return
         process = self._processes.get(info.folder)
         if process is not None and process.is_running:
@@ -1475,9 +2308,9 @@ class ServerPage(QWidget):
             return
         dialog = ConfirmDialog(
             self,
-            "删除服务端",
-            f"确定删除 {info.name} 吗？",
-            primary_text="删除",
+            "卸载服务端",
+            f"确定卸载 {info.name} 吗？",
+            primary_text="移入回收站",
             secondary_text="取消",
             icon_name="trash",
             icon_color=colors()["red"],
@@ -1489,7 +2322,7 @@ class ServerPage(QWidget):
         if not ok:
             NoticeDialog(
                 self,
-                "删除失败",
+                "卸载失败",
                 f"无法移动服务端文件夹：{message}",
                 button_text="知道了",
                 icon_name="warning",
@@ -1515,6 +2348,50 @@ class ServerPage(QWidget):
 
         ServerPackExportDialog(self.main, info).exec()
 
+    def import_world_dialog(self) -> None:
+        info = self._current_info()
+        if info is None:
+            self.toast("先选一个服务端，再导入存档", "info")
+            return
+        if self._state_of(info) != "stopped":
+            self.toast("请先停止服务端再导入存档，避免世界正在写入", "error")
+            return
+        if self._install_worker is not None and self._install_folder == info.folder:
+            self.toast("服务端还在安装，等装完再导入存档", "info")
+            return
+        properties = read_server_properties(info.path / "server.properties")
+        level_name = (properties.get("level-name") or "world").strip() or "world"
+        from ..world_import_dialog import WorldImportDialog
+
+        dialog = WorldImportDialog(
+            self.main,
+            target_text=(
+                f"把其他游戏版本的存档导入服务端「{info.name}」，作为它的主世界。"
+                "可以选择只导入主世界、下界或末地；只选部分维度时会合并到现有世界，"
+                "level.dat、玩家数据和未选维度保持原样。"
+                "导入后 server.properties 的 level-name 会同步更新。"
+            ),
+            default_name=level_name,
+            server_info=info,
+            target_version=info.mc_version,
+        )
+        dialog.exec()
+        if dialog.import_result is not None:
+            self.refresh_servers(info.folder)
+            result = dialog.import_result
+            dimensions = getattr(result, "dimension_text", "")
+            backups = getattr(result, "backups", None) or []
+            if not backups and getattr(result, "backup", None) is not None:
+                backups = [result.backup]
+            prefix = f"{dimensions}已导入服务端" if dimensions else "存档已导入服务端"
+            if backups:
+                names = "、".join(item.name for item in backups[:3])
+                more = f" 等 {len(backups)} 个" if len(backups) > 3 else ""
+                suffix = f"，旧数据已备份为 {names}{more}"
+            else:
+                suffix = ""
+            self.toast(f"{prefix}{suffix}", "success")
+
     def open_import_dialog(self, path: str | Path | None = None) -> None:
         from ..server_pack_dialog import ServerPackImportDialog
 
@@ -1539,6 +2416,64 @@ class ServerPage(QWidget):
         dialog.exec()
         # 配置里可能改了端口或正版验证，重新扫描后同步到设置页。
         self.refresh_servers(info.folder)
+
+    def rename_server(self) -> None:
+        info = self._current_info()
+        if info is None:
+            self.toast("先选一个服务端，再重命名", "info")
+            return
+        dialog = TextInputDialog(
+            self,
+            "重命名服务端",
+            "只修改启动器里显示的名称，服务端文件夹和存档位置保持不变。",
+            info.name,
+            max_length=48,
+            placeholder="例如：周末生存服",
+            player_name=False,
+        )
+        if not dialog.exec():
+            return
+        name = dialog.value().strip()
+        if not name:
+            return
+        info.name = name
+        try:
+            save_server(info)
+        except Exception as exc:
+            self.toast(f"重命名失败：{exc}", "error")
+            return
+        self.refresh_servers(info.folder)
+        self.toast("服务端名称已更新", "success")
+
+    def change_server_icon(self) -> None:
+        info = self._current_info()
+        if info is None:
+            self.toast("先选一个服务端，再修改图标", "info")
+            return
+        if not info.path.is_dir():
+            self.toast("服务端文件夹不存在", "error")
+            return
+        pictures = Path.home() / "Pictures"
+        start = pictures if pictures.is_dir() else Path.home()
+        path, _ = QFileDialog.getOpenFileName(
+            self,
+            "选择服务器图标",
+            str(start),
+            "图片文件 (*.png *.jpg *.jpeg *.bmp *.gif *.webp)",
+        )
+        if not path:
+            return
+        image = QImage(path)
+        if image.isNull():
+            self.toast("这个文件无法作为图片读取", "error")
+            return
+        icon = _fit_server_icon(image)
+        target = info.path / "server-icon.png"
+        if not icon.save(str(target), "PNG"):
+            self.toast("图标写入失败，请检查服务端文件夹权限", "error")
+            return
+        self.refresh_servers(info.folder)
+        self.toast("服务器图标已更新，重启服务端后生效", "success")
 
     def _open_server_folder(self) -> None:
         info = self._current_info()
@@ -1664,7 +2599,9 @@ class ServerPage(QWidget):
         )
 
     def _on_tab_changed(self, value: str) -> None:
-        index = {"console": 0, "addons": 1, "settings": 2}.get(value, 0)
+        index = {"console": 0, "addons": 1, "settings": 2, "online": 3}.get(
+            value, 0
+        )
         self.tab_stack.setCurrentIndex(index)
         if value == "addons":
             self.refresh_addons()
@@ -1673,6 +2610,490 @@ class ServerPage(QWidget):
             if info is not None:
                 self._load_settings(info)
                 self._update_port_hint()
+        elif value == "online":
+            info = self._current_info()
+            if info is not None:
+                self._load_online_settings(info)
+            self._sync_online_controls()
+            token = self.online_token_edit.text().strip() or self.main.config.sakura_access_token
+            if token and self._sakura_user is None and not self._sakura_busy:
+                QTimer.singleShot(120, lambda: self.login_sakura(silent=True))
+
+    def open_online_tab(self) -> None:
+        if self._current_info() is None:
+            self.toast("先选一个服务端，再打开公网联机", "info")
+            return
+        self.tabs.set_value("online")
+        self.tab_stack.setCurrentIndex(3)
+        self._on_tab_changed("online")
+
+    # ------------------------------------------------------------------
+    # 公网联机（樱花穿透，无房间号）
+
+    def _set_online_status(self, text: str, kind: str = "muted") -> None:
+        mapping = {
+            "muted": "muted",
+            "busy": "accent",
+            "success": "green",
+            "warning": "orange",
+            "error": "red",
+        }
+        color = colors().get(mapping.get(kind, "muted"), colors()["muted"])
+        self.online_status.setStyleSheet(
+            f"color: {color}; font-size: 11px; background: transparent;"
+        )
+        self.online_status.setText(text)
+
+    def _toggle_online_token(self) -> None:
+        if self.online_token_edit.echoMode() == QLineEdit.EchoMode.Password:
+            self.online_token_edit.setEchoMode(QLineEdit.EchoMode.Normal)
+            self.online_show_btn.setText("隐藏")
+        else:
+            self.online_token_edit.setEchoMode(QLineEdit.EchoMode.Password)
+            self.online_show_btn.setText("显示")
+
+    def login_sakura(self, silent: bool = False) -> None:
+        if self._sakura_busy:
+            return
+        if self._sakura_payload is not None or self._sakura_tunnel is not None:
+            self.toast("请先关闭公网隧道，再更换访问密钥。", "info")
+            return
+        token = (
+            self.online_token_edit.text().strip()
+            or self.main.config.sakura_access_token
+        )
+        if not token:
+            self._set_online_status("请先填写樱花穿透访问密钥。", "error")
+            return
+        self._sakura_busy = True
+        self.online_login_btn.setEnabled(False)
+        self.online_login_btn.setText("正在验证…")
+        self._set_online_status("正在验证访问密钥并读取节点…", "busy")
+        self.online_account_badge.setText("验证中")
+        self.online_account_badge.setProperty("badge", "blue")
+        repolish(self.online_account_badge)
+        self._sync_online_controls()
+        worker = SakuraLoginWorker(token, self)
+        self._sakura_login_worker = worker
+        worker.ready.connect(
+            lambda payload, error, w=worker, s=silent: self._online_login_ready(
+                w, payload, error, s
+            )
+        )
+        worker.start()
+
+    def _online_login_ready(
+        self,
+        worker: SakuraLoginWorker,
+        payload,
+        error: str,
+        silent: bool = False,
+    ) -> None:
+        if worker is not self._sakura_login_worker:
+            return
+        self._sakura_login_worker = None
+        self._sakura_busy = False
+        self.online_login_btn.setEnabled(True)
+        self.online_login_btn.setText("重新验证")
+        if error or not isinstance(payload, dict):
+            self._set_online_status(
+                error or "无法读取樱花穿透账户。", "error"
+            )
+            self.online_account_badge.setText("未连接")
+            self.online_account_badge.setProperty("badge", "gray")
+            repolish(self.online_account_badge)
+            self._sync_online_controls()
+            if not silent:
+                self.toast(error or "樱花穿透连接失败", "error")
+            return
+
+        user: SakuraUser = payload["user"]
+        self._sakura_user = user
+        self._sakura_nodes = payload["nodes"]
+        self._sakura_tunnels = payload["tunnels"]
+        token = self.online_token_edit.text().strip()
+        if token:
+            self.main.config.set_sakura_token(token)
+            self.main.config.save()
+            self.online_token_edit.setPlaceholderText("已保存访问密钥（已加密）")
+        self.online_account_badge.setText("已连接")
+        self.online_account_badge.setProperty("badge", "green")
+        repolish(self.online_account_badge)
+        details = [
+            f"已连接 · {user.name or '樱花账户'}",
+            user.realname_text,
+            user.traffic_text,
+        ]
+        if user.tunnel_limit:
+            details.append(f"隧道 {len(self._sakura_tunnels)}/{user.tunnel_limit}")
+        self.online_account_line.setText(" · ".join(details))
+        self._populate_online_nodes()
+        info = self._current_info()
+        if info is not None:
+            self._set_online_status(
+                f"账户已连接，可以启动 {info.port} 端口的公网隧道。", "success"
+            )
+        else:
+            self._set_online_status("账户已连接。", "success")
+        self._sync_online_controls()
+        if not silent:
+            self.toast("樱花穿透账户已连接", "success")
+
+    def _populate_online_nodes(self) -> None:
+        current_id = self._selected_online_node_id()
+        if not current_id:
+            current_id = int(self.main.config.sakura_server_node_id or 0)
+        self.online_node_combo.blockSignals(True)
+        self.online_node_combo.clear()
+        self.online_node_combo.addItem("自动选择节点", 0)
+        nodes = [
+            node
+            for node in self._sakura_nodes.values()
+            if node.selectable and node.host
+        ]
+        nodes.sort(
+            key=lambda node: (
+                node.public_game,
+                node.vip,
+                not node.mainland,
+                node.name,
+            )
+        )
+        for node in nodes[:200]:
+            self.online_node_combo.addItem(node.label, node.id)
+            index = self.online_node_combo.count() - 1
+            tip = node.description or ""
+            if node.host:
+                tip = (tip + "\n" if tip else "") + f"节点地址：{node.host}"
+            self.online_node_combo.setItemData(index, tip, Qt.ToolTipRole)
+        if current_id:
+            index = self.online_node_combo.findData(current_id)
+            if index >= 0:
+                self.online_node_combo.setCurrentIndex(index)
+        self.online_node_combo.blockSignals(False)
+        if not nodes:
+            self._set_online_status(
+                "没有可用节点，请稍后刷新，或到樱花穿透面板检查节点状态。",
+                "error",
+            )
+
+    def _selected_online_node_id(self) -> int:
+        try:
+            return int(self.online_node_combo.currentData() or 0)
+        except (TypeError, ValueError):
+            return 0
+
+    def _load_online_settings(self, info: ServerInfo) -> None:
+        """公网联机页只读展示设置页的正版验证状态，避免两个开关各保存一份。"""
+        self.online_offline_badge.setText(
+            "仅正版账户" if info.online_mode else "允许离线玩家"
+        )
+        self.online_offline_badge.setProperty(
+            "badge", "green" if info.online_mode else "orange"
+        )
+        repolish(self.online_offline_badge)
+        self.online_offline_hint.setText(
+            "服务器会拒绝未登录正版账户的玩家" if info.online_mode
+            else "服务器允许非正版账户进入"
+        )
+        self._sync_online_controls()
+
+    def _show_online_settings_tab(self) -> None:
+        self.tabs.set_value("settings", emit=True)
+
+    def _settings_online_toggled(self, checked: bool) -> None:
+        """设置页的正版验证开关立即写盘，切换页面后不会回退。"""
+        info = self._current_info()
+        if info is None:
+            self._update_online_hint()
+            return
+        if bool(info.online_mode) == bool(checked):
+            self._update_online_hint()
+            return
+        info.online_mode = bool(checked)
+        try:
+            save_server(info)
+            update_server_properties(info)
+        except Exception as exc:
+            self.settings_online.blockSignals(True)
+            self.settings_online.setChecked(not bool(checked))
+            self.settings_online.blockSignals(False)
+            self._update_online_hint()
+            self.toast(f"保存正版验证设置失败：{exc}", "error")
+            return
+        self._update_online_hint()
+        self._load_online_settings(info)
+        process = self._processes.get(info.folder)
+        if process is not None and process.state != "stopped":
+            self.toast("正版验证设置已保存，重启服务端后生效", "info")
+        else:
+            self.toast("正版验证设置已保存", "success")
+
+    def start_online_tunnel(self) -> None:
+        info = self._current_info()
+        if info is None:
+            return
+        if self._sakura_busy:
+            return
+        if self._sakura_payload is not None or self._sakura_tunnel is not None:
+            self.toast("公网隧道已经开启", "info")
+            return
+        if not info.installed:
+            self.toast("服务端尚未安装完成", "error")
+            return
+        if self._sakura_user is None:
+            self._set_online_status("请先验证并连接樱花穿透账户。", "error")
+            return
+        self._sakura_busy = True
+        self.online_progress.setRange(0, 100)
+        self.online_progress.setValue(0)
+        self.online_progress.setVisible(True)
+        self.online_log.clear()
+        self.online_log.setVisible(True)
+        self.online_start_btn.setEnabled(False)
+        self._set_online_status(
+            f"正在为端口 {info.port} 准备隧道与内置 frpc…", "busy"
+        )
+        self._sync_online_controls()
+        worker = SakuraRoomWorker(
+            self.online_token_edit.text().strip()
+            or self.main.config.sakura_access_token,
+            info.port,
+            node_id=self._selected_online_node_id(),
+            preferred_tunnel_id=self.main.config.sakura_server_tunnel_id,
+            frpc_path=self.main.config.sakura_frpc_path,
+            parent=self,
+            tunnel_name="DarkittenServer",
+            make_room_code=False,
+            avoid_tunnel_id=self.main.config.sakura_tunnel_id,
+        )
+        self._sakura_worker = worker
+        worker.progress.connect(
+            lambda value, message, w=worker: self._online_progress(
+                w, value, message
+            )
+        )
+        worker.log_line.connect(
+            lambda line, w=worker: self._online_log_line(w, line)
+        )
+        worker.ready.connect(
+            lambda payload, error, w=worker: self._online_ready(w, payload, error)
+        )
+        worker.failed.connect(
+            lambda error, w=worker: self._online_failed(w, error)
+        )
+        worker.start()
+
+    def _online_progress(
+        self, worker: SakuraRoomWorker, value: int, message: str
+    ) -> None:
+        if worker is not self._sakura_worker:
+            return
+        self.online_progress.setValue(value)
+        self._set_online_status(message, "busy")
+
+    def _online_log_line(self, worker: SakuraRoomWorker, line: str) -> None:
+        if worker is not self._sakura_worker:
+            return
+        self._append_online_log(line)
+
+    def _append_online_log(self, line: str) -> None:
+        text = str(line or "")
+        if not text:
+            return
+        token = self.main.config.sakura_access_token
+        if token:
+            text = text.replace(token, "***")
+        if not self.online_log.isVisible():
+            self.online_log.setVisible(True)
+        self.online_log.appendPlainText(text)
+        bar = self.online_log.verticalScrollBar()
+        bar.setValue(bar.maximum())
+
+    def _online_ready(
+        self, worker: SakuraRoomWorker, payload, error: str
+    ) -> None:
+        if worker is not self._sakura_worker:
+            return
+        self._sakura_worker = None
+        self._sakura_busy = False
+        if error or not isinstance(payload, dict):
+            self.online_progress.setVisible(False)
+            self._set_online_status(error or "创建隧道失败。", "error")
+            self.toast(error or "创建隧道失败", "error")
+            self._sync_online_controls()
+            return
+        self._sakura_payload = payload
+        self.main.config.sakura_server_tunnel_id = int(
+            payload.get("tunnel_id") or 0
+        )
+        self.main.config.sakura_server_node_id = int(payload.get("node_id") or 0)
+        self.main.config.save()
+        self.online_progress.setValue(100)
+        self.online_progress.setVisible(False)
+        self._set_online_status("隧道已准备，正在启动内置 frpc…", "busy")
+        self._start_online_tunnel_process(payload)
+
+    def _online_failed(self, worker: SakuraRoomWorker, error: str) -> None:
+        if worker is not self._sakura_worker:
+            return
+        self._sakura_worker = None
+        self._sakura_busy = False
+        self.online_progress.setVisible(False)
+        self._set_online_status(error or "创建隧道失败。", "error")
+        self.toast(error or "创建隧道失败", "error")
+        self._sync_online_controls()
+
+    def _start_online_tunnel_process(self, payload: dict) -> None:
+        process = SakuraTunnelProcess(
+            payload.get("frpc_path", ""),
+            payload.get("config_path", ""),
+            self,
+        )
+        self._sakura_tunnel = process
+        process.log_line.connect(self._append_online_log)
+        process.ready.connect(self._online_tunnel_ready)
+        process.failed.connect(self._online_tunnel_failed)
+        process.finished.connect(self._online_tunnel_finished)
+        process.start()
+        self._sync_online_controls()
+
+    def _online_tunnel_ready(self, message: str) -> None:
+        if self._online_closing or self._sakura_payload is None:
+            return
+        payload = self._sakura_payload
+        address = str(payload.get("address") or "")
+        self.online_address.setText(address or "地址获取失败")
+        self.online_address_box.setVisible(True)
+        self._set_online_status(
+            f"公网隧道已开启（{message}）。把地址发给朋友即可。", "success"
+        )
+        self._update_console_banner()
+        self._sync_online_controls()
+        self.toast("公网隧道已开启，可以分享服务器地址了", "success")
+
+    def _online_tunnel_failed(self, message: str) -> None:
+        if self._online_closing:
+            return
+        process = self._sakura_tunnel
+        if process is not None:
+            try:
+                process.blockSignals(True)
+                process.stop()
+            except Exception:
+                pass
+        self._fail_online_tunnel(message)
+
+    def _online_tunnel_finished(self, code: int) -> None:
+        if self._online_closing or self._sakura_tunnel is None:
+            return
+        self._sakura_tunnel = None
+        if self._sakura_payload is not None:
+            self._fail_online_tunnel(
+                f"内置 frpc 已退出（代码 {code}），公网隧道已关闭。"
+            )
+
+    def _fail_online_tunnel(self, message: str) -> None:
+        payload = self._sakura_payload
+        if payload:
+            remove_tunnel_config(payload.get("config_path"))
+        self._sakura_payload = None
+        self._sakura_tunnel = None
+        self._sakura_busy = False
+        self.online_progress.setVisible(False)
+        self.online_address_box.setVisible(False)
+        self._set_online_status(message, "error")
+        self._update_console_banner()
+        self._sync_online_controls()
+        self.toast(message, "error")
+
+    def close_online_tunnel(self) -> None:
+        self._online_closing = True
+        worker = self._sakura_worker
+        if worker is not None:
+            worker.cancel()
+            self._sakura_worker = None
+        self._sakura_busy = False
+        process = self._sakura_tunnel
+        self._sakura_tunnel = None
+        if process is not None:
+            process.blockSignals(True)
+            process.stop()
+        payload = self._sakura_payload
+        if payload:
+            remove_tunnel_config(payload.get("config_path"))
+            self._append_console(
+                self._selected_folder, "已关闭公网隧道"
+            )
+        self._sakura_payload = None
+        self.online_progress.setVisible(False)
+        self.online_address_box.setVisible(False)
+        self._set_online_status("公网隧道已关闭。", "muted")
+        self._online_closing = False
+        self._update_console_banner()
+        self._sync_online_controls()
+
+    def _copy_public_address(self) -> None:
+        payload = self._sakura_payload or {}
+        address = str(payload.get("address") or "")
+        if not address:
+            self.toast("隧道还没有准备好", "info")
+            return
+        QApplication.clipboard().setText(address)
+        self.toast("公网服务器地址已复制", "success")
+
+    def _sync_online_controls(self) -> None:
+        if not hasattr(self, "online_start_btn"):
+            return
+        info = self._current_info()
+        active = (
+            self._sakura_payload is not None or self._sakura_tunnel is not None
+        )
+        self.online_start_btn.setEnabled(
+            bool(info)
+            and bool(info.installed)
+            and bool(self._sakura_user)
+            and not self._sakura_busy
+            and not active
+        )
+        self.online_close_btn.setVisible(active or self._sakura_worker is not None)
+        self.online_close_btn.setEnabled(not self._sakura_busy or active)
+        self.online_login_btn.setEnabled(not self._sakura_busy and not active)
+        self.online_token_edit.setEnabled(not active)
+        self.online_node_combo.setEnabled(
+            bool(self._sakura_user) and not active
+        )
+        self.online_node_refresh.setEnabled(
+            not self._sakura_busy and not active
+        )
+        self.online_settings_btn.setEnabled(bool(info))
+        if active and self._sakura_payload is not None:
+            address = str(self._sakura_payload.get("address") or "")
+            if address:
+                self.online_address.setText(address)
+        self._update_console_banner()
+
+    def _update_console_banner(self) -> None:
+        if not hasattr(self, "console_banner"):
+            return
+        info = self._current_info()
+        address = str((self._sakura_payload or {}).get("address") or "")
+        if address:
+            self.console_banner_label.setText(
+                f"公网隧道已开启：{address}。朋友在多人游戏里添加这个地址即可。"
+            )
+            self.console_banner.setVisible(True)
+            return
+        process = self._processes.get(info.folder) if info else None
+        state = process.state if process is not None else "stopped"
+        if state != "stopped":
+            self.console_banner_label.setText(
+                "服务端正在运行。想让朋友从公网进入，请打开“公网联机”"
+                "启动樱花穿透（无需房间号，直接分享服务器地址）。"
+            )
+            self.console_banner.setVisible(True)
+        else:
+            self.console_banner.setVisible(False)
 
     def refresh_theme(self) -> None:
         self.create_btn.setIcon(icons.icon("plus", "#FFFFFF", 15))
@@ -1687,8 +3108,14 @@ class ServerPage(QWidget):
         self.pack_icon_btn.setIcon(
             icons.icon("package", colors()["text2"], 16)
         )
+        self.rename_icon_btn.setIcon(icons.icon("edit", colors()["text2"], 16))
+        self.public_btn.setIcon(icons.icon("globe", colors()["text2"], 16))
+        self.online_start_btn.setIcon(icons.icon("globe", "#FFFFFF", 15))
+        self.online_copy_btn.setIcon(icons.icon("copy", colors()["accent"], 14))
         self.pack_btn.setIcon(icons.icon("package", colors()["accent"], 14))
         self.addon_open_btn.setIcon(icons.icon("folder", colors()["text2"], 14))
+        self.addon_check_btn.setIcon(icons.icon("refresh", colors()["text2"], 14))
+        self.addon_import_btn.setIcon(icons.icon("plus", colors()["text2"], 14))
         self.addon_download_btn.setIcon(
             icons.icon("download", colors()["accent"], 14)
         )
@@ -1729,6 +3156,17 @@ class ServerPage(QWidget):
             except Exception:
                 pass
             self._install_worker = None
+        login_worker = self._sakura_login_worker
+        if login_worker is not None:
+            try:
+                login_worker.ready.disconnect()
+            except Exception:
+                pass
+            self._sakura_login_worker = None
+        try:
+            self.close_online_tunnel()
+        except Exception:
+            pass
         processes = list(self._processes.values())
         if not processes:
             return

@@ -31,6 +31,7 @@ class ModUpdate:
     sha1: str = ""
     page_url: str = ""
     dependencies: list[dict[str, Any]] = field(default_factory=list)
+    content_type: str = "mod"
 
     @property
     def source_label(self) -> str:
@@ -100,9 +101,15 @@ def _resolved_loader(mod: ModInfo, loader: str) -> str:
 
 
 def check_mod_update(
-    mod: ModInfo, game_version: str = "", loader: str = ""
+    mod: ModInfo,
+    game_version: str = "",
+    loader: str = "",
+    content_type: str = "mod",
 ) -> ModUpdate | None:
-    """检查单个 Mod 是否有适配当前游戏版本与加载器的新文件。"""
+    """检查单个 Mod/插件是否有适配当前游戏版本与平台的新文件。"""
+    kind = str(content_type or "mod").strip().lower()
+    if kind not in ("mod", "plugin"):
+        kind = "mod"
     meta = load_mod_meta(mod.path.parent, mod.path.name)
     source = _source_for(mod, meta)
     project_id = str(meta.get("project_id") or mod.project_id or "").strip()
@@ -125,7 +132,7 @@ def check_mod_update(
             project_id,
             target_loader,
             game_version,
-            content_type="mod",
+            content_type=kind,
         )
         if not versions:
             return None
@@ -153,14 +160,23 @@ def check_mod_update(
             sha1=latest_file["sha1"],
             page_url=str(latest.get("page_url") or mod.project_url),
             dependencies=modrinth.required_dependencies(latest),
+            content_type=kind,
         )
 
-    versions = modrinth.fetch_mod_versions(
-        project_id,
-        target_loader,
-        game_version,
-        content_type="mod",
-    )
+    if kind == "plugin":
+        # 插件项目在 Modrinth 使用 paper/spigot/bukkit 加载器，按平台展开。
+        versions = modrinth.fetch_server_addon_versions(
+            project_id,
+            target_loader or "paper",
+            game_version,
+        )
+    else:
+        versions = modrinth.fetch_mod_versions(
+            project_id,
+            target_loader,
+            game_version,
+            content_type="mod",
+        )
     if not versions:
         return None
     latest = versions[0]
@@ -180,7 +196,11 @@ def check_mod_update(
     slug = str(meta.get("slug") or "")
     page_url = str(latest.get("page_url") or "")
     if not page_url and latest_id:
-        page_url = f"https://modrinth.com/mod/{slug or project_id}/version/{latest_id}"
+        category = "plugin" if kind == "plugin" else "mod"
+        page_url = (
+            f"https://modrinth.com/{category}/{slug or project_id}"
+            f"/version/{latest_id}"
+        )
     return ModUpdate(
         mod=mod,
         version=latest,
@@ -196,6 +216,7 @@ def check_mod_update(
         sha1=latest_file["sha1"],
         page_url=page_url or mod.project_url,
         dependencies=modrinth.required_dependencies(latest),
+        content_type=kind,
     )
 
 
@@ -204,11 +225,12 @@ def check_mod_updates(
     game_version: str = "",
     loader: str = "",
     *,
+    content_type: str = "mod",
     max_workers: int = 4,
     progress_cb: Callable[[int, int, str], None] | None = None,
     cancel_event: threading.Event | None = None,
 ) -> tuple[list[ModUpdate], list[str]]:
-    """并发检查一组 Mod；单个失败不会影响其他结果。"""
+    """并发检查一组 Mod/插件；单个失败不会影响其他结果。"""
     cancel = cancel_event or threading.Event()
     updates: list[ModUpdate] = []
     errors: list[str] = []
@@ -218,7 +240,9 @@ def check_mod_updates(
     done = 0
     with ThreadPoolExecutor(max_workers=max(1, min(8, int(max_workers)))) as pool:
         futures = {
-            pool.submit(check_mod_update, mod, game_version, loader): mod
+            pool.submit(
+                check_mod_update, mod, game_version, loader, content_type
+            ): mod
             for mod in mods
         }
         for future in as_completed(futures):
@@ -320,6 +344,7 @@ def apply_mod_update(
                 "file_id": str(update.version.get("id") or ""),
                 "file_name": downloaded.name,
                 "sha1": update.sha1,
+                "content_type": str(update.content_type or "mod"),
                 "project_url": str(
                     update.page_url or meta.get("project_url") or update.mod.project_url
                 ),
