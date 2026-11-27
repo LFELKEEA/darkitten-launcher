@@ -56,7 +56,7 @@
 - `id` 只能用小写字母、数字、点、下划线、短横线，2–64 位，且不要和内置示例重复。
 - `api_version` 必须是 `1`。
 - `permissions` 只写真正需要的权限，可选值：
-  `pet.say`、`pet.action`、`pet.model`、`pet.persona`、`ai.chat`、`screen.capture`、`timer`、`events`、`settings`、`storage`。
+  `pet.say`、`pet.action`、`pet.model`、`pet.persona`、`pet.menu`、`ai.chat`、`screen.capture`、`timer`、`events`、`settings`、`storage`。
 - `settings` 只放普通配置，不要放 API Key、密码、token。
 
 ### main.py 规范
@@ -87,6 +87,7 @@ def open_settings(api, parent=None):
 - 说话用 `api.say(text, duration=5000)`。
 - 调 AI 用 `api.chat(messages, callback)`，回调签名是 `callback(reply, error)`。
 - 截屏用 `api.capture_screen()`，需要 `screen.capture` 权限，只能在主线程调用。
+- 需要让用户从桌宠右键菜单触发时，用 `api.add_menu_item("菜单标题", callback)`，需要 `pet.menu` 权限；插件卸载时菜单项会自动移除。
 - 读写设置用 `api.settings` / `api.save_settings(...)`。
 - 读写小数据用 `api.storage` / `api.save_storage()`。
 - 日志用 `api.log(...)`，不要写敏感信息。

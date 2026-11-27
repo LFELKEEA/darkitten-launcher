@@ -361,6 +361,21 @@ handle = api.register_prompt_provider(context)
 - 多个插件按加载顺序拼接。不要在这里返回 API Key、密码或与当前会话无关的隐私内容。
 - 只能返回文字，不要修改权限或替用户执行动作。
 
+### 5.7.2 右键菜单
+
+```python
+def run_quiz():
+    api.say("我看看屏幕上的题目。")
+
+item = api.add_menu_item("识别屏幕上的题目", run_quiz)
+# 不再需要时：api.remove_menu_item(item)
+```
+
+- 权限：`pet.menu`
+- 菜单项会出现在桌宠右键菜单里、「看看屏幕，说句话」下面，每个插件最多 8 项。
+- 标题会压成一行并截断到 32 字；插件卸载或重载时自动移除，不需要在 `teardown()` 里手动清理。
+- 回调在桌宠主线程执行，异常会被隔离并写入 `data/plugins.log`，不会影响桌宠。
+
 ### 5.8 设置
 
 ```python
@@ -428,6 +443,7 @@ api.log("定时器已启动")
 | `pet.action` | `api.action()` / `api.model.set_action_menu()` / `api.model.clear_action_menu()` |
 | `pet.model` | `api.model.*`（加载模型、动作、表情、注视、口型） |
 | `pet.persona` | `api.set_lines()` / `api.clear_lines()` |
+| `pet.menu` | `api.add_menu_item()` / `api.remove_menu_item()` |
 | `ai.chat` | `api.chat()` |
 | `screen.capture` | `api.capture_screen()` |
 | `timer` | `api.every()` / `api.after()` |
