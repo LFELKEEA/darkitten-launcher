@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import shutil
 import zipfile
 from datetime import datetime
@@ -21,7 +22,23 @@ from pathlib import Path
 
 SITE = Path(__file__).resolve().parent
 PUBLIC = SITE / "public"
-PET = SITE.parent / "desktop_pet"
+
+
+def _find_pet_root() -> Path:
+    """桌宠源码根目录。优先 DKL_PET_ROOT，其次同级的 desktop_pet，再试 pet-repo。"""
+    override = os.environ.get("DKL_PET_ROOT", "").strip()
+    candidates = []
+    if override:
+        candidates.append(Path(override))
+    candidates.append(SITE.parent / "desktop_pet")
+    candidates.append(SITE.parents[1] / "pet-repo")
+    for candidate in candidates:
+        if (candidate / "plugins").is_dir():
+            return candidate
+    return candidates[0]
+
+
+PET = _find_pet_root()
 SOURCE = PET / "plugins"
 DOCS = PET / "docs"
 DEST = PUBLIC / "plugins"
@@ -110,6 +127,8 @@ def package(folder: Path, manifest: dict) -> dict:
     return {
         "id": plugin_id,
         "name": str(manifest.get("name", plugin_id)),
+        "tagline": str(manifest.get("tagline", "")),
+        "category": str(manifest.get("category", "")),
         "version": version,
         "author": str(manifest.get("author", "")),
         "description": str(manifest.get("description", "")),
@@ -171,6 +190,8 @@ def main() -> int:
             entry = dict(base) if isinstance(base, dict) else dict(item)
             entry["id"] = plugin_id
             entry["name"] = str(entry.get("name") or plugin_id)
+            entry["tagline"] = str(entry.get("tagline") or "")
+            entry["category"] = str(entry.get("category") or "")
             entry["version"] = str(entry.get("version") or item.get("version") or "0.0.0")
             entry["author"] = str(entry.get("author") or "")
             entry["description"] = str(entry.get("description") or "")
